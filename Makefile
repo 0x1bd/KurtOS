@@ -27,11 +27,23 @@ debug: all
 	$(QEMU) $(QEMU_FLAGS) -s -S
 
 usb: all
-	@test -n "$(DEV)" || (echo "usage: make usb DEV=/dev/sdX" && exit 1)
-	@lsblk -o NAME,SIZE,MODEL,TRAN $(DEV)
-	@echo "This ERASES $(DEV). Press enter to continue, Ctrl-C to abort."
+	@test -n "$(DEV)" || { echo "usage: make usb DEV=/dev/sdX"; exit 1; }
+	@test -b "$(DEV)" || { echo "$(DEV) is not a block device"; exit 1; }
+	@test "$$(lsblk -ndo TYPE $(DEV))" = disk || { \
+		echo "REFUSING: $(DEV) is a $$(lsblk -ndo TYPE $(DEV)), not a whole disk."; \
+		echo "The image carries its own partition table, so it must be written to"; \
+		echo "the disk (e.g. /dev/sda), not a partition (e.g. /dev/sda1)."; \
+		exit 1; }
+	@test "$$(lsblk -ndo TRAN $(DEV))" = usb || { \
+		echo "REFUSING: $(DEV) is not a USB device (transport: $$(lsblk -ndo TRAN $(DEV)))."; \
+		exit 1; }
+	@lsblk -o NAME,SIZE,TYPE,TRAN,MODEL,MOUNTPOINTS $(DEV)
+	@echo
+	@echo "This ERASES ALL OF $(DEV). Press enter to continue, Ctrl-C to abort."
 	@read _
 	sudo dd if=$(IMAGE) of=$(DEV) bs=4M oflag=sync status=progress
+	sudo sync
+	@echo "done. now safe to unplug."
 
 clean:
 	./gradlew clean
