@@ -1,30 +1,15 @@
-QEMU       = qemu-system-aarch64
-QEMU_FLAGS = -M virt \
-             -cpu cortex-a53 \
-             -m 128M \
-             -nographic \
+QEMU  = qemu-system-x86_64
+IMAGE = build/kurtos.img
+
+QEMU_FLAGS = -M q35 \
+             -m 512M \
+             -drive file=$(IMAGE),format=raw \
              -serial stdio \
-             -monitor none \
-             -global virtio-mmio.force-legacy=false \
-             -drive if=none,file=build/flx.img,format=raw,id=flx0 \
-             -device virtio-blk-device,drive=flx0 \
-             -kernel build/kurtos.elf
+             -no-reboot
 
-QEMU_GFX_FLAGS = -M virt \
-                 -cpu cortex-a53 \
-                 -m 128M \
-                 -display gtk \
-                 -serial stdio \
-                 -monitor none \
-                 -global virtio-mmio.force-legacy=false \
-                 -device virtio-gpu-device \
-                 -device virtio-keyboard-device \
-                 -device virtio-tablet-device \
-                 -drive if=none,file=build/flx.img,format=raw,id=flx0 \
-                 -device virtio-blk-device,drive=flx0 \
-                 -kernel build/kurtos.elf
+OVMF = /usr/share/edk2/ovmf/OVMF_CODE.fd
 
-.PHONY: all run run-gfx debug clean
+.PHONY: all run run-uefi run-headless debug usb clean
 
 all:
 	./gradlew buildImage
@@ -32,11 +17,21 @@ all:
 run: all
 	$(QEMU) $(QEMU_FLAGS)
 
-run-gfx: all
-	$(QEMU) $(QEMU_GFX_FLAGS)
+run-uefi: all
+	$(QEMU) $(QEMU_FLAGS) -bios $(OVMF)
+
+run-headless: all
+	$(QEMU) $(QEMU_FLAGS) -display none
 
 debug: all
 	$(QEMU) $(QEMU_FLAGS) -s -S
+
+usb: all
+	@test -n "$(DEV)" || (echo "usage: make usb DEV=/dev/sdX" && exit 1)
+	@lsblk -o NAME,SIZE,MODEL,TRAN $(DEV)
+	@echo "This ERASES $(DEV). Press enter to continue, Ctrl-C to abort."
+	@read _
+	sudo dd if=$(IMAGE) of=$(DEV) bs=4M oflag=sync status=progress
 
 clean:
 	./gradlew clean

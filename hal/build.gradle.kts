@@ -3,7 +3,7 @@ plugins {
 }
 
 kotlin {
-    linuxArm64 {
+    linuxX64 {
         compilations["main"].apply {
             cinterops {
                 val mmio by creating {
@@ -15,6 +15,6 @@ kotlin {
     }
 
     sourceSets {
-        val linuxArm64Main by getting
+        val linuxX64Main by getting
     }
 }

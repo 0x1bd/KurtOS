@@ -46,7 +46,7 @@ def main():
             if action == "abort":
                 func_name = re.search(r'([a-zA-Z0-9_]+)\(', sig).group(1)
                 f.write(f"    debug_print(\"{func_name} abort\");\n")
-                f.write(f"    for (;;) __asm__ volatile(\"wfe\");\n")
+                f.write(f"    for (;;) __asm__ volatile(\"cli; hlt\");\n")
             elif action == "return0":
                 f.write("    return 0;\n")
             elif action == "return1":

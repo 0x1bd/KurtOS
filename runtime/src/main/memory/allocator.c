@@ -8,9 +8,6 @@ typedef struct heap_block {
     uint64_t free;
 } heap_block_t;
 
-extern uint8_t __heap_start[];
-extern uint8_t __heap_end[];
-
 static uint8_t *heap_base = 0;
 static uint8_t *heap_limit = 0;
 static uint8_t *heap_bump = 0;
@@ -20,15 +17,22 @@ static inline size_t align16(size_t n) {
     return (n + 15u) & ~(size_t)15u;
 }
 
-void heap_init(void) {
-    heap_base = __heap_start;
-    heap_limit = __heap_end;
+void heap_init(uint64_t base, uint64_t size) {
+    heap_base = (uint8_t *)base;
+    heap_limit = (uint8_t *)(base + size);
     heap_bump  = heap_base;
     heap_ready = 1;
 }
 
-extern void uart_puts_raw(const char *s);
+uint64_t heap_used(void) {
+    return (uint64_t)(heap_bump - heap_base);
+}
 
+uint64_t heap_total(void) {
+    return (uint64_t)(heap_limit - heap_base);
+}
+
+extern void debug_print(const char *s);
 void *malloc(size_t n) {
     if (!heap_ready || n == 0) return (void *)0;
 
@@ -52,8 +56,8 @@ void *malloc(size_t n) {
     }
 
     if (heap_bump + HDR_SIZE + aligned > heap_limit) {
-        uart_puts_raw("MALLOC: heap exhausted\r\n");
-        for (;;) __asm__ volatile("wfe");
+        debug_print("malloc: heap exhausted\n");
+        for (;;) __asm__ volatile("cli; hlt");
     }
 
     heap_block_t *hdr = (heap_block_t *)heap_bump;
@@ -108,42 +112,51 @@ void *realloc(void *ptr, size_t size) {
     return newp;
 }
 
-int posix_memalign(void **memptr, size_t alignment, size_t size) { 
+int posix_memalign(void **memptr, size_t alignment, size_t size) {
     if (!heap_ready || size == 0) return 22;
     if (alignment < 16) alignment = 16;
     size_t aligned_size = align16(size);
 
     size_t offset = (size_t)(heap_bump + HDR_SIZE) % alignment;
     size_t shift = (offset == 0) ? 0 : alignment - offset;
+
     
+    if (shift > 0 && shift < HDR_SIZE + 16u) {
+        shift += alignment;
+    }
+
     if (heap_bump + shift + HDR_SIZE + aligned_size > heap_limit) {
         return 12;
     }
-    
+
     if (shift > 0) {
-        if (shift >= HDR_SIZE + 16u) {
-            heap_block_t *dummy = (heap_block_t *)heap_bump;
-            dummy->size = shift - HDR_SIZE;
-            dummy->free = 1;
-        }
+        heap_block_t *padding = (heap_block_t *)heap_bump;
+        padding->size = shift - HDR_SIZE;
+        padding->free = 1;
         heap_bump += shift;
     }
-    
+
     heap_block_t *hdr = (heap_block_t *)heap_bump;
     hdr->size = aligned_size;
     hdr->free = 0;
     heap_bump += HDR_SIZE + aligned_size;
-    
+
     *memptr = (void *)((uint8_t *)hdr + HDR_SIZE);
-    return 0; 
+    return 0;
 }
 
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, long offset) {
     (void)addr; (void)prot; (void)flags; (void)fd; (void)offset;
+
     void *p = (void*)0;
     if (posix_memalign(&p, 4096, length) != 0) {
         return (void *)-1;
     }
+
+    
+    uint8_t *b = (uint8_t *)p;
+    for (size_t i = 0; i < length; i++) b[i] = 0;
+
     return p;
 }
 

@@ -46,3 +46,7 @@ bin/
 
 ### kurtos ###
 uart.log
+### kurtos local notes
+NOTES.md
+third_party/limine/limine
+third_party/limine/*.o

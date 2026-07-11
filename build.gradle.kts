@@ -20,28 +20,16 @@ allprojects {
     }
 }
 
-fun findCrossGcc(): String =
-    listOf("aarch64-linux-gnu-gcc", "aarch64-none-elf-gcc").firstOrNull { candidate ->
-        try {
-            ProcessBuilder("which", candidate)
-                .redirectErrorStream(true)
-                .start()
-                .waitFor() == 0
-        } catch (_: Exception) {
-            false
-        }
-    } ?: "aarch64-linux-gnu-gcc"
-
-fun findCrossObjcopy(gcc: String): String = gcc.replace(Regex("gcc$"), "objcopy")
-
-val linkerScript = file("linker.ld")
+val linkerScript = file("linker-x86_64.ld")
 val imageBuildType = if (providers.gradleProperty("kurtos.release").orNull == "true") "Release" else "Debug"
 val kernelBinaryDir = "kurtos${imageBuildType}Static"
-val kernelLinkTask = ":kernel:linkKurtos${imageBuildType}StaticLinuxArm64"
-val kernelStaticLib = project(":kernel").layout.buildDirectory.file("bin/linuxArm64/$kernelBinaryDir/libkurtos.a")
+val kernelLinkTask = ":kernel:linkKurtos${imageBuildType}StaticLinuxX64"
+val kernelStaticLib = project(":kernel").layout.buildDirectory.file("bin/linuxX64/$kernelBinaryDir/libkurtos.a")
 val runtimeObjectsDir = project(":runtime").layout.buildDirectory.dir("objects")
 val flxAssetsRoot = layout.projectDirectory.dir("assets")
 val flxImage = layout.buildDirectory.file("flx.img")
+val limineDir = layout.projectDirectory.dir("third_party/limine")
+val diskImage = layout.buildDirectory.file("kurtos.img")
 
 data class FlxBuildObject(
     val hash: ByteArray,
@@ -161,10 +149,38 @@ val buildFlxImage by tasks.registering {
 fun alignUp(value: Long, alignment: Long): Long =
     (value + alignment - 1L) and (alignment - 1L).inv()
 
+val cxxSupportDir = layout.buildDirectory.dir("cxx")
+
+val extractCxxSupport by tasks.registering {
+    group = "kurtos"
+    description = "Extract the libstdc++ members Kotlin/Native's runtime needs"
+
+    outputs.dir(cxxSupportDir)
+
+    doLast {
+        val archive = ProcessBuilder("gcc", "-print-file-name=libstdc++.a")
+            .redirectErrorStream(true)
+            .start()
+            .inputStream.bufferedReader().readText().trim()
+
+        val target = cxxSupportDir.get().asFile
+        target.mkdirs()
+
+        val extract = ProcessBuilder("ar", "x", archive, "tree.o", "list.o")
+            .directory(target)
+            .redirectErrorStream(true)
+            .start()
+        val output = extract.inputStream.bufferedReader().readText()
+        if (extract.waitFor() != 0) {
+            throw GradleException("failed to extract libstdc++ members: $output")
+        }
+    }
+}
+
 val linkKurtOS by tasks.registering(Exec::class) {
     group = "kurtos"
     description = "Link runtime objects and the Kotlin kernel static library to build/kurtos.elf"
-    dependsOn(":runtime:runtimeObjects", kernelLinkTask)
+    dependsOn(":runtime:runtimeObjects", kernelLinkTask, extractCxxSupport)
 
     inputs.file(linkerScript)
     inputs.file(kernelStaticLib)
@@ -176,52 +192,54 @@ val linkKurtOS by tasks.registering(Exec::class) {
             .filter { it.isFile && it.extension == "o" }
             .sortedBy { it.relativeTo(runtimeObjectsDir.get().asFile).invariantSeparatorsPath }
             .toList()
-        val bootObject = runtimeObjects.firstOrNull { it.name == "arch_aarch64_boot.o" }
-            ?: throw GradleException("runtime boot.o was not produced")
+        if (runtimeObjects.none { it.name == "arch_x86_64_boot.o" }) {
+            throw GradleException("runtime boot.o was not produced")
+        }
         val kotlinLib = kernelStaticLib.get().asFile
         if (!kotlinLib.isFile) {
             throw GradleException("Kotlin/Native kernel library was not produced: ${kotlinLib.absolutePath}")
         }
 
         val linkerArgs = mutableListOf(
-            "-nostdlib", "-static",
+            "-nostdlib", "-static", "-no-pie",
+            "-Wl,-z,max-page-size=0x1000",
+            "-Wl,--build-id=none",
             "-T", linkerScript.absolutePath,
             "-o", layout.buildDirectory.file("kurtos.elf").get().asFile.absolutePath,
-            bootObject.absolutePath
         )
-        linkerArgs.addAll(runtimeObjects.filterNot { it == bootObject }.map { it.absolutePath })
+        linkerArgs.addAll(runtimeObjects.map { it.absolutePath })
         linkerArgs.add(kotlinLib.absolutePath)
+        cxxSupportDir.get().asFile.listFiles()
+            ?.filter { it.extension == "o" }
+            ?.sortedBy { it.name }
+            ?.forEach { linkerArgs.add(it.absolutePath) }
+        linkerArgs.add("-lsupc++")
         linkerArgs.add("-lgcc")
+        linkerArgs.add("-lgcc_eh")
 
-        executable = findCrossGcc()
+        executable = "gcc"
         setArgs(linkerArgs)
     }
 }
 
 val buildImage by tasks.registering(Exec::class) {
     group = "kurtos"
-    description = "objcopy kurtos.elf to flat binary build/kurtos.img"
+    description = "Build the bootable GPT/ESP disk image at build/kurtos.img"
     dependsOn(linkKurtOS, buildFlxImage)
 
     inputs.file(layout.buildDirectory.file("kurtos.elf"))
     inputs.file(flxImage)
-    outputs.file(layout.buildDirectory.file("kurtos.img"))
+    inputs.file(layout.projectDirectory.file("limine.conf"))
+    outputs.file(diskImage)
 
-    doFirst {
-        val objcopy = findCrossObjcopy(findCrossGcc())
-        executable = objcopy
-        args(
-            "-O", "binary",
-            layout.buildDirectory.file("kurtos.elf").get().asFile.absolutePath,
-            layout.buildDirectory.file("kurtos.img").get().asFile.absolutePath
-        )
-    }
-
-    doLast {
-        val img = layout.buildDirectory.file("kurtos.img").get().asFile
-        if (img.exists())
-            println("KurtOS image ready: ${img.absolutePath}  (${img.length()} bytes)")
-    }
+    executable = "bash"
+    args(
+        layout.projectDirectory.file("tools/mkimage.sh").asFile.absolutePath,
+        layout.buildDirectory.file("kurtos.elf").get().asFile.absolutePath,
+        flxImage.get().asFile.absolutePath,
+        limineDir.asFile.absolutePath,
+        diskImage.get().asFile.absolutePath,
+    )
 }
 
 tasks.named("assemble") {

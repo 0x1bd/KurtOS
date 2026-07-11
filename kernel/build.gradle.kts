@@ -3,7 +3,7 @@ plugins {
 }
 
 kotlin {
-    linuxArm64 {
+    linuxX64 {
         binaries {
             staticLib("kurtos") {
                 freeCompilerArgs = freeCompilerArgs + listOf("-Xbinary=gc=noop", "-g")
@@ -15,11 +15,12 @@ kotlin {
     }
 
     sourceSets {
-        val linuxArm64Main by getting {
+        val linuxX64Main by getting {
             dependencies {
                 implementation(project(":hal"))
+                implementation(project(":kapi"))
                 implementation(project(":shell"))
-                implementation(project(":userspace"))
+                implementation(project(":apps"))
             }
         }
     }

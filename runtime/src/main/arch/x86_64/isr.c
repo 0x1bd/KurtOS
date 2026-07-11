@@ -1,0 +1,81 @@
+#include "kurtos.h"
+
+#define VECTOR_TIMER    0x20
+#define VECTOR_KEYBOARD 0x21
+#define VECTOR_SPURIOUS 0xFF
+
+#define RING_CAPACITY 256
+#define RING_MASK (RING_CAPACITY - 1)
+
+extern void kernel_panic(uint64_t frame);
+
+static volatile uint32_t ring_head;
+static volatile uint32_t ring_tail;
+static volatile uint8_t  ring_buf[RING_CAPACITY];
+static volatile uint64_t ring_dropped;
+
+int kbd_ring_pop(void) {
+    uint32_t head = ring_head;
+    if (head == ring_tail) return -1;
+
+    uint8_t value = ring_buf[head];
+    ring_head = (head + 1) & RING_MASK;
+    return (int)value;
+}
+
+uint64_t kbd_ring_overflows(void) {
+    return ring_dropped;
+}
+
+static inline uint8_t inb(uint16_t port) {
+    uint8_t value;
+    __asm__ volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
+static void eoi(void) {
+    if (kurtos_lapic_base == 0) return;
+    *(volatile uint32_t *)(kurtos_lapic_base + 0xB0) = 0;
+}
+
+static int panicking;
+
+void isr_dispatch(uint64_t *frame) {
+    uint64_t vector = frame[15];
+
+    if (vector < 32) {
+        if (!panicking) {
+            panicking = 1;
+            kernel_panic((uint64_t)frame);
+        }
+        debug_print("\nfault inside panic handler\n");
+        hcf();
+    }
+
+    switch (vector) {
+        case VECTOR_TIMER:
+            kurtos_ticks++;
+            break;
+
+        case VECTOR_KEYBOARD: {
+            uint8_t scancode = inb(0x60);
+            uint32_t tail = ring_tail;
+            uint32_t next = (tail + 1) & RING_MASK;
+            if (next == ring_head) {
+                ring_dropped++;
+            } else {
+                ring_buf[tail] = scancode;
+                ring_tail = next;
+            }
+            break;
+        }
+
+        case VECTOR_SPURIOUS:
+            return;
+
+        default:
+            break;
+    }
+
+    eoi();
+}

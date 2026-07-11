@@ -2,26 +2,30 @@
 #include <stdint.h>
 #include <stdarg.h>
 
-#define UART_BASE  ((volatile uint32_t *)0x09000000UL)
-#define UART_DR    (UART_BASE[0x000 / 4])
-#define UART_FR    (UART_BASE[0x018 / 4])
-#define UART_FR_RXFE (1u << 4)
-#define UART_FR_TXFF (1u << 5)
+#define COM1 0x3F8
 
+void *stdin  = (void*)0;
 void *stdout = (void*)1;
 void *stderr = (void*)2;
 
+extern void debug_print(const char *msg);
+
+static inline void outb(uint16_t port, uint8_t value) {
+    __asm__ volatile("outb %0, %1" : : "a"(value), "Nd"(port));
+}
+
+static inline uint8_t inb(uint16_t port) {
+    uint8_t value;
+    __asm__ volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
 static void uart_putchar(int c) {
-    while (UART_FR & UART_FR_TXFF);
-    UART_DR = (uint32_t)(unsigned char)c;
+    for (int i = 0; i < 100000 && !(inb(COM1 + 5) & 0x20); i++) { }
+    outb(COM1, (unsigned char)c);
 }
 
-static int uart_getchar(void) {
-    while (UART_FR & UART_FR_RXFE);
-    return (int)(UART_DR & 0xFFu);
-}
-
-void uart_puts_raw(const char *s) {
+static void uart_puts_raw(const char *s) {
     while (*s) uart_putchar((unsigned char)*s++);
 }
 
@@ -34,13 +38,9 @@ long write(int fd, const void *buf, size_t count) {
 
 long read(int fd, void *buf, size_t count) {
     (void)fd;
-    unsigned char *p = (unsigned char *)buf;
-    for (size_t i = 0; i < count; i++) {
-        int c = uart_getchar();
-        p[i] = (unsigned char)c;
-        if (c == '\n' || c == '\r') return i + 1;
-    }
-    return count;
+    (void)buf;
+    (void)count;
+    return 0;
 }
 
 int puts(const char *s) {
@@ -55,12 +55,41 @@ int putchar(int c) {
 }
 
 int getchar(void) {
-    return uart_getchar();
+    return -1;
 }
 
-void debug_print(const char* msg) {
-    uart_puts_raw(msg);
-    uart_puts_raw("\r\n");
+int fgetc(void *stream) {
+    (void)stream;
+    return -1;
+}
+
+int ferror(void *stream) {
+    (void)stream;
+    return 0;
+}
+
+int fputs(const char *s, void *stream) {
+    (void)stream;
+    uart_puts_raw(s);
+    return 0;
+}
+
+int fputc(int c, void *stream) {
+    (void)stream;
+    uart_putchar(c);
+    return c;
+}
+
+unsigned long fwrite(const void *ptr, unsigned long size, unsigned long n, void *stream) {
+    (void)stream;
+    write(1, ptr, size * n);
+    return n;
+}
+
+unsigned long strnlen(const char *s, unsigned long maxlen) {
+    unsigned long i = 0;
+    while (i < maxlen && s[i]) i++;
+    return i;
 }
 
 static void reverse_str(char *str, int len) {

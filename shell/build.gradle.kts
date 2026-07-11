@@ -3,12 +3,12 @@ plugins {
 }
 
 kotlin {
-    linuxArm64()
+    linuxX64()
 
     sourceSets {
-        val linuxArm64Main by getting {
+        val linuxX64Main by getting {
             dependencies {
-                implementation(project(":hal"))
+                implementation(project(":kapi"))
             }
         }
     }

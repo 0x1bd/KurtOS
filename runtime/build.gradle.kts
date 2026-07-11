@@ -4,18 +4,6 @@ plugins {
     base
 }
 
-fun findCrossGcc(): String =
-    listOf("aarch64-linux-gnu-gcc", "aarch64-none-elf-gcc").firstOrNull { candidate ->
-        try {
-            ProcessBuilder("which", candidate)
-                .redirectErrorStream(true)
-                .start()
-                .waitFor() == 0
-        } catch (_: Exception) {
-            false
-        }
-    } ?: "aarch64-linux-gnu-gcc"
-
 val runtimeSrcDir = layout.projectDirectory.dir("src/main")
 val generatedAbiDir = layout.buildDirectory.dir("generated/abi")
 val objectsDir = layout.buildDirectory.dir("objects")
@@ -23,12 +11,22 @@ val objectsDir = layout.buildDirectory.dir("objects")
 val baseCFlags = listOf(
     "-ffreestanding",
     "-fno-stack-protector",
+    "-fno-stack-clash-protection",
+    "-fno-pic",
+    "-fno-pie",
+    "-mno-red-zone",
+    "-mcmodel=kernel",
     "-nostdlib",
     "-O2",
     "-Wall",
-    "-mcpu=cortex-a53",
-    "-mstrict-align",
 )
+
+val noSseFlags = listOf("-mno-80387", "-mno-mmx", "-mno-sse", "-mno-sse2")
+
+val sseFreeSources = setOf("boot.c", "isr.c")
+
+fun flagsFor(source: File): List<String> =
+    if (source.name in sseFreeSources) baseCFlags + noSseFlags else baseCFlags
 
 fun taskSuffix(source: File): String =
     source.relativeTo(runtimeSrcDir.asFile)
@@ -79,8 +77,8 @@ runtimeSrcDir.asFileTree.matching { include("**/*.c") }.files.sortedBy { it.inva
             output.parentFile.mkdirs()
         }
 
-        executable = findCrossGcc()
-        args(baseCFlags + listOf("-c", source.absolutePath, "-o", output.absolutePath))
+        executable = "gcc"
+        args(flagsFor(source) + listOf("-c", source.absolutePath, "-o", output.absolutePath))
     }
 }
 
@@ -97,8 +95,8 @@ runtimeSrcDir.asFileTree.matching { include("**/*.S") }.files.sortedBy { it.inva
             output.parentFile.mkdirs()
         }
 
-        executable = findCrossGcc()
-        args(baseCFlags + listOf("-nostdinc", "-c", source.absolutePath, "-o", output.absolutePath))
+        executable = "gcc"
+        args(baseCFlags + noSseFlags + listOf("-nostdinc", "-c", source.absolutePath, "-o", output.absolutePath))
     }
 }
 
@@ -117,7 +115,7 @@ val compileKotlinNativeStubs by tasks.registering(Exec::class) {
         output.get().asFile.parentFile.mkdirs()
     }
 
-    executable = findCrossGcc()
+    executable = "gcc"
     args(baseCFlags + listOf("-c", source.get().asFile.absolutePath, "-o", output.get().asFile.absolutePath))
 }
 

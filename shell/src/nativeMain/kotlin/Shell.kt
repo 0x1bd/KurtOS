@@ -1,6 +1,6 @@
 package shell
 
-import hal.UART
+import kapi.Console
 
 class ShellContext(val registry: CommandRegistry)
 
@@ -31,23 +31,22 @@ class CommandRegistry {
     }
 
     fun printHelp() {
-        UART.println("Commands:")
+        Console.println("Commands:")
         commands.forEach { command ->
-            UART.println("  ${command.name.padEnd(10)} - ${command.help}")
+            Console.println("  ${command.name.padEnd(12)} - ${command.help}")
         }
     }
 }
 
 object Shell {
-
     fun run(registry: CommandRegistry): Nothing {
         while (true) {
-            UART.print("KOS> ")
-            val command = UART.readLine()
+            Console.print("KOS> ")
+            val command = Console.readLine()
             if (!registry.dispatch(command)) {
                 val trimmed = command.trim()
                 if (trimmed.isNotEmpty()) {
-                    UART.println("Unknown command: $trimmed. Type 'help'.")
+                    Console.println("Unknown command: $trimmed. Type 'help'.")
                 }
             }
         }

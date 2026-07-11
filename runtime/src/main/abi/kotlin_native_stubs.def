@@ -27,6 +27,19 @@ int clock_gettime(int clk_id, void *tp): return_enosys
 unsigned int sleep(unsigned int seconds): abort
 int usleep(unsigned int usec): abort
 int getpagesize(void): return_pagesize
+int gettimeofday(void *tv, void *tz): return_enosys
+int getrusage(int who, void *usage): return_enosys
+int getpid(void): return1
+int sched_yield(void): return0
+char* getenv(const char *name): return_null
+int fcntl(int fd, int cmd, ...): return_enosys
+void* fdopen(int fd, const char *mode): return_null
+long readlink(const char *path, char *buf, unsigned long len): return_enosysL
+int pthread_setname_np(unsigned long thread, const char *name): return0
+int pthread_join(unsigned long thread, void **retval): return_enosys
+int pthread_cond_wait(void *cond, void *mutex): abort
+int pthread_cond_timedwait(void *cond, void *mutex, const void *abstime): abort
+int __lxstat(int ver, const char *path, void *buf): return_enosys
 
 int fflush(void *stream): return0
 int close(int fd): return_enosys
@@ -38,37 +51,44 @@ int dladdr(const void *addr, void *info): return0
 int* __errno_location(void): return_errno_location
 char* strerror(int errnum): return_unsupported_string
 
-void __cxa_rethrow(void): abort
-void __cxa_throw(void *e, void *t, void *d): abort
-void* __cxa_allocate_exception(size_t thrown_size): abort
 int __cxa_atexit(void (*f)(void *), void *p, void *d): return0
-void* __cxa_begin_catch(void *e): return_arg0
-void __cxa_end_catch(void): empty
 int __cxa_guard_acquire(int *g): return1
 void __cxa_guard_release(int *g): empty
-void __gxx_personality_v0(void): empty
 
 void __assert_fail(const char *assertion, const char *file, unsigned int line, const char *function): abort
 void __stack_chk_fail(void): abort
 long __getauxval(unsigned long type): return0
+void _ZSt21__glibcxx_assert_failPKciS0_S0_(const char *file, int line, const char *fn, const char *cond): abort
+
+# std::thread and std::system_error are reachable only from code paths a
+# single-threaded kernel never takes; they are referenced, never called.
+void _ZNSt6thread15_M_start_threadESt10unique_ptrINS_6_StateESt14default_deleteIS1_EEPFvvE(void *t, void *s, void *f): abort
+unsigned int _ZNSt6thread20hardware_concurrencyEv(void): return1
+void _ZNSt6thread4joinEv(void *t): abort
+void _ZNSt6thread6detachEv(void *t): empty
+void _ZNSt6thread6_StateD2Ev(void *s): empty
+void _ZNSt12system_errorD1Ev(void *e): empty
+void _ZNSt13runtime_errorC2ERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE(void *e, const void *what): empty
+void _ZNSt18condition_variable10notify_oneEv(void *cv): empty
+void* _ZNSt3_V215system_categoryEv(void): return_null
+void* _ZNSt3_V216generic_categoryEv(void): return_null
+long _ZNSt6chrono3_V212system_clock3nowEv(void): return0
 
 void _ZdlPv(void *p): free_arg0
 void _ZdlPvm(void *p, unsigned long s): free_arg0
 void* _Znwm(unsigned long s): return_malloc
-void _ZNSt9exceptionD1Ev(void): empty
-void _ZNSt9exceptionD2Ev(void): empty
-void _ZNSt15__exception_ptr13exception_ptrC1ERKS0_(void): empty
-void _ZNSt15__exception_ptr13exception_ptrD1Ev(void): empty
 void _ZNSt18condition_variable10notify_allEv(void): empty
 void _ZNSt18condition_variable4waitERSt11unique_lockISt5mutexE(void): abort
 void _ZNSt18condition_variableC1Ev(void): empty
 void _ZNSt18condition_variableD1Ev(void): empty
 void _ZNSt6chrono3_V212steady_clock3nowEv(void): abort
-void _ZSt13set_terminatePFvvE(void): empty
-void _ZSt17current_exceptionv(void): empty
-void _ZSt17rethrow_exceptionNSt15__exception_ptr13exception_ptrE(void): abort
-void _ZSt17__throw_bad_allocv(void): abort
-void _ZSt18_Rb_tree_incrementPKSt18_Rb_tree_node_base(void): abort
 void _ZSt20__throw_system_errori(int e): abort
 void _ZSt25__throw_bad_function_callv(void): abort
-void _ZSt9terminatev(void): abort
+
+# Needed by libsupc++ / libgcc_eh in a freestanding build.
+int _dl_find_object(void *pc, void *result): return_minus1
+char* secure_getenv(const char *name): return_null
+unsigned long __isoc23_strtoul(const char *s, char **end, int base): return0
+int __cxa_thread_atexit_impl(void (*f)(void *), void *obj, void *dso): return0
+void __cxa_pure_virtual(void): abort
+void _ZSt17__throw_bad_allocv(void): abort
