@@ -1,6 +1,8 @@
 package kernel
 
 import kapi.AudioBackend
+import kapi.GamepadBackend
+import kernel.drivers.usb.GamepadService
 import kernel.audio.AudioService
 import hal.BootInfo
 import hal.Clock
@@ -70,6 +72,20 @@ object KernelFiles : FilesBackend {
         FlxService.initialize()
         return FlxService.status()
     }
+}
+
+object KernelGamepad : GamepadBackend {
+    override fun available(): Boolean = GamepadService.available
+
+    override fun status(): String = GamepadService.status
+
+    override fun refresh() {
+        GamepadService.refresh()
+    }
+
+    override fun poll() = GamepadService.poll()
+
+    override fun isDown(button: Int): Boolean = GamepadService.isDown(button)
 }
 
 object KernelAudio : AudioBackend {

@@ -7,6 +7,8 @@ import kapi.Application
 import kapi.Audio
 import kapi.Console
 import kapi.Files
+import kapi.Gamepad
+import kapi.Pad
 import kapi.Graphics
 import kapi.Input
 import kapi.Keys
@@ -28,6 +30,11 @@ object GameBoyApplication : Application {
     private val keys = ushortArrayOf(
         Keys.RIGHT, Keys.LEFT, Keys.UP, Keys.DOWN,
         Keys.Z, Keys.X, Keys.BACKSPACE, Keys.ENTER,
+    )
+
+    private val pad = intArrayOf(
+        Pad.RIGHT, Pad.LEFT, Pad.UP, Pad.DOWN,
+        Pad.A, Pad.B, Pad.SELECT, Pad.START,
     )
 
     override fun run() {
@@ -101,11 +108,16 @@ object GameBoyApplication : Application {
         while (true) {
             Input.poll()
 
+            val padded = Gamepad.available()
+            if (padded) Gamepad.poll()
+
             val quit = Input.consumePress(Keys.ESC)
             if (quit || Input.isKeyDown(Keys.ESC)) break
+            if (padded && Gamepad.isDown(Pad.GUIDE)) break
 
             for (i in buttons.indices) {
-                console.joypad.setButton(buttons[i], Input.isKeyDown(keys[i]))
+                val down = Input.isKeyDown(keys[i]) || (padded && Gamepad.isDown(pad[i]))
+                console.joypad.setButton(buttons[i], down)
             }
 
             console.runFrame()
@@ -160,10 +172,23 @@ object GameBoyApplication : Application {
     }
 
     private fun releaseQuitKey() {
-        while (Input.isKeyDown(Keys.ESC)) {
+        while (true) {
             Input.poll()
-            Time.idle()
+            if (Gamepad.available()) Gamepad.poll()
+
+            if (Input.isKeyDown(Keys.ESC)) {
+                Time.idle()
+                continue
+            }
+
+            if (Gamepad.available() && Gamepad.isDown(Pad.GUIDE)) {
+                Time.idle()
+                continue
+            }
+
+            break
         }
+
         Input.drain()
     }
 

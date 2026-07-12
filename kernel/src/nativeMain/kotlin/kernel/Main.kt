@@ -12,6 +12,7 @@ import kernel.arch.Idt
 import kernel.arch.IoApic
 import kernel.arch.Pic
 import kernel.audio.AudioService
+import kernel.drivers.usb.GamepadService
 import kernel.console.SystemConsole
 import kernel.drivers.I8042
 import kernel.graphics.GraphicsService
@@ -46,11 +47,13 @@ fun main() {
         files = KernelFiles,
         system = KernelSystem,
         audio = KernelAudio,
+        gamepad = KernelGamepad,
     )
 
     startInterrupts()
 
     AudioService.initialize()
+    GamepadService.initialize()
 
     Console.println("KurtOS")
     Console.println(KernelSystem.memoryReport())
@@ -58,6 +61,7 @@ fun main() {
     Console.println("keyboard: ${KernelInput.status()}")
     Console.println("storage:  ${KernelFiles.status()}")
     Console.println("audio:    ${AudioService.status}")
+    Console.println("gamepad:  ${GamepadService.status}")
     Console.println("")
 
     val registry = CommandRegistry()

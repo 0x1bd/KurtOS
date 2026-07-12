@@ -1,12 +1,15 @@
 package gameboy.app
 
 import kapi.Console
+import kapi.Gamepad
+import kapi.Pad
 import kapi.Input
 import kapi.Keys
 import kapi.Time
 
 object Menu {
     private var selected = 0
+    private val padPrevious = BooleanArray(Pad.COUNT)
 
     fun choose(roms: List<Rom>, status: String?): Rom? {
         if (selected >= roms.size) selected = 0
@@ -46,10 +49,17 @@ object Menu {
     }
 
     private fun flush() {
+        Gamepad.refresh()
+
         Input.poll()
         Input.drain()
         while (Console.tryReadChar() != null) {
         }
+
+        if (!Gamepad.available()) return
+
+        Gamepad.poll()
+        for (button in 0 until Pad.COUNT) padPrevious[button] = Gamepad.isDown(button)
     }
 
     private fun label(code: UShort): Char =
@@ -61,6 +71,9 @@ object Menu {
 
             val key = pressedKey()
             if (key != NONE) return key
+
+            val pad = padKey()
+            if (pad != NONE) return pad
 
             val character = Console.tryReadChar()
             if (character != null) {
@@ -77,6 +90,31 @@ object Menu {
 
             Time.idle()
         }
+    }
+
+    private fun padKey(): Int {
+        if (!Gamepad.available()) return NONE
+        Gamepad.poll()
+
+        var key = NONE
+
+        for (button in 0 until Pad.COUNT) {
+            val down = Gamepad.isDown(button)
+
+            if (down && !padPrevious[button] && key == NONE) {
+                key = when (button) {
+                    Pad.UP -> UP
+                    Pad.DOWN -> DOWN
+                    Pad.A, Pad.START -> SELECT
+                    Pad.B, Pad.GUIDE -> QUIT
+                    else -> NONE
+                }
+            }
+
+            padPrevious[button] = down
+        }
+
+        return key
     }
 
     private fun pressedKey(): Int {

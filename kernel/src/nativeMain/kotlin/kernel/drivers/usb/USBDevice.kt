@@ -1,22 +1,30 @@
 package kernel.drivers.usb
 
 import hal.BootInfo
+import hal.Clock
 import hal.RawMemory
 import kernel.memory.PageAllocator
 import kernel.memory.Region
 
-class UsbEndpoint(val address: Int, val attributes: Int, val maxPacket: Int, val interval: Int) {
+class USBEndpoint(
+    val address: Int,
+    val attributes: Int,
+    val maxPacket: Int,
+    val interval: Int,
+    val owner: Int,
+) {
     val number: Int get() = address and 0x0F
     val isInput: Boolean get() = address and 0x80 != 0
     val isInterrupt: Boolean get() = attributes and 0x03 == 0x03
     val dci: Int get() = number * 2 + if (isInput) 1 else 0
 }
 
-class UsbDevice(
-    private val controller: Xhci,
+class USBDevice(
+    val controller: Xhci,
     val slot: Int,
     val port: Int,
     val speed: Int,
+    val psi: Int,
 ) {
     var vendorId = 0
         private set
@@ -35,15 +43,38 @@ class UsbDevice(
     var configuration = 1
         private set
 
-    var input: UsbEndpoint? = null
+    var input: USBEndpoint? = null
         private set
+
+    var output: USBEndpoint? = null
+        private set
+
+    val interfaces = mutableListOf<String>()
+    val endpoints = mutableListOf<USBEndpoint>()
+
+    var lastCompletion = 0
+        private set
+
+    var configureError = ""
+        private set
+
+    var configured = false
+        private set
+
+    var configBytes: ByteArray = ByteArray(0)
+        private set
+
+    private val siblings = mutableListOf<IntArray>()
 
     private var inputContext: Region? = null
     private var deviceContext: Region? = null
     private var buffer: Region? = null
+    private var inputBuffer: Region? = null
 
     private var controlRing: XhciRing? = null
     private var inputRing: XhciRing? = null
+    private var outputRing: XhciRing? = null
+    private var outputBuffer: Region? = null
 
     private var maxPacket = 8
 
@@ -62,11 +93,10 @@ class UsbDevice(
         buffer = data
         controlRing = ring
 
-        maxPacket = when (speed) {
-            SPEED_LOW -> 8
-            SPEED_FULL -> 8
-            SPEED_HIGH -> 64
-            else -> 512
+        maxPacket = when {
+            speed >= SPEED_SUPER -> 512
+            speed == SPEED_HIGH -> 64
+            else -> 8
         }
 
         RawMemory.write64(
@@ -108,9 +138,13 @@ class UsbDevice(
 
         val full = readDescriptor(DESCRIPTOR_CONFIGURATION, 0, total) ?: return false
         configuration = full[5].toInt() and 0xFF
+        configBytes = full
+
+        val settings = mutableListOf<IntArray>()
 
         var offset = 0
         var currentInterface = -1
+        var currentClass = -1
 
         while (offset + 2 <= full.size) {
             val length = full[offset].toInt() and 0xFF
@@ -118,60 +152,255 @@ class UsbDevice(
             if (length == 0) break
 
             if (type == DESCRIPTOR_INTERFACE && offset + 9 <= full.size) {
-                currentInterface = full[offset + 2].toInt() and 0xFF
+                val index = full[offset + 2].toInt() and 0xFF
+                val alternate = full[offset + 3].toInt() and 0xFF
 
-                if (input == null) {
-                    interfaceNumber = currentInterface
-                    interfaceClass = full[offset + 5].toInt() and 0xFF
-                    interfaceSubclass = full[offset + 6].toInt() and 0xFF
-                    interfaceProtocol = full[offset + 7].toInt() and 0xFF
+                val klass = full[offset + 5].toInt() and 0xFF
+                val subclass = full[offset + 6].toInt() and 0xFF
+                val protocol = full[offset + 7].toInt() and 0xFF
+
+                if (alternate == 0) {
+                    currentInterface = index
+                    currentClass = klass
+                    settings.add(intArrayOf(index, klass, subclass, protocol))
+                    siblings.add(intArrayOf(index, klass, subclass, protocol, 0))
+                    interfaces.add(
+                        "if $index class ${hex2(klass)}/${hex2(subclass)}/${hex2(protocol)}"
+                    )
+                } else {
+                    currentInterface = -1
+                    currentClass = -1
                 }
             }
 
-            if (type == DESCRIPTOR_ENDPOINT && offset + 7 <= full.size && input == null) {
-                val endpoint = UsbEndpoint(
-                    address = full[offset + 2].toInt() and 0xFF,
-                    attributes = full[offset + 3].toInt() and 0xFF,
-                    maxPacket = word(full, offset + 4) and 0x7FF,
-                    interval = full[offset + 6].toInt() and 0xFF,
-                )
+            if (type == DESCRIPTOR_HID && offset + 9 <= full.size &&
+                currentInterface >= 0 && currentClass == HID_CLASS
+            ) {
+                siblings.lastOrNull()?.set(4, word(full, offset + 7))
+            }
 
-                if (endpoint.isInterrupt && endpoint.isInput) input = endpoint
+            if (type == DESCRIPTOR_ENDPOINT && offset + 7 <= full.size && currentInterface >= 0) {
+                endpoints.add(
+                    USBEndpoint(
+                        address = full[offset + 2].toInt() and 0xFF,
+                        attributes = full[offset + 3].toInt() and 0xFF,
+                        maxPacket = word(full, offset + 4) and 0x7FF,
+                        interval = full[offset + 6].toInt() and 0xFF,
+                        owner = currentInterface,
+                    )
+                )
             }
 
             offset += length
         }
 
+        select(settings)
         return true
     }
 
+    private fun select(settings: List<IntArray>) {
+        var chosen = pick(settings) { it[1] == VENDOR_CLASS && it[2] == XINPUT_SUBCLASS }
+            ?: pick(settings) { it[1] == HID_CLASS }
+
+        if (chosen == null) {
+            chosen = endpoints.firstOrNull { it.isInterrupt && it.isInput }
+        }
+
+        val endpoint = chosen ?: return
+
+        input = endpoint
+        output = endpoints.firstOrNull {
+            it.isInterrupt && !it.isInput && it.owner == endpoint.owner
+        }
+
+        val setting = settings.firstOrNull { it[0] == endpoint.owner } ?: return
+
+        interfaceNumber = setting[0]
+        interfaceClass = setting[1]
+        interfaceSubclass = setting[2]
+        interfaceProtocol = setting[3]
+    }
+
+    private fun pick(settings: List<IntArray>, match: (IntArray) -> Boolean): USBEndpoint? {
+        for (setting in settings) {
+            if (!match(setting)) continue
+
+            val endpoint = endpoints.firstOrNull {
+                it.isInterrupt && it.isInput && it.owner == setting[0]
+            }
+            if (endpoint != null) return endpoint
+        }
+
+        return null
+    }
+
     fun configure(): Boolean {
-        val endpoint = input ?: return false
-        val ring = XhciRing.allocate(RING_ENTRIES, link = true) ?: return false
+        val endpoint = input ?: return fail("no interrupt in endpoint")
+
+        val ring = XhciRing.allocate(RING_ENTRIES, link = true) ?: return fail("no memory for transfer ring")
         inputRing = ring
+
+        val reports = PageAllocator.allocateBytes(256u) ?: return fail("no memory for report buffer")
+        reports.zero()
+        inputBuffer = reports
 
         val region = inputContext ?: return false
         region.zero()
 
-        writeInputControl(0x1u or (1u shl endpoint.dci))
-        writeSlotContext(endpoint.dci)
+        val sink = output
+        var add = 0x1u or (1u shl endpoint.dci)
+        var last = endpoint.dci
+
+        if (sink != null) {
+            val sinkRing = XhciRing.allocate(RING_ENTRIES, link = true) ?: return false
+            val sinkBuffer = PageAllocator.allocateBytes(64u) ?: return false
+            sinkBuffer.zero()
+
+            outputRing = sinkRing
+            outputBuffer = sinkBuffer
+
+            add = add or (1u shl sink.dci)
+            if (sink.dci > last) last = sink.dci
+        }
+
+        writeInputControl(add)
+        writeSlotContext(last)
         writeInterruptEndpoint(endpoint, ring)
+
+        val sinkRing = outputRing
+        if (sink != null && sinkRing != null) writeInterruptEndpoint(sink, sinkRing)
 
         val result = controller.submitCommand(
             BootInfo.toPhysical(region.address),
             0u,
             ((Xhci.TRB_CONFIGURE_ENDPOINT shl 10).toUInt()) or (slot.toUInt() shl 24),
-        ) ?: return false
+        ) ?: return fail("configure endpoint timed out")
 
-        if (completion(result) != SUCCESS) return false
+        val code = completion(result)
+        if (code != SUCCESS) return fail("configure endpoint code $code")
 
-        return control(0x00, REQUEST_SET_CONFIGURATION, configuration, 0, 0) != null
+        if (control(0x00, REQUEST_SET_CONFIGURATION, configuration, 0, 0) == null) {
+            return fail("set configuration failed")
+        }
+
+        if (interfaceClass == HID_CLASS) {
+            control(0x21, REQUEST_SET_IDLE, 0, interfaceNumber, 0)
+        }
+
+        configured = true
+        return true
+    }
+
+    private fun fail(reason: String): Boolean {
+        configureError = reason
+        return false
+    }
+
+    fun xinputStart(): ByteArray? = control(0xC1, REQUEST_XINPUT, 0x0100, 0, 20)
+
+    fun initSiblings() {
+        for (setting in siblings) {
+            val number = setting[0]
+            if (setting[1] != HID_CLASS) continue
+
+            control(0x21, REQUEST_SET_IDLE, 0, number, 0)
+
+            val length = setting[4]
+            if (length > 0) control(0x81, REQUEST_GET_DESCRIPTOR, DESCRIPTOR_HID_REPORT shl 8, number, length)
+
+            if (setting[2] == HID_BOOT_SUBCLASS) {
+                control(0x21, REQUEST_SET_REPORT, 0x0201, number, 2, byteArrayOf(0x01, 0x00))
+            }
+        }
+    }
+
+    private var pending: ULong = 0UL
+    private var armedAt: ULong = 0UL
+
+    fun rearm() {
+        pending = 0UL
+    }
+
+    fun send(data: ByteArray): Boolean {
+        val endpoint = output ?: return false
+        val ring = outputRing ?: return false
+        val region = outputBuffer ?: return false
+
+        for (i in data.indices) {
+            RawMemory.write8(region.address + i.toULong(), data[i].toUByte())
+        }
+
+        val trb = ring.enqueue(
+            BootInfo.toPhysical(region.address),
+            data.size.toUInt(),
+            (TRB_NORMAL shl 10).toUInt() or INTERRUPT_ON_COMPLETION,
+        )
+
+        controller.ringDoorbell(slot, endpoint.dci)
+
+        val status = controller.waitForEvent(trb, Xhci.TRANSFER_EVENT) ?: return false
+        lastCompletion = completion(status)
+
+        return lastCompletion == SUCCESS
+    }
+
+    fun submit(): Boolean {
+        val endpoint = input ?: return false
+        val ring = inputRing ?: return false
+        val data = inputBuffer ?: return false
+
+        if (pending != 0UL) {
+            if (Clock.uptimeMillis() - armedAt < REARM_MS) {
+                controller.ringDoorbell(slot, endpoint.dci)
+                return true
+            }
+
+            pending = 0UL
+        }
+
+        pending = ring.enqueue(
+            BootInfo.toPhysical(data.address),
+            endpoint.maxPacket.toUInt(),
+            (TRB_NORMAL shl 10).toUInt() or INTERRUPT_ON_COMPLETION or INTERRUPT_ON_SHORT,
+        )
+        armedAt = Clock.uptimeMillis()
+
+        controller.ringDoorbell(slot, endpoint.dci)
+        return true
+    }
+
+    fun complete(target: ByteArray): Int {
+        val endpoint = input ?: return -1
+        val data = inputBuffer ?: return -1
+        val ring = inputRing ?: return -1
+        if (pending == 0UL) return -1
+
+        val status = controller.tryEvent(pending, Xhci.TRANSFER_EVENT) ?: return -1
+        pending = 0UL
+
+        val code = completion(status)
+        lastCompletion = code
+
+        if (code != SUCCESS && code != SHORT_PACKET) {
+            recover(endpoint, ring)
+            return -1
+        }
+
+        val remaining = (status and 0xFFFFFFu).toInt()
+        val received = endpoint.maxPacket - remaining
+        val length = if (received < target.size) received else target.size
+
+        for (i in 0 until length) {
+            target[i] = RawMemory.read8(data.address + i.toULong()).toByte()
+        }
+
+        return length
     }
 
     fun poll(target: ByteArray): Int {
         val endpoint = input ?: return -1
         val ring = inputRing ?: return -1
-        val data = buffer ?: return -1
+        val data = inputBuffer ?: return -1
 
         val length = if (target.size < endpoint.maxPacket) target.size else endpoint.maxPacket
 
@@ -183,8 +412,14 @@ class UsbDevice(
 
         controller.ringDoorbell(slot, endpoint.dci)
 
-        val status = controller.waitForEvent(trb, Xhci.TRANSFER_EVENT) ?: return -1
+        val status = controller.waitForEvent(trb, Xhci.TRANSFER_EVENT)
+        if (status == null) {
+            lastCompletion = -1
+            return -1
+        }
+
         val code = completion(status)
+        lastCompletion = code
         if (code != SUCCESS && code != SHORT_PACKET) return -1
 
         val remaining = (status and 0xFFFFFFu).toInt()
@@ -195,6 +430,26 @@ class UsbDevice(
         }
 
         return received
+    }
+
+    private fun recover(endpoint: USBEndpoint, ring: XhciRing): Boolean {
+        val target = (slot.toUInt() shl 24) or (endpoint.dci.toUInt() shl 16)
+
+        val reset = controller.submitCommand(
+            0UL,
+            0u,
+            (Xhci.TRB_RESET_ENDPOINT shl 10).toUInt() or target,
+        ) ?: return false
+
+        if (completion(reset) != SUCCESS) return false
+
+        val dequeue = controller.submitCommand(
+            ring.dequeuePointer() or ring.cycle.toULong(),
+            0u,
+            (Xhci.TRB_SET_TR_DEQUEUE shl 10).toUInt() or target,
+        ) ?: return false
+
+        return completion(dequeue) == SUCCESS
     }
 
     private fun readDescriptor(type: Int, index: Int, length: Int): ByteArray? {
@@ -208,6 +463,7 @@ class UsbDevice(
         value: Int,
         index: Int,
         length: Int,
+        payload: ByteArray? = null,
     ): ByteArray? {
         val ring = controlRing ?: return null
         val data = buffer ?: return null
@@ -220,6 +476,12 @@ class UsbDevice(
 
         val inbound = requestType and 0x80 != 0
         val transferType = if (length == 0) 0 else if (inbound) 3 else 2
+
+        if (payload != null) {
+            for (i in payload.indices) {
+                RawMemory.write8(data.address + i.toULong(), payload[i].toUByte())
+            }
+        }
 
         ring.enqueue(
             setup,
@@ -239,7 +501,7 @@ class UsbDevice(
             0UL,
             0u,
             (TRB_STATUS shl 10).toUInt() or INTERRUPT_ON_COMPLETION or
-                (if (inbound || length == 0) 0u else DIRECTION_IN),
+                (if (length > 0 && inbound) 0u else DIRECTION_IN),
         )
 
         controller.ringDoorbell(slot, 1)
@@ -283,7 +545,7 @@ class UsbDevice(
         val region = inputContext ?: return
         val slotContext = region.address + controller.contextBytes.toULong()
 
-        RawMemory.write32(slotContext, (speed.toUInt() shl 20) or (lastEndpoint.toUInt() shl 27))
+        RawMemory.write32(slotContext, (psi.toUInt() shl 20) or (lastEndpoint.toUInt() shl 27))
         RawMemory.write32(slotContext + 4UL, port.toUInt() shl 16)
         RawMemory.write32(slotContext + 8UL, 0u)
         RawMemory.write32(slotContext + 12UL, 0u)
@@ -302,21 +564,27 @@ class UsbDevice(
         RawMemory.write32(endpoint + 16UL, 8u)
     }
 
-    private fun writeInterruptEndpoint(endpoint: UsbEndpoint, ring: XhciRing) {
+    private fun writeInterruptEndpoint(endpoint: USBEndpoint, ring: XhciRing) {
         val region = inputContext ?: return
         val context = region.address + (controller.contextBytes * (endpoint.dci + 1)).toULong()
+
+        val type = if (endpoint.isInput) ENDPOINT_INTERRUPT_IN else ENDPOINT_INTERRUPT_OUT
+        val payload = endpoint.maxPacket
 
         RawMemory.write32(context, intervalFor(endpoint).toUInt() shl 16)
         RawMemory.write32(
             context + 4UL,
-            (3u shl 1) or (ENDPOINT_INTERRUPT_IN.toUInt() shl 3) or (endpoint.maxPacket.toUInt() shl 16),
+            (3u shl 1) or (type.toUInt() shl 3) or (endpoint.maxPacket.toUInt() shl 16),
         )
         RawMemory.write64(context + 8UL, ring.physical or 1UL)
-        RawMemory.write32(context + 16UL, endpoint.maxPacket.toUInt())
+        RawMemory.write32(
+            context + 16UL,
+            endpoint.maxPacket.toUInt() or ((payload.toUInt() and 0xFFFFu) shl 16),
+        )
     }
 
-    private fun intervalFor(endpoint: UsbEndpoint): Int {
-        if (speed == SPEED_HIGH || speed == SPEED_SUPER) {
+    private fun intervalFor(endpoint: USBEndpoint): Int {
+        if (speed >= SPEED_HIGH) {
             val value = endpoint.interval - 1
             return if (value < 0) 0 else if (value > 15) 15 else value
         }
@@ -331,6 +599,8 @@ class UsbDevice(
     }
 
     private fun completion(status: UInt): Int = ((status shr 24) and 0xFFu).toInt()
+
+    private fun hex2(value: Int): String = value.toString(16).padStart(2, '0')
 
     private fun word(data: ByteArray, offset: Int): Int {
         if (offset + 1 >= data.size) return 0
@@ -352,6 +622,7 @@ class UsbDevice(
         private const val TRB_STATUS = 4
 
         private const val ENDPOINT_CONTROL = 4
+        private const val ENDPOINT_INTERRUPT_OUT = 3
         private const val ENDPOINT_INTERRUPT_IN = 7
 
         private const val IMMEDIATE_DATA = 0x40u
@@ -363,10 +634,22 @@ class UsbDevice(
         private const val DESCRIPTOR_CONFIGURATION = 2
         private const val DESCRIPTOR_INTERFACE = 4
         private const val DESCRIPTOR_ENDPOINT = 5
+        private const val DESCRIPTOR_HID = 0x21
+        private const val DESCRIPTOR_HID_REPORT = 0x22
 
         private const val REQUEST_GET_DESCRIPTOR = 6
         private const val REQUEST_SET_CONFIGURATION = 9
+        private const val REQUEST_SET_IDLE = 0x0A
+        private const val REQUEST_SET_REPORT = 0x09
+        private const val REQUEST_XINPUT = 0x01
+
+        private const val HID_BOOT_SUBCLASS = 0x01
+
+        const val VENDOR_CLASS = 0xFF
+        const val XINPUT_SUBCLASS = 0x5D
+        const val HID_CLASS = 0x03
 
         private const val RING_ENTRIES = 64
+        private const val REARM_MS = 250UL
     }
 }

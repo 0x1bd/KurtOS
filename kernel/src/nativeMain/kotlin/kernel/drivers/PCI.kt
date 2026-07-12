@@ -69,6 +69,11 @@ object Pci {
         return devices.firstOrNull { it.classCode == classCode && it.subclass == subclass }
     }
 
+    fun findAll(classCode: Int, subclass: Int): List<PciDevice> {
+        scan()
+        return devices.filter { it.classCode == classCode && it.subclass == subclass }
+    }
+
     private fun scan() {
         if (scanned) return
         scanned = true

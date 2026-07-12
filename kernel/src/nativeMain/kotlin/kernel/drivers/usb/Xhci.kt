@@ -19,6 +19,9 @@ class Xhci(private val device: PciDevice) {
     private var slots = 0
     private var ports = 0
 
+    private var portMajor = IntArray(0)
+    private var portSpeeds = Array(0) { IntArray(SPEED_IDS) }
+
     var contextBytes = 32
         private set
 
@@ -27,6 +30,12 @@ class Xhci(private val device: PciDevice) {
 
     private var commands: XhciRing? = null
     private var events: XhciEventRing? = null
+
+    private val parkedTrb = ULongArray(PARKED_EVENTS)
+    private val parkedStatus = UIntArray(PARKED_EVENTS)
+    private val parkedControl = UIntArray(PARKED_EVENTS)
+    private val parkedType = IntArray(PARKED_EVENTS)
+    private var parkedCount = 0
 
     var status: String = "not initialized"
         private set
@@ -38,7 +47,16 @@ class Xhci(private val device: PciDevice) {
 
     fun lastSlot(): Int = ((lastEventControl shr 24) and 0xFFu).toInt()
 
-    fun portSpeed(port: Int): Int = ((read32(portRegister(port)) shr 10) and 0xFu).toInt()
+    fun portSpeed(port: Int): Int {
+        val psi = rawPortSpeed(port)
+        if (port < 1 || port >= portSpeeds.size) return SPEED_FULL
+        if (psi < 0 || psi >= SPEED_IDS) return SPEED_FULL
+
+        val speed = portSpeeds[port][psi]
+        if (speed != 0) return speed
+
+        return if (protocolOf(port) >= 3) SPEED_SUPER else SPEED_FULL
+    }
 
     fun initialize(): Boolean {
         val bar = device.bar(0)
@@ -72,6 +90,10 @@ class Xhci(private val device: PciDevice) {
         runtime = base + (RawMemory.read32(base + RTSOFF) and 0xFFFFFFE0u).toULong()
         doorbells = base + (RawMemory.read32(base + DBOFF) and 0xFFFFFFFCu).toULong()
 
+        portMajor = IntArray(ports + 1)
+        portSpeeds = Array(ports + 1) { defaultSpeeds() }
+        parseProtocols(capability1)
+
         takeOwnership(capability1)
 
         if (!reset()) {
@@ -89,6 +111,89 @@ class Xhci(private val device: PciDevice) {
         status = "xhci $slots slots, $ports ports, ${contextBytes}-byte contexts"
         return true
     }
+
+    private fun parseProtocols(capability1: UInt) {
+        var offset = ((capability1 shr 16) and 0xFFFFu).toInt() * 4
+        var guard = 0
+
+        while (offset != 0 && guard < 64) {
+            guard++
+
+            val header = RawMemory.read32(base + offset.toULong())
+            val id = (header and 0xFFu).toInt()
+
+            if (id == CAPABILITY_PROTOCOL) {
+                val major = ((header shr 24) and 0xFFu).toInt()
+                val layout = RawMemory.read32(base + offset.toULong() + 8UL)
+
+                val first = (layout and 0xFFu).toInt()
+                val count = ((layout shr 8) and 0xFFu).toInt()
+                val defined = ((layout shr 28) and 0xFu).toInt()
+
+                val table = speedTable(offset, defined)
+
+                for (i in 0 until count) {
+                    val port = first + i
+                    if (port !in 1..ports) continue
+
+                    portMajor[port] = major
+                    portSpeeds[port] = table
+                }
+            }
+
+            val next = ((header shr 8) and 0xFFu).toInt() * 4
+            if (next == 0) return
+            offset += next
+        }
+    }
+
+    private fun speedTable(offset: Int, defined: Int): IntArray {
+        if (defined == 0) return defaultSpeeds()
+
+        val table = IntArray(SPEED_IDS)
+
+        for (i in 0 until defined) {
+            val entry = RawMemory.read32(base + offset.toULong() + 0x10UL + (i * 4).toULong())
+
+            val id = (entry and 0xFu).toInt()
+            val exponent = ((entry shr 4) and 0x3u).toInt()
+            val mantissa = ((entry shr 16) and 0xFFFFu).toLong()
+
+            var rate = mantissa
+            for (step in 0 until exponent) rate *= 1000L
+
+            table[id] = speedOf(rate)
+        }
+
+        return table
+    }
+
+    private fun speedOf(rate: Long): Int = when {
+        rate >= 8_000_000_000L -> SPEED_SUPER_PLUS
+        rate >= 4_000_000_000L -> SPEED_SUPER
+        rate >= 400_000_000L -> SPEED_HIGH
+        rate >= 10_000_000L -> SPEED_FULL
+        rate > 0L -> SPEED_LOW
+        else -> 0
+    }
+
+    private fun defaultSpeeds(): IntArray {
+        val table = IntArray(SPEED_IDS)
+
+        table[1] = SPEED_FULL
+        table[2] = SPEED_LOW
+        table[3] = SPEED_HIGH
+        table[4] = SPEED_SUPER
+
+        return table
+    }
+
+    fun protocolOf(port: Int): Int {
+        if (port < 1 || port >= portMajor.size) return 0
+        return portMajor[port]
+    }
+
+    fun rawPortSpeed(port: Int): Int = ((read32(portRegister(port)) shr 10) and 0xFu).toInt()
 
     private fun takeOwnership(capability1: UInt) {
         var offset = ((capability1 shr 16) and 0xFFFFu).toInt() * 4
@@ -191,6 +296,9 @@ class Xhci(private val device: PciDevice) {
     private fun start() {
         write32(operational + USBCMD, read32(operational + USBCMD) or RUN)
         waitFor { read32(operational + USBSTS) and HALTED == 0u }
+
+        powerPorts()
+        Clock.sleepMillis(CONNECT_SETTLE_MS)
     }
 
     fun portRegister(port: Int): ULong = operational + PORTSC + ((port - 1) * 0x10).toULong()
@@ -212,6 +320,24 @@ class Xhci(private val device: PciDevice) {
         }
 
         return result
+    }
+
+    fun portStatus(port: Int): UInt = read32(portRegister(port))
+
+    fun connectChanged(port: Int): Boolean =
+        read32(portRegister(port)) and PORT_CONNECT_CHANGE != 0u
+
+    fun powerPorts() {
+        for (port in 1..ports) {
+            val register = portRegister(port)
+            val value = read32(register)
+
+            if (value and PORT_POWER == 0u) {
+                write32(register, (value and PORT_WRITE_MASK) or PORT_POWER)
+            }
+        }
+
+        Clock.sleepMillis(POWER_SETTLE_MS)
     }
 
     fun resetPort(port: Int): Boolean {
@@ -252,25 +378,81 @@ class Xhci(private val device: PciDevice) {
     }
 
     fun waitForEvent(trb: ULong, type: Int): UInt? {
-        val ring = events ?: return null
         val deadline = Clock.uptimeMillis() + EVENT_MS
 
-        while (Clock.uptimeMillis() < deadline) {
-            if (!ring.pending()) continue
+        while (true) {
+            val status = pump(trb, type)
+            if (status != null) return status
+            if (Clock.uptimeMillis() >= deadline) return null
+        }
+    }
 
+    fun tryEvent(trb: ULong, type: Int): UInt? = pump(trb, type)
+
+    private fun pump(trb: ULong, type: Int): UInt? {
+        val parked = takeParked(trb, type)
+        if (parked != null) return parked
+
+        val ring = events ?: return null
+
+        while (ring.pending()) {
             val parameter = ring.parameter()
             val status = ring.status()
             val control = ring.control()
 
-            val eventType = ((control shr 10) and 0x3Fu).toInt()
-
             ring.advance()
             RawMemory.write64(runtime + INTERRUPTER + ERDP, ring.dequeuePointer() or EVENT_BUSY)
+
+            val eventType = ((control shr 10) and 0x3Fu).toInt()
 
             if (eventType == type && (trb == 0UL || parameter == trb)) {
                 lastEventControl = control
                 return status
             }
+
+            park(parameter, status, control, eventType)
+        }
+
+        return null
+    }
+
+    private fun park(parameter: ULong, status: UInt, control: UInt, type: Int) {
+        if (type != TRANSFER_EVENT && type != COMMAND_COMPLETION) return
+
+        if (parkedCount == PARKED_EVENTS) {
+            for (i in 0 until PARKED_EVENTS - 1) {
+                parkedTrb[i] = parkedTrb[i + 1]
+                parkedStatus[i] = parkedStatus[i + 1]
+                parkedControl[i] = parkedControl[i + 1]
+                parkedType[i] = parkedType[i + 1]
+            }
+            parkedCount--
+        }
+
+        parkedTrb[parkedCount] = parameter
+        parkedStatus[parkedCount] = status
+        parkedControl[parkedCount] = control
+        parkedType[parkedCount] = type
+        parkedCount++
+    }
+
+    private fun takeParked(trb: ULong, type: Int): UInt? {
+        for (i in 0 until parkedCount) {
+            if (parkedType[i] != type) continue
+            if (trb != 0UL && parkedTrb[i] != trb) continue
+
+            val status = parkedStatus[i]
+            lastEventControl = parkedControl[i]
+
+            for (j in i until parkedCount - 1) {
+                parkedTrb[j] = parkedTrb[j + 1]
+                parkedStatus[j] = parkedStatus[j + 1]
+                parkedControl[j] = parkedControl[j + 1]
+                parkedType[j] = parkedType[j + 1]
+            }
+            parkedCount--
+
+            return status
         }
 
         return null
@@ -278,6 +460,8 @@ class Xhci(private val device: PciDevice) {
 
     fun drainEvents() {
         val ring = events ?: return
+
+        parkedCount = 0
 
         while (ring.pending()) {
             ring.advance()
@@ -307,6 +491,8 @@ class Xhci(private val device: PciDevice) {
         const val TRB_ENABLE_SLOT = 9
         const val TRB_ADDRESS_DEVICE = 11
         const val TRB_CONFIGURE_ENDPOINT = 12
+        const val TRB_RESET_ENDPOINT = 14
+        const val TRB_SET_TR_DEQUEUE = 16
 
         private const val REGISTER_BYTES = 0x2000UL
 
@@ -337,16 +523,30 @@ class Xhci(private val device: PciDevice) {
         private const val PORT_ENABLED = 0x2u
         private const val PORT_RESET = 0x10u
         private const val PORT_RESET_CHANGE = 0x200000u
+        private const val PORT_CONNECT_CHANGE = 0x20000u
         private const val PORT_CHANGE_MASK = 0x00FE0000u
+        private const val PORT_POWER = 0x200u
         private const val PORT_WRITE_MASK = 0x0E00C3E0u
+        private const val POWER_SETTLE_MS = 100UL
+        private const val CONNECT_SETTLE_MS = 150UL
+
+        const val SPEED_FULL = 1
+        const val SPEED_LOW = 2
+        const val SPEED_HIGH = 3
+        const val SPEED_SUPER = 4
+        const val SPEED_SUPER_PLUS = 5
+
+        private const val SPEED_IDS = 16
 
         private const val CAPABILITY_LEGACY = 1
+        private const val CAPABILITY_PROTOCOL = 2
         private const val BIOS_OWNED = 0x10000u
         private const val OS_OWNED = 0x1000000u
 
         private const val EVENT_BUSY = 0x8UL
 
         private const val RING_ENTRIES = 256
+        private const val PARKED_EVENTS = 16
         private const val TIMEOUT_MS = 500UL
         private const val HANDOFF_MS = 1000UL
         private const val RESET_MS = 500UL

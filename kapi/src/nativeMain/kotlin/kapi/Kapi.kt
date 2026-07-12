@@ -65,6 +65,14 @@ interface SystemBackend {
     fun collectGarbage()
 }
 
+interface GamepadBackend {
+    fun available(): Boolean
+    fun status(): String
+    fun refresh()
+    fun poll()
+    fun isDown(button: Int): Boolean
+}
+
 interface AudioBackend {
     fun status(): String
     fun available(): Boolean
@@ -138,6 +146,16 @@ object Sys {
     fun collectGarbage() = backend?.collectGarbage() ?: Unit
 }
 
+object Gamepad {
+    internal var backend: GamepadBackend? = null
+
+    fun available(): Boolean = backend?.available() ?: false
+    fun status(): String = backend?.status() ?: "unavailable"
+    fun refresh() = backend?.refresh() ?: Unit
+    fun poll() = backend?.poll() ?: Unit
+    fun isDown(button: Int): Boolean = backend?.isDown(button) ?: false
+}
+
 object Audio {
     internal var backend: AudioBackend? = null
 
@@ -164,6 +182,7 @@ object KapiRuntime {
         files: FilesBackend,
         system: SystemBackend,
         audio: AudioBackend,
+        gamepad: GamepadBackend,
     ) {
         Console.backend = console
         Graphics.backend = graphics
@@ -172,5 +191,6 @@ object KapiRuntime {
         Files.backend = files
         Sys.backend = system
         Audio.backend = audio
+        Gamepad.backend = gamepad
     }
 }

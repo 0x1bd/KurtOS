@@ -9,6 +9,8 @@ import kapi.FileKind
 import kapi.Files
 import kapi.Graphics
 import kapi.Input
+import kapi.Keys
+import kapi.Pad
 import kapi.Sys
 import kapi.Time
 import kernel.arch.Acpi
@@ -16,6 +18,7 @@ import kernel.arch.Apic
 import kernel.audio.AudioService
 import kapi.Audio
 import kernel.drivers.Pci
+import kernel.drivers.usb.GamepadService
 import kernel.drivers.usb.USBService
 import kernel.drivers.Keyboard
 import kernel.drivers.KeyboardLayout
@@ -146,9 +149,55 @@ object KernelShell {
             Console.println("volume: ${volumeText()}")
         }
 
-        registry.register("usb", "list usb controller and ports") {
+        registry.register("usb", "list usb devices; 'usb <n>' details; 'usb rescan'") { args ->
             USBService.initialize()
+
+            val argument = args.getOrNull(0)
+
+            if (argument == "rescan") {
+                Console.println("rescanning...")
+                GamepadService.rescan()
+            }
+
+            val index = argument?.toIntOrNull()
+            if (index != null) {
+                USBService.detail(index).forEach { Console.println(it) }
+                return@register
+            }
+
             USBService.describe().forEach { Console.println(it) }
+            Console.println("gamepad: ${GamepadService.summary()}")
+        }
+
+        registry.register("gamepad", "show live gamepad button state") {
+            GamepadService.initialize()
+            GamepadService.refresh()
+            Console.println(GamepadService.summary())
+
+            if (!GamepadService.available) return@register
+
+            Console.println(GamepadService.descriptor())
+            Console.println("press buttons; esc to stop")
+            Input.drain()
+
+            val previous = BooleanArray(Pad.COUNT)
+
+            while (true) {
+                Input.poll()
+                if (Input.consumePress(Keys.ESC)) break
+
+                GamepadService.poll()
+
+                var changed = false
+                for (button in 0 until Pad.COUNT) {
+                    val down = GamepadService.isDown(button)
+                    if (down != previous[button]) changed = true
+                    previous[button] = down
+                }
+
+                if (changed) Console.println("  -> " + padState(previous))
+                Time.idle()
+            }
         }
 
         registry.register("usbpoll", "poll a usb device's interrupt endpoint") { args ->
@@ -163,20 +212,39 @@ object KernelShell {
 
             Console.println("polling device $index for $millis ms")
 
+            var failures = 0
+            var lastCode = 0
+
             while (Time.uptimeMillis() < deadline) {
                 val length = USBService.report(index, buffer)
-                if (length <= 0) continue
 
-                var empty = true
-                for (i in 0 until length) if (buffer[i].toInt() != 0) empty = false
-                if (empty) continue
+                if (length <= 0) {
+                    failures++
+                    lastCode = USBService.lastCompletion(index)
+                    continue
+                }
 
                 Console.println("  " + bytes(buffer, length))
                 reports++
                 if (reports >= 12) break
             }
 
-            Console.println("$reports reports")
+            Console.println("$reports reports, $failures empty (last completion code $lastCode)")
+        }
+
+        registry.register("usbdesc", "dump a usb device's raw configuration descriptor") { args ->
+            USBService.initialize()
+
+            val index = args.getOrNull(0)?.toIntOrNull() ?: 0
+            val descriptor = USBService.configurationOf(index)
+
+            if (descriptor.isEmpty()) {
+                Console.println("no configuration descriptor for device $index")
+                return@register
+            }
+
+            Console.println("device $index: ${descriptor.size} bytes")
+            dump(descriptor)
         }
 
         registry.register("hdainfo", "dump the audio codec widget graph") {
@@ -221,6 +289,33 @@ object KernelShell {
                 "de" -> Console.println("${100 / zero()}")
                 else -> Console.println("usage: crash <pf|de>")
             }
+        }
+    }
+
+    private fun padState(buttons: BooleanArray): String {
+        val builder = StringBuilder()
+
+        for (button in 0 until Pad.COUNT) {
+            if (!buttons[button]) continue
+            if (builder.isNotEmpty()) builder.append(' ')
+            builder.append(PAD_NAMES[button])
+        }
+
+        return if (builder.isEmpty()) "(none)" else builder.toString()
+    }
+
+    private val PAD_NAMES = arrayOf(
+        "up", "down", "left", "right", "A", "B", "X", "Y",
+        "start", "select", "L", "R", "guide",
+    )
+
+    private fun dump(data: ByteArray) {
+        var offset = 0
+        while (offset < data.size) {
+            val end = if (offset + 16 < data.size) offset + 16 else data.size
+            val chunk = data.copyOfRange(offset, end)
+            Console.println("  " + bytes(chunk, chunk.size))
+            offset = end
         }
     }
 
