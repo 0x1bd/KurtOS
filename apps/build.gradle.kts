@@ -11,6 +11,7 @@ kotlin {
                 implementation(project(":kapi"))
                 implementation(project(":shell"))
                 implementation(project(":gameboy"))
+                implementation(project(":gba"))
             }
         }
     }

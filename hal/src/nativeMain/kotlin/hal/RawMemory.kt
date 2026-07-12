@@ -1,6 +1,7 @@
 package hal
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import mmio.raw_blit_high
 import mmio.raw_blit_indexed
 import mmio.raw_copy
 import mmio.raw_fill32
@@ -47,6 +48,24 @@ object RawMemory {
         palette: ULong,
         scale: UInt,
     ) = raw_blit_indexed(
+        destination,
+        destinationStride.toULong(),
+        source,
+        sourceWidth,
+        sourceHeight,
+        palette,
+        scale,
+    )
+
+    fun blitHigh(
+        destination: ULong,
+        destinationStride: UInt,
+        source: ULong,
+        sourceWidth: UInt,
+        sourceHeight: UInt,
+        palette: ULong,
+        scale: UInt,
+    ) = raw_blit_high(
         destination,
         destinationStride.toULong(),
         source,

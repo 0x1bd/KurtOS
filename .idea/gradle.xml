@@ -10,6 +10,7 @@
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/apps" />
             <option value="$PROJECT_DIR$/gameboy" />
+            <option value="$PROJECT_DIR$/gba" />
             <option value="$PROJECT_DIR$/hal" />
             <option value="$PROJECT_DIR$/kapi" />
             <option value="$PROJECT_DIR$/kernel" />

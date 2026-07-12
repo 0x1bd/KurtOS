@@ -148,6 +148,24 @@ static inline void raw_blit_indexed(uint64_t dst, uint64_t dst_stride, uint64_t 
     }
 }
 
+static inline void raw_blit_high(uint64_t dst, uint64_t dst_stride, uint64_t src,
+                                 uint32_t src_w, uint32_t src_h,
+                                 uint64_t palette, uint32_t scale) {
+    const uint16_t *pixels = (const uint16_t*)src;
+    const uint32_t *colors = (const uint32_t*)palette;
+
+    for (uint32_t y = 0; y < src_h; y++) {
+        const uint16_t *row = pixels + (uint64_t)y * src_w;
+        for (uint32_t sy = 0; sy < scale; sy++) {
+            uint32_t *out = (uint32_t*)(dst + ((uint64_t)y * scale + sy) * dst_stride);
+            for (uint32_t x = 0; x < src_w; x++) {
+                uint32_t color = colors[row[x] & 0x7FFF];
+                for (uint32_t sx = 0; sx < scale; sx++) *out++ = color;
+            }
+        }
+    }
+}
+
 static inline void raw_zero(uint64_t addr, uint64_t bytes) {
     __builtin_memset((void*)addr, 0, bytes);
 }

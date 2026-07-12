@@ -4,10 +4,12 @@ import hal.Arch
 import kapi.KeyEvent
 import kapi.Keys
 import kernel.audio.AudioService
+import kernel.ui.OSD
+import kernel.ui.SystemSounds
 
 object Keyboard {
     private const val MAX_KEYCODE = 256
-    private const val VOLUME_STEP = 5
+    private const val VOLUME_STEP = 10
 
     private val down = BooleanArray(MAX_KEYCODE)
     private val pressed = BooleanArray(MAX_KEYCODE)
@@ -95,7 +97,11 @@ object Keyboard {
             Keys.F5.toInt() -> AudioService.toggleMuted()
             Keys.F6.toInt() -> AudioService.adjustVolume(-VOLUME_STEP)
             Keys.F7.toInt() -> AudioService.adjustVolume(VOLUME_STEP)
+            else -> return
         }
+
+        SystemSounds.play(SystemSounds.Clip.Blip)
+        OSD.showVolume()
     }
 
     private fun extendedKeycode(make: Int): Int = when (make) {
@@ -104,6 +110,9 @@ object Keyboard {
         0x4D -> Keys.RIGHT.toInt()
         0x50 -> Keys.DOWN.toInt()
         0x1C -> Keys.ENTER.toInt()
+        0x20 -> Keys.F5.toInt()
+        0x2E -> Keys.F6.toInt()
+        0x30 -> Keys.F7.toInt()
         0x38 -> 100
         0x1D -> 97
         else -> 0

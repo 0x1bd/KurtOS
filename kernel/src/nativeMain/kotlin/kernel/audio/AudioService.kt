@@ -11,7 +11,7 @@ object AudioService {
     private var playing = false
     private var muted = false
 
-    private var level = 60
+    private var level = 50
 
     var status: String = "not initialized"
         private set
@@ -20,6 +20,8 @@ object AudioService {
     val channels: Int get() = HDAController.CHANNELS
 
     val available: Boolean get() = controller != null
+
+    val streaming: Boolean get() = playing
 
     fun initialize(): Boolean {
         if (controller != null) return true
@@ -62,6 +64,7 @@ object AudioService {
 
     fun open(): Boolean {
         val hda = controller ?: return false
+        kernel.ui.SystemSounds.surrender()
         if (playing) return true
 
         silence()
@@ -88,6 +91,14 @@ object AudioService {
         return freeBytes(hda) / HDAController.BYTES_PER_FRAME
     }
 
+    fun queuedFrames(): Int {
+        val hda = controller ?: return 0
+        if (!playing) return 0
+
+        val capacity = (HDAController.BUFFER_BYTES - GUARD_BYTES) / HDAController.BYTES_PER_FRAME
+        return capacity - freeBytes(hda) / HDAController.BYTES_PER_FRAME
+    }
+
     fun write(samples: ShortArray, frames: Int): Int {
         val hda = controller ?: return 0
         if (!playing || frames <= 0) return 0
@@ -102,11 +113,13 @@ object AudioService {
         var index = 0
 
         for (frame in 0 until count) {
-            RawMemory.write16(base + offset.toULong(), scale(samples[index]))
+            val overlay = kernel.ui.SystemSounds.nextMixSample()
+
+            RawMemory.write16(base + offset.toULong(), scale(samples[index], overlay))
             offset = (offset + 2) % capacity
             index++
 
-            RawMemory.write16(base + offset.toULong(), scale(samples[index]))
+            RawMemory.write16(base + offset.toULong(), scale(samples[index], overlay))
             offset = (offset + 2) % capacity
             index++
         }
@@ -126,10 +139,11 @@ object AudioService {
         return if (free < 0) 0 else free
     }
 
-    private fun scale(sample: Short): UShort {
+    private fun scale(sample: Short, overlay: Int = 0): UShort {
         if (muted) return 0u
 
-        val value = sample.toInt() * level / 100
+        val mixed = (sample.toInt() + overlay).coerceIn(-32768, 32767)
+        val value = mixed * level / (100 * MASTER_DIVISOR)
         return value.toShort().toUShort()
     }
 
@@ -185,6 +199,7 @@ object AudioService {
     private const val CLASS_MULTIMEDIA = 0x04
     private const val SUBCLASS_HD_AUDIO = 0x03
 
+    private const val MASTER_DIVISOR = 10
     private const val GUARD_BYTES = 256
     private const val BLOCK_FRAMES = 512
     private const val AMPLITUDE: Short = 8000

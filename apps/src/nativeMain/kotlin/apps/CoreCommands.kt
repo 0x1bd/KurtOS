@@ -3,6 +3,7 @@ package apps
 import kapi.Console
 import kapi.Sys
 import shell.CommandRegistry
+import shell.Shell
 
 object CoreCommands {
     fun install(registry: CommandRegistry) {
@@ -20,6 +21,9 @@ object CoreCommands {
         }
         registry.register("clear", "clear the screen") {
             Console.clear()
+        }
+        registry.register("exit", "leave the terminal", "quit") {
+            Shell.requestExit()
         }
         registry.register("halt", "halt the system") {
             Console.println("Halting.")

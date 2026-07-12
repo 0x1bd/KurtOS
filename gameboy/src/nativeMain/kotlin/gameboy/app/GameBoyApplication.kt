@@ -53,7 +53,7 @@ object GameBoyApplication : Application {
         var status: String? = null
 
         while (true) {
-            val rom = Menu.choose(library, status) ?: return
+            val rom = RomMenu.choose(surface, library, status) ?: return
             status = play(surface, rom)
             Sys.collectGarbage()
         }

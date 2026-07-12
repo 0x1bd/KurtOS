@@ -40,8 +40,16 @@ class CommandRegistry {
 }
 
 object Shell {
-    fun run(registry: CommandRegistry): Nothing {
-        while (true) {
+    private var exitRequested = false
+
+    fun requestExit() {
+        exitRequested = true
+    }
+
+    fun run(registry: CommandRegistry) {
+        exitRequested = false
+
+        while (!exitRequested) {
             Console.print("KOS> ")
             val command = Console.readLine()
             if (!registry.dispatch(command)) {

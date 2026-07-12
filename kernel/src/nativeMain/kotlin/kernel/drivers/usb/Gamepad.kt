@@ -104,10 +104,16 @@ class Gamepad(private val device: USBDevice) {
     }
 
     private fun applyStick(x: Int, y: Int) {
-        buttons[Pad.LEFT] = x < -DEADZONE
-        buttons[Pad.RIGHT] = x > DEADZONE
-        buttons[Pad.DOWN] = y < -DEADZONE
-        buttons[Pad.UP] = y > DEADZONE
+        val absX = if (x < 0) -x else x
+        val absY = if (y < 0) -y else y
+
+        val horizontal = absX > DEADZONE && absX * 2 > absY
+        val vertical = absY > DEADZONE && absY * 2 > absX
+
+        buttons[Pad.LEFT] = horizontal && x < 0
+        buttons[Pad.RIGHT] = horizontal && x > 0
+        buttons[Pad.DOWN] = vertical && y < 0
+        buttons[Pad.UP] = vertical && y > 0
     }
 
     private fun hex2(value: Int): String = value.toString(16).padStart(2, '0')

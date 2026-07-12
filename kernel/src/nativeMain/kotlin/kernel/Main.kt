@@ -1,6 +1,7 @@
 package kernel
 
 import apps.CoreCommands
+import apps.Launcher
 import hal.Cpu
 import hal.Serial
 import kapi.Console
@@ -20,8 +21,11 @@ import kernel.drivers.I8042
 import kernel.graphics.GraphicsService
 import kernel.memory.PageAllocator
 import kernel.shellext.KernelShell
+import kapi.ui.PixelIcons
+import kernel.ui.HUD
+import kernel.ui.OSD
+import kernel.ui.SystemSounds
 import shell.CommandRegistry
-import shell.Shell
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.CName
 
@@ -58,8 +62,13 @@ fun main() {
     GamepadService.initialize()
     USBService.armInterrupts(Idt.VECTOR_USB, Apic.localId())
 
-    Gamepad.onConnect { Console.println("gamepad connected: ${GamepadService.status}") }
-    Gamepad.onDisconnect { Console.println("gamepad disconnected") }
+    Gamepad.onConnect {
+        val label = GamepadService.status.substringBefore(" (")
+        OSD.notify(PixelIcons.GAMEPAD, "GAMEPAD CONNECTED", label, SystemSounds.Clip.Coin)
+    }
+    Gamepad.onDisconnect {
+        OSD.notify(PixelIcons.GAMEPAD, "GAMEPAD DISCONNECTED", null, SystemSounds.Clip.Pipe)
+    }
 
     Console.println("KurtOS")
     Console.println(KernelSystem.memoryReport())
@@ -74,7 +83,10 @@ fun main() {
     CoreCommands.install(registry)
     KernelShell.install(registry)
 
-    Shell.run(registry)
+    HUD.draw()
+    OSD.notify(PixelIcons.MUSHROOM, "WELCOME TO KURTOS", "LET'S-A GO!", SystemSounds.Clip.Fanfare)
+
+    Launcher.run(registry)
 }
 
 private fun startInterrupts() {

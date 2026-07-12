@@ -17,6 +17,14 @@ interface IndexedBitmap {
     fun draw(x: UInt, y: UInt, scale: UInt)
 }
 
+interface HighColorBitmap {
+    val width: UInt
+    val height: UInt
+    val pixels: ShortArray
+
+    fun draw(x: UInt, y: UInt, scale: UInt)
+}
+
 interface Surface {
     val width: UInt
     val height: UInt
@@ -24,6 +32,7 @@ interface Surface {
     fun clear(color: UInt)
     fun fillRect(x: UInt, y: UInt, width: UInt, height: UInt, color: UInt)
     fun createBitmap(width: UInt, height: UInt, paletteSize: Int): IndexedBitmap?
+    fun createHighColorBitmap(width: UInt, height: UInt): HighColorBitmap?
     fun present()
     fun presentAll()
 }
@@ -41,6 +50,7 @@ interface InputBackend {
     fun consumePress(code: UShort): Boolean
     fun nextEvent(): KeyEvent?
     fun characterFor(code: UShort): Char?
+    fun drain()
     fun status(): String
 }
 
@@ -123,6 +133,7 @@ object Input {
     fun status(): String = backend?.status() ?: "unavailable"
 
     fun drain() {
+        backend?.drain()
         while (nextEvent() != null) {
         }
     }

@@ -7,6 +7,8 @@ import kapi.Gamepad
 import kernel.drivers.Keyboard
 import kernel.graphics.Framebuffer
 import kernel.graphics.GraphicsService
+import kernel.ui.HUD
+import kernel.ui.UI
 
 private const val SCALE = 2u
 private const val LEADING = 2u
@@ -19,8 +21,10 @@ class FramebufferConsole(private val fb: Framebuffer, private val background: UI
     private val glyphWidth = Font.ADVANCE.toUInt() * SCALE
     private val glyphHeight = (Font.HEIGHT.toUInt() + LEADING) * SCALE
 
+    private val top = HUD.RESERVED
+
     private val columns = ((fb.width - MARGIN * 2u) / glyphWidth).toInt()
-    private val rows = ((fb.height - MARGIN * 2u) / glyphHeight).toInt()
+    private val rows = ((fb.height - top - MARGIN * 2u) / glyphHeight).toInt()
 
     private var column = 0
     private var row = 0
@@ -29,6 +33,7 @@ class FramebufferConsole(private val fb: Framebuffer, private val background: UI
         fb.clear(background)
         column = 0
         row = 0
+        HUD.draw()
         fb.presentAll()
     }
 
@@ -66,7 +71,7 @@ class FramebufferConsole(private val fb: Framebuffer, private val background: UI
         column = 0
         row++
         if (row >= rows) {
-            fb.scrollUp(glyphHeight, background)
+            fb.scrollRegion(top, glyphHeight, background)
             row = rows - 1
         }
     }
@@ -74,7 +79,7 @@ class FramebufferConsole(private val fb: Framebuffer, private val background: UI
     private fun fillCell(col: Int, line: Int, color: UInt) {
         fb.fillRect(
             MARGIN + col.toUInt() * glyphWidth,
-            MARGIN + line.toUInt() * glyphHeight,
+            top + MARGIN + line.toUInt() * glyphHeight,
             glyphWidth,
             glyphHeight,
             color,
@@ -86,7 +91,7 @@ class FramebufferConsole(private val fb: Framebuffer, private val background: UI
 
         val glyph = Font.glyph(c)
         val originX = MARGIN + column.toUInt() * glyphWidth
-        val originY = MARGIN + row.toUInt() * glyphHeight
+        val originY = top + MARGIN + row.toUInt() * glyphHeight
 
         for (gy in 0 until Font.HEIGHT) {
             val bits = glyph[gy].toInt() and 0xFF
@@ -174,6 +179,7 @@ object SystemConsole : ConsoleBackend {
             tryReadChar()?.let { return it }
             Cpu.waitForInterrupt()
             Gamepad.pump()
+            UI.tick()
         }
     }
 }

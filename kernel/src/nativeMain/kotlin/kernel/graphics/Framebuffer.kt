@@ -54,6 +54,67 @@ class Framebuffer(private val info: FramebufferInfo, private val backbuffer: ULo
         return PinnedBitmap(width, height, paletteSize)
     }
 
+    override fun createHighColorBitmap(width: UInt, height: UInt): kapi.HighColorBitmap? {
+        if (width == 0u || height == 0u) return null
+        if (width > this.width || height > this.height) return null
+        return PinnedHighBitmap(width, height)
+    }
+
+    private var highPalette: IntArray? = null
+
+    @OptIn(ExperimentalForeignApi::class)
+    private var highPalettePin: kotlinx.cinterop.Pinned<IntArray>? = null
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun highPaletteAddress(): ULong {
+        val existing = highPalettePin
+        if (existing != null) return existing.addressOf(0).toLong().toULong()
+
+        val palette = IntArray(0x8000) { index ->
+            val r = (index and 0x1F) shl 3 or ((index and 0x1F) shr 2)
+            val g = ((index shr 5) and 0x1F) shl 3 or (((index shr 5) and 0x1F) shr 2)
+            val b = ((index shr 10) and 0x1F) shl 3 or (((index shr 10) and 0x1F) shr 2)
+            encode(((r shl 16) or (g shl 8) or b).toUInt()).toInt()
+        }
+
+        highPalette = palette
+        val pinned = palette.pin()
+        highPalettePin = pinned
+        return pinned.addressOf(0).toLong().toULong()
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private inner class PinnedHighBitmap(
+        override val width: UInt,
+        override val height: UInt,
+    ) : kapi.HighColorBitmap {
+        override val pixels = ShortArray((width * height).toInt())
+
+        private val pinnedPixels = pixels.pin()
+        private val pixelsAddress = pinnedPixels.addressOf(0).toLong().toULong()
+
+        override fun draw(x: UInt, y: UInt, scale: UInt) {
+            if (scale == 0u) return
+
+            val drawnWidth = width * scale
+            val drawnHeight = height * scale
+            if (x + drawnWidth > this@Framebuffer.width) return
+            if (y + drawnHeight > this@Framebuffer.height) return
+
+            RawMemory.blitHigh(
+                backbuffer + y.toULong() * stride.toULong() + x.toULong() * 4UL,
+                stride,
+                pixelsAddress,
+                width,
+                height,
+                highPaletteAddress(),
+                scale,
+            )
+
+            markDirty(y, y + drawnHeight)
+        }
+    }
+
     @OptIn(ExperimentalForeignApi::class)
     private inner class PinnedBitmap(
         override val width: UInt,
@@ -104,10 +165,18 @@ class Framebuffer(private val info: FramebufferInfo, private val backbuffer: ULo
     }
 
     fun scrollUp(pixels: UInt, fill: UInt) {
-        if (pixels == 0u || pixels >= height) return
+        scrollRegion(0u, pixels, fill)
+    }
 
-        val moved = (height - pixels).toULong() * stride.toULong()
-        RawMemory.copy(backbuffer, backbuffer + pixels.toULong() * stride.toULong(), moved)
+    fun scrollRegion(top: UInt, pixels: UInt, fill: UInt) {
+        if (pixels == 0u || top + pixels >= height) return
+
+        val moved = (height - top - pixels).toULong() * stride.toULong()
+        RawMemory.copy(
+            backbuffer + top.toULong() * stride.toULong(),
+            backbuffer + (top + pixels).toULong() * stride.toULong(),
+            moved,
+        )
 
         val encoded = encode(fill)
         var row = height - pixels
@@ -116,7 +185,28 @@ class Framebuffer(private val info: FramebufferInfo, private val backbuffer: ULo
             row++
         }
 
-        markDirty(0u, height)
+        markDirty(top, height)
+    }
+
+    fun frontBlit(x: UInt, y: UInt, width: UInt, height: UInt, source: ULong, sourceStride: ULong) {
+        if (x >= this.width || y >= this.height) return
+
+        val pixels = minOf(width, this.width - x).toULong() * 4UL
+        val rows = minOf(height, this.height - y)
+
+        var row = 0u
+        while (row < rows) {
+            RawMemory.copy(
+                info.address + (y + row).toULong() * info.pitch.toULong() + x.toULong() * 4UL,
+                source + row.toULong() * sourceStride,
+                pixels,
+            )
+            row++
+        }
+    }
+
+    fun invalidate(fromRow: UInt, toRow: UInt) {
+        markDirty(fromRow, toRow)
     }
 
     override fun present() {
@@ -138,6 +228,7 @@ class Framebuffer(private val info: FramebufferInfo, private val backbuffer: ULo
                 backbuffer + row.toULong() * stride.toULong(),
                 stride.toULong(),
             )
+            kernel.ui.OSD.composeRow(this, row)
             row++
         }
     }

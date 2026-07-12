@@ -15,6 +15,7 @@ import kapi.Sys
 import kapi.Time
 import kernel.arch.Acpi
 import kernel.arch.Apic
+import kernel.ui.OSD
 import kernel.audio.AudioService
 import kapi.Audio
 import kernel.drivers.Pci
@@ -114,6 +115,7 @@ object KernelShell {
                 return@register
             }
 
+            OSD.hideForPrint()
             application.run()
             Console.clear()
             Sys.collectGarbage()

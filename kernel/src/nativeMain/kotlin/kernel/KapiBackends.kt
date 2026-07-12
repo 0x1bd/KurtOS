@@ -21,18 +21,31 @@ import kernel.drivers.Keyboard
 import kernel.fs.FlxEntryKind
 import kernel.fs.FlxService
 import kernel.graphics.GraphicsService
+import kernel.graphics.OffsetSurface
+import kernel.ui.HUD
+import kernel.ui.UI
 
 object KernelGraphics : GraphicsBackend {
+    private var surface: Surface? = null
+
     override fun surface(): Surface? {
         if (!GraphicsService.initialize()) return null
-        return GraphicsService.framebuffer()
+
+        val existing = surface
+        if (existing != null) return existing
+
+        val fb = GraphicsService.framebuffer() ?: return null
+        return OffsetSurface(fb, HUD.RESERVED).also { surface = it }
     }
 
     override fun status(): String = GraphicsService.status()
 }
 
 object KernelInput : InputBackend {
-    override fun poll() = Keyboard.poll()
+    override fun poll() {
+        Keyboard.poll()
+        UI.tick()
+    }
 
     override fun isKeyDown(code: UShort): Boolean = Keyboard.isKeyDown(code)
 
@@ -42,6 +55,8 @@ object KernelInput : InputBackend {
 
     override fun characterFor(code: UShort): Char? = Keyboard.characterFor(code)
 
+    override fun drain() = Keyboard.drain()
+
     override fun status(): String =
         if (kernel.drivers.I8042.present) "ps/2 keyboard" else "no keyboard"
 }
@@ -49,7 +64,10 @@ object KernelInput : InputBackend {
 object KernelTime : TimeBackend {
     override fun uptimeMillis(): ULong = Clock.uptimeMillis()
 
-    override fun idle() = Cpu.waitForInterrupt()
+    override fun idle() {
+        Cpu.waitForInterrupt()
+        UI.tick()
+    }
 }
 
 object KernelFiles : FilesBackend {
