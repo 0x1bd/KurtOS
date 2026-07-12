@@ -1,9 +1,14 @@
 package gameboy.core
 
-class PPU(private val interrupts: Interrupts) {
+class PPU(private val interrupts: Interrupts, internal val color: Boolean) {
     val frame = ByteArray(WIDTH * HEIGHT)
-    val vram = ByteArray(0x2000)
+    val vram = ByteArray(VRAM_BANKS * VRAM_BANK_SIZE)
     val oam = ByteArray(0xA0)
+
+    val colors = IntArray(PALETTE_ENTRIES)
+
+    private val backgroundColors = ColorPalette(BG_PALETTE_BASE, colors)
+    private val spriteColors = ColorPalette(OBJ_PALETTE_BASE, colors)
 
     internal var control = 0x91
     internal var scrollY = 0
@@ -15,14 +20,35 @@ class PPU(private val interrupts: Interrupts) {
     internal var windowY = 0
     internal var windowX = 0
     internal var windowLine = 0
+    internal var vramBank = 0
 
     private var status = 0x00
     private var compare = 0
     private var mode = 2
     private var dots = 0
     private var statLine = false
+    private var hblankPending = false
 
     private val renderer = PPURenderer(this)
+
+    val paletteVersion: Int
+        get() = backgroundColors.version + spriteColors.version
+
+    fun consumeHBlank(): Boolean {
+        if (!hblankPending) return false
+        hblankPending = false
+        return true
+    }
+
+    fun readVram(address: Int): Int =
+        vram[vramBank * VRAM_BANK_SIZE + (address - 0x8000)].toInt() and 0xFF
+
+    fun writeVram(address: Int, value: Int) {
+        vram[vramBank * VRAM_BANK_SIZE + (address - 0x8000)] = value.toByte()
+    }
+
+    internal fun tileByte(bank: Int, offset: Int): Int =
+        vram[bank * VRAM_BANK_SIZE + offset].toInt() and 0xFF
 
     fun step(cycles: Int) {
         if (control and LCD_ENABLE == 0) {
@@ -48,6 +74,7 @@ class PPU(private val interrupts: Interrupts) {
                 dots -= TRANSFER_DOTS
                 renderer.renderLine()
                 setMode(0)
+                hblankPending = true
             }
 
             0 -> if (dots >= HBLANK_DOTS) {
@@ -116,6 +143,11 @@ class PPU(private val interrupts: Interrupts) {
         0xFF49 -> objPalette1
         0xFF4A -> windowY
         0xFF4B -> windowX
+        0xFF4F -> if (color) vramBank or 0xFE else 0xFF
+        0xFF68 -> if (color) backgroundColors.readIndex() else 0xFF
+        0xFF69 -> if (color) backgroundColors.readData() else 0xFF
+        0xFF6A -> if (color) spriteColors.readIndex() else 0xFF
+        0xFF6B -> if (color) spriteColors.readData() else 0xFF
         else -> 0xFF
     }
 
@@ -146,12 +178,24 @@ class PPU(private val interrupts: Interrupts) {
             0xFF49 -> objPalette1 = value and 0xFF
             0xFF4A -> windowY = value and 0xFF
             0xFF4B -> windowX = value and 0xFF
+            0xFF4F -> if (color) vramBank = value and 0x01
+            0xFF68 -> if (color) backgroundColors.writeIndex(value)
+            0xFF69 -> if (color) backgroundColors.writeData(value)
+            0xFF6A -> if (color) spriteColors.writeIndex(value)
+            0xFF6B -> if (color) spriteColors.writeData(value)
         }
     }
 
     companion object {
         const val WIDTH = 160
         const val HEIGHT = 144
+
+        const val VRAM_BANKS = 2
+        const val VRAM_BANK_SIZE = 0x2000
+
+        const val PALETTE_ENTRIES = 64
+        const val BG_PALETTE_BASE = 0
+        const val OBJ_PALETTE_BASE = 32
 
         const val LCD_ENABLE = 0x80
         const val WINDOW_MAP = 0x40

@@ -1,7 +1,7 @@
 package gameboy.core
 
-class CPU(private val bus: Bus, private val interrupts: Interrupts) {
-    private val registers = Registers()
+class CPU(private val bus: Bus, private val interrupts: Interrupts, color: Boolean = false) {
+    private val registers = Registers(if (color) 0x11 else 0x01)
     private val alu = ALU(registers)
 
     private var ime = false
@@ -93,7 +93,10 @@ class CPU(private val bus: Bus, private val interrupts: Interrupts) {
 
         when (opcode) {
             0x00 -> {}
-            0x10 -> fetch8()
+            0x10 -> {
+                fetch8()
+                bus.stop()
+            }
 
             0x01 -> registers.bc = fetch16()
             0x11 -> registers.de = fetch16()

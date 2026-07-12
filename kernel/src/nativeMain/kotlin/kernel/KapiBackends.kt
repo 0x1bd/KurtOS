@@ -34,6 +34,8 @@ object KernelInput : InputBackend {
 
     override fun nextEvent(): KeyEvent? = Keyboard.nextEvent()
 
+    override fun consumePress(code: UShort): Boolean = Keyboard.consumePress(code)
+
     override fun characterFor(code: UShort): Char? = Keyboard.characterFor(code)
 
     override fun status(): String =

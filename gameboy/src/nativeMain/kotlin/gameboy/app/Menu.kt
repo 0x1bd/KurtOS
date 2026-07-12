@@ -6,11 +6,11 @@ import kapi.Keys
 import kapi.Time
 
 object Menu {
-    fun choose(roms: List<Rom>): Rom? {
+    fun choose(roms: List<Rom>, status: String?): Rom? {
         var selected = 0
 
         while (true) {
-            render(roms, selected)
+            render(roms, selected, status)
 
             when (waitForKey()) {
                 UP -> selected = (selected + roms.size - 1) % roms.size
@@ -21,7 +21,7 @@ object Menu {
         }
     }
 
-    private fun render(roms: List<Rom>, selected: Int) {
+    private fun render(roms: List<Rom>, selected: Int, status: String?) {
         Console.clear()
         Console.println("  KurtOS GameBoy")
         Console.println("")
@@ -33,6 +33,10 @@ object Menu {
         }
 
         Console.println("")
+        if (status != null) {
+            Console.println("  $status")
+            Console.println("")
+        }
         Console.println("  up/down select, enter start, esc quit")
         Console.println("  in game: arrows = d-pad, ${label(Keys.Z)} = A, ${label(Keys.X)} = B,")
         Console.println("           enter = start, backspace = select, esc = quit")

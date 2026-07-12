@@ -8,6 +8,7 @@ object Keyboard {
     private const val MAX_KEYCODE = 256
 
     private val down = BooleanArray(MAX_KEYCODE)
+    private val pressed = BooleanArray(MAX_KEYCODE)
     private val events = ArrayDeque<KeyEvent>()
     private val characters = ArrayDeque<Char>()
 
@@ -37,6 +38,14 @@ object Keyboard {
         return index in down.indices && down[index]
     }
 
+    fun consumePress(code: UShort): Boolean {
+        val index = code.toInt()
+        if (index !in pressed.indices || !pressed[index]) return false
+
+        pressed[index] = false
+        return true
+    }
+
     fun nextEvent(): KeyEvent? = events.removeFirstOrNull()
 
     fun nextChar(): Char? = characters.removeFirstOrNull()
@@ -46,6 +55,7 @@ object Keyboard {
     fun drain() {
         events.clear()
         characters.clear()
+        pressed.fill(false)
     }
 
     private fun handle(scancode: Int) {
@@ -67,6 +77,7 @@ object Keyboard {
         }
 
         down[keycode] = !released
+        if (!released) pressed[keycode] = true
         events.addLast(KeyEvent(keycode.toUShort(), !released))
 
         if (!released) {

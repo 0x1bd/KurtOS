@@ -26,6 +26,8 @@ class Cartridge(private val rom: ByteArray) {
 
     val supported: Boolean = rom.size >= 0x8000
 
+    val colorCapable: Boolean = byteAt(0x143) and 0x80 != 0
+
     private var romBank = 1
     private var ramBank = 0
     private var ramEnabled = false
@@ -140,7 +142,7 @@ class Cartridge(private val rom: ByteArray) {
 
     private fun readTitle(): String {
         val builder = StringBuilder()
-        for (i in 0x134..0x143) {
+        for (i in 0x134..0x142) {
             val c = byteAt(i)
             if (c == 0) break
             if (c in 32..126) builder.append(c.toChar())

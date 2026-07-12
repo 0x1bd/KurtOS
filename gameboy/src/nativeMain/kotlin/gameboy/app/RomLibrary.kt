@@ -13,10 +13,14 @@ object RomLibrary {
         val entries = Files.list(DIRECTORY) ?: return emptyList()
 
         return entries
-            .filter { it.kind == FileKind.File && it.name.endsWith(".gb") }
-            .map { Rom(it.name.removeSuffix(".gb"), "$DIRECTORY/${it.name}", it.size) }
+            .filter { it.kind == FileKind.File && isRom(it.name) }
+            .map { Rom(baseName(it.name), "$DIRECTORY/${it.name}", it.size) }
             .sortedBy { it.name }
     }
 
     fun load(rom: Rom): ByteArray? = Files.read(rom.path, MAX_ROM_BYTES)
+
+    private fun isRom(name: String): Boolean = name.endsWith(".gb") || name.endsWith(".gbc")
+
+    private fun baseName(name: String): String = name.removeSuffix(".gbc").removeSuffix(".gb")
 }

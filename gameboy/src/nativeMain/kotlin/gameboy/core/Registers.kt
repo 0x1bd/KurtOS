@@ -1,7 +1,7 @@
 package gameboy.core
 
-class Registers {
-    var a = 0x01
+class Registers(initialA: Int = 0x01) {
+    var a = initialA
     var f = 0xB0
     var b = 0x00
     var c = 0x13

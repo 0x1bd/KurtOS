@@ -38,6 +38,7 @@ data class KeyEvent(val code: UShort, val pressed: Boolean)
 interface InputBackend {
     fun poll()
     fun isKeyDown(code: UShort): Boolean
+    fun consumePress(code: UShort): Boolean
     fun nextEvent(): KeyEvent?
     fun characterFor(code: UShort): Char?
     fun status(): String
@@ -93,6 +94,7 @@ object Input {
 
     fun poll() = backend?.poll() ?: Unit
     fun isKeyDown(code: UShort): Boolean = backend?.isKeyDown(code) ?: false
+    fun consumePress(code: UShort): Boolean = backend?.consumePress(code) ?: false
     fun nextEvent(): KeyEvent? = backend?.nextEvent()
     fun characterFor(code: UShort): Char? = backend?.characterFor(code)
     fun status(): String = backend?.status() ?: "unavailable"

@@ -9,10 +9,15 @@ QEMU_FLAGS = -M q35 \
 
 OVMF = /usr/share/edk2/ovmf/OVMF_CODE.fd
 
+GRADLE_FLAGS = -Pkurtos.release=true
+ifeq ($(DEBUG),1)
+GRADLE_FLAGS =
+endif
+
 .PHONY: all run run-uefi run-headless debug usb clean
 
 all:
-	./gradlew buildImage
+	./gradlew buildImage $(GRADLE_FLAGS)
 
 run: all
 	$(QEMU) $(QEMU_FLAGS)

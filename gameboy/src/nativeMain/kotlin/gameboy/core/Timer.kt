@@ -7,26 +7,22 @@ class Timer(private val interrupts: Interrupts) {
     private var control = 0
 
     fun step(cycles: Int) {
-        for (i in 0 until cycles) tick()
-    }
-
-    private fun tick() {
         val previous = divider
-        divider = (divider + 1) and 0xFFFF
+        divider = (divider + cycles) and 0xFFFF
 
         if (control and 0x04 == 0) return
 
-        val bit = when (control and 0x03) {
-            0 -> 9
-            1 -> 3
-            2 -> 5
-            else -> 7
-        }
+        val period = 1 shl (selectedBit() + 1)
+        val edges = (previous + cycles) / period - previous / period
 
-        val before = (previous shr bit) and 1
-        val after = (divider shr bit) and 1
+        for (i in 0 until edges) increment()
+    }
 
-        if (before == 1 && after == 0) increment()
+    private fun selectedBit(): Int = when (control and 0x03) {
+        0 -> 9
+        1 -> 3
+        2 -> 5
+        else -> 7
     }
 
     private fun increment() {
