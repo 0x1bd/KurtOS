@@ -1,4 +1,4 @@
-package apps
+package frontend
 
 import kapi.Console
 import kapi.Sys

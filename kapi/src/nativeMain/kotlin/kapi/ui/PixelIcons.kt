@@ -178,6 +178,24 @@ object PixelIcons {
         ".kkkkkkkkkk.",
     )
 
+    val CARTRIDGE_GBA = icon(
+        mapOf(
+            'k' to 0x00181820u,
+            'p' to 0x007A6AD8u,
+            'd' to 0x004A4098u,
+            'c' to 0x00F8D878u,
+        ),
+        "..kkkkkkkk..",
+        ".kppppppppk.",
+        "kpdccccccdpk",
+        "kpdccccccdpk",
+        "kpdccccccdpk",
+        "kppppppppppk",
+        "kpdpdpdpdppk",
+        "kppppppppppk",
+        ".kkkkkkkkkk.",
+    )
+
     val TERMINAL = icon(
         mapOf(
             'k' to 0x00181820u,

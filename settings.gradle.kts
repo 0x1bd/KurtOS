@@ -6,7 +6,7 @@ include(
     "kernel",
     "runtime",
     "shell",
-    "apps",
+    "frontend",
     "gameboy",
     "gba",
 )

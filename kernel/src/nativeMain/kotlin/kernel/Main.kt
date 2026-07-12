@@ -1,7 +1,7 @@
 package kernel
 
-import apps.CoreCommands
-import apps.Launcher
+import frontend.CoreCommands
+import frontend.Home
 import hal.Cpu
 import hal.Serial
 import kapi.Console
@@ -86,7 +86,7 @@ fun main() {
     HUD.draw()
     OSD.notify(PixelIcons.MUSHROOM, "WELCOME TO KURTOS", "LET'S-A GO!", SystemSounds.Clip.Fanfare)
 
-    Launcher.run(registry)
+    Home.run(registry)
 }
 
 private fun startInterrupts() {

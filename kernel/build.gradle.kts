@@ -25,7 +25,7 @@ kotlin {
                 implementation(project(":hal"))
                 implementation(project(":kapi"))
                 implementation(project(":shell"))
-                implementation(project(":apps"))
+                implementation(project(":frontend"))
             }
         }
     }

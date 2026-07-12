@@ -12,8 +12,13 @@ class MenuItem(
     val label: String,
     val sublabel: String? = null,
     val icon: PixelIcons.Icon? = null,
-    val hotkey: UShort? = null,
 )
+
+sealed class MenuChoice {
+    class Row(val index: Int) : MenuChoice()
+    class Key(val code: UShort) : MenuChoice()
+    data object Back : MenuChoice()
+}
 
 class Menu(
     private val title: String,
@@ -22,8 +27,13 @@ class Menu(
 ) {
     private val padPrevious = BooleanArray(Pad.COUNT)
 
-    fun choose(surface: Surface, items: List<MenuItem>, initial: Int = 0): Int? {
-        if (items.isEmpty()) return null
+    fun choose(
+        surface: Surface,
+        items: List<MenuItem>,
+        initial: Int = 0,
+        hotkeys: List<UShort> = emptyList(),
+    ): MenuChoice {
+        if (items.isEmpty()) return MenuChoice.Back
 
         var selected = initial.coerceIn(0, items.size - 1)
         val sink = SurfaceSink(surface)
@@ -34,9 +44,8 @@ class Menu(
         while (true) {
             Input.poll()
 
-            for (i in items.indices) {
-                val hotkey = items[i].hotkey ?: continue
-                if (Input.consumePress(hotkey)) return i
+            for (code in hotkeys) {
+                if (Input.consumePress(code)) return MenuChoice.Key(code)
             }
 
             when (action()) {
@@ -50,9 +59,9 @@ class Menu(
                     render(surface, sink, items, selected)
                 }
 
-                SELECT -> return selected
+                SELECT -> return MenuChoice.Row(selected)
 
-                QUIT -> return null
+                QUIT -> return MenuChoice.Back
             }
 
             Time.idle()

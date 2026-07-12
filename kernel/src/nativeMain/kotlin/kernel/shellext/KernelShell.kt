@@ -1,6 +1,7 @@
 package kernel.shellext
 
-import apps.AppRegistry
+import frontend.GameLibrary
+import frontend.Player
 import hal.Arch
 import hal.BootInfo
 import hal.Serial
@@ -98,26 +99,40 @@ object KernelShell {
             Console.println(printable(bytes))
         }
 
-        registry.register("apps", "list installed applications") {
-            AppRegistry.all().forEach { Console.println("${it.name.padEnd(12)} ${it.description}") }
+        registry.register("games", "list installed games") {
+            val games = GameLibrary.scan()
+            if (games.isEmpty()) {
+                Console.println("no games in /roms")
+                return@register
+            }
+            games.forEach {
+                Console.println("${it.name.padEnd(24)} ${it.emulator.id.padEnd(8)} ${it.size / 1024UL} KiB")
+            }
         }
 
-        registry.register("run", "run an application") { args ->
-            val name = args.getOrNull(0)
-            if (name == null) {
-                Console.println("usage: run <app>")
+        registry.register("play", "play a game from the library") { args ->
+            val name = args.joinToString(" ")
+            if (name.isEmpty()) {
+                Console.println("usage: play <game>")
                 return@register
             }
 
-            val application = AppRegistry.find(name)
-            if (application == null) {
-                Console.println("no such application: $name")
+            val game = GameLibrary.find(name)
+            if (game == null) {
+                Console.println("no such game: $name")
+                return@register
+            }
+
+            val surface = Graphics.surface()
+            if (surface == null) {
+                Console.println("graphics: ${Graphics.status()}")
                 return@register
             }
 
             OSD.hideForPrint()
-            application.run()
+            val status = Player.play(surface, game)
             Console.clear()
+            if (status != null) Console.println(status)
             Sys.collectGarbage()
         }
 
