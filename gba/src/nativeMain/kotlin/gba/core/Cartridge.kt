@@ -1,7 +1,7 @@
 package gba.core
 
 class Cartridge(val rom: ByteArray) {
-    val sram = ByteArray(0x10000)
+    val sram = ByteArray(0x20000)
 
     val title: String = buildString {
         for (i in 0xA0 until 0xAC) {

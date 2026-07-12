@@ -9,7 +9,7 @@ object BiosHle {
     fun handle(cpu: Arm7, bus: Bus, comment: Int) {
         when (comment) {
             0x00 -> cpu.pc = 0x08000000
-            0x01 -> Unit
+            0x01 -> registerRamReset(cpu, bus)
             0x02 -> cpu.halted = true
             0x03 -> cpu.halted = true
 
@@ -57,6 +57,18 @@ object BiosHle {
             0x14 -> runLength(cpu, bus, 1)
             0x15 -> runLength(cpu, bus, 2)
         }
+    }
+
+    private fun registerRamReset(cpu: Arm7, bus: Bus) {
+        val flags = cpu.r[0]
+
+        if (flags and 0x01 != 0) bus.ewram.fill(0)
+        if (flags and 0x02 != 0) bus.iwram.fill(0, 0, 0x7E00)
+        if (flags and 0x04 != 0) bus.ppu.palette.fill(0)
+        if (flags and 0x08 != 0) bus.ppu.vram.fill(0)
+        if (flags and 0x10 != 0) bus.ppu.oam.fill(0)
+
+        bus.write16(0x04000000, 0x0080)
     }
 
     private fun squareRoot(value: Long): Int {
