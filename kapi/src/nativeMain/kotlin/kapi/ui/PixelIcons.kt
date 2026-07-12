@@ -23,6 +23,25 @@ object PixelIcons {
         }
     }
 
+    fun sprite(colors: UIntArray, rows: Array<String>): Icon {
+        val width = rows.maxOf { it.length }
+        val palette = UIntArray(colors.size + 1)
+        colors.copyInto(palette, 1)
+
+        val pixels = IntArray(width * rows.size)
+
+        for (row in rows.indices) {
+            for (col in rows[row].indices) {
+                val symbol = rows[row][col]
+                pixels[row * width + col] = if (symbol == '.') 0 else CHARS.indexOf(symbol) + 1
+            }
+        }
+
+        return Icon(width, rows.size, pixels, palette)
+    }
+
+    private const val CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+-*/=<>?!@#$%^&"
+
     private fun icon(colors: Map<Char, UInt>, vararg rows: String): Icon {
         val width = rows.maxOf { it.length }
         val palette = UIntArray(colors.size + 1)
@@ -65,7 +84,7 @@ object PixelIcons {
         mapOf(
             'k' to 0x00181820u,
             'c' to 0x00F8D878u,
-            'w' to 0x00F8F8F8u,
+            'w' to 0x009AA3B0u,
         ),
         "....kk......",
         "...kck..w...",

@@ -22,7 +22,6 @@ import kernel.drivers.Keyboard
 import kernel.fs.StorageService
 import kernel.graphics.GraphicsService
 import kernel.graphics.OffsetSurface
-import kernel.ui.HUD
 import kernel.ui.UI
 
 object KernelGraphics : GraphicsBackend {
@@ -35,7 +34,7 @@ object KernelGraphics : GraphicsBackend {
         if (existing != null) return existing
 
         val fb = GraphicsService.framebuffer() ?: return null
-        return OffsetSurface(fb, HUD.RESERVED).also { surface = it }
+        return OffsetSurface(fb, 0u).also { surface = it }
     }
 
     override fun status(): String = GraphicsService.status()
@@ -159,6 +158,8 @@ object KernelAudio : AudioBackend {
         kernel.ui.SystemSounds.play(kernel.ui.SystemSounds.Clip.Blip)
         kernel.ui.OSD.showVolume()
     }
+
+    override fun click() = kernel.ui.SystemSounds.play(kernel.ui.SystemSounds.Clip.Blip)
 
     override fun open(): Boolean = AudioService.open()
 

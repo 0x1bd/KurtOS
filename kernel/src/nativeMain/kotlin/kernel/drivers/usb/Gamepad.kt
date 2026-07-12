@@ -86,6 +86,8 @@ class Gamepad(private val device: USBDevice) {
 
         buttons[Pad.START] = first and 0x10 != 0
         buttons[Pad.SELECT] = first and 0x20 != 0
+        buttons[Pad.L3] = first and 0x40 != 0
+        buttons[Pad.R3] = first and 0x80 != 0
 
         buttons[Pad.L] = second and 0x01 != 0
         buttons[Pad.R] = second and 0x02 != 0

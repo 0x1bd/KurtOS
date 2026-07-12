@@ -114,6 +114,7 @@ interface AudioBackend {
     fun muted(): Boolean
     fun toggleMuted()
     fun showVolume() {}
+    fun click() {}
     fun open(): Boolean
     fun close()
     fun availableFrames(): Int
@@ -244,6 +245,7 @@ object Audio {
     fun muted(): Boolean = backend?.muted() ?: false
     fun toggleMuted() = backend?.toggleMuted() ?: Unit
     fun showVolume() = backend?.showVolume() ?: Unit
+    fun click() = backend?.click() ?: Unit
     fun open(): Boolean = backend?.open() ?: false
     fun close() = backend?.close() ?: Unit
     fun availableFrames(): Int = backend?.availableFrames() ?: 0

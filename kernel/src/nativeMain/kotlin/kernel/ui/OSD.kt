@@ -44,7 +44,7 @@ object OSD {
         renderToast(icon, title.take(MAX_CHARS), subtitle?.take(MAX_CHARS))
 
         panelX = fb.width.toInt() - panelWidth - EDGE_MARGIN
-        targetY = HUD.RESERVED.toInt() + 8
+        targetY = EDGE_MARGIN
         startY = -panelHeight
 
         begin(fb)
@@ -198,18 +198,18 @@ object OSD {
         panelWidth = minOf(PAD + ICON_BOX + GAP + textWidth + PAD, PANEL_MAX_W)
         panelHeight = PAD * 2 + maxOf(ICON_BOX, textHeight)
 
-        Panels.frame(panel, 0, 0, panelWidth, panelHeight)
+        Panels.card(panel, 0, 0, panelWidth, panelHeight, Panels.CARD, Panels.ACCENT, BORDER)
 
         val iconY = (panelHeight - icon.height * SCALE) / 2
         icon.draw(panel, PAD + (ICON_BOX - icon.width * SCALE) / 2, iconY, SCALE)
 
         val textX = PAD + ICON_BOX + GAP
         if (subtitle == null) {
-            PixelFont.draw(panel, textX, (panelHeight - 16) / 2, title, Panels.TITLE, SCALE, Panels.OUTLINE)
+            PixelFont.draw(panel, textX, (panelHeight - 16) / 2, title, Panels.INK, SCALE)
         } else {
             val top = (panelHeight - 40) / 2
-            PixelFont.draw(panel, textX, top, title, Panels.TITLE, SCALE, Panels.OUTLINE)
-            PixelFont.draw(panel, textX, top + 24, subtitle, Panels.SUBTITLE, SCALE, Panels.OUTLINE)
+            PixelFont.draw(panel, textX, top, title, Panels.INK, SCALE)
+            PixelFont.draw(panel, textX, top + 24, subtitle, Panels.QUIET, SCALE)
         }
     }
 
@@ -220,7 +220,7 @@ object OSD {
         panelWidth = PAD + ICON_BOX + GAP + cellsWidth + PAD
         panelHeight = PAD * 2 + ICON_BOX
 
-        Panels.frame(panel, 0, 0, panelWidth, panelHeight)
+        Panels.card(panel, 0, 0, panelWidth, panelHeight, Panels.CARD, Panels.ACCENT, BORDER)
 
         val muted = AudioService.muted()
         val icon = if (muted) PixelIcons.SPEAKER_MUTE else PixelIcons.SPEAKER
@@ -231,18 +231,12 @@ object OSD {
 
         for (i in 0 until CELLS) {
             val cellX = PAD + ICON_BOX + GAP + i * (CELL_W + CELL_GAP)
-
-            panel.fill(cellX, cellY, CELL_W, CELL_H, Panels.OUTLINE)
-            if (i < filled) {
-                panel.fill(cellX + 2, cellY + 2, CELL_W - 4, CELL_H - 4, Panels.GOLD)
-                panel.fill(cellX + 2, cellY + CELL_H - 6, CELL_W - 4, 4, Panels.GOLD_DARK)
-            } else {
-                panel.fill(cellX + 2, cellY + 2, CELL_W - 4, CELL_H - 4, Panels.SLOT)
-            }
+            panel.fill(cellX, cellY, CELL_W, CELL_H, if (i < filled) Panels.GREEN else Panels.EDGE)
         }
     }
 
     private const val SCALE = 2
+    private const val BORDER = 4
     private const val PAD = 16
     private const val GAP = 12
     private const val ICON_BOX = 32

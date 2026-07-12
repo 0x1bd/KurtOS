@@ -8,11 +8,9 @@ import kapi.Graphics
 import kapi.Input
 import kapi.Keys
 import kapi.Pad
-import kapi.Status
 import kapi.Surface
 import kapi.Sys
 import kapi.Time
-import kapi.emu.Emulator
 import kapi.ui.Panels
 import kapi.ui.PixelFont
 import kapi.ui.PixelIcons
@@ -22,25 +20,49 @@ import shell.CommandRegistry
 import shell.Shell
 
 object Home {
-    private const val TAB_LIBRARY = 0
-    private const val TAB_SETTINGS = 1
-    private const val TAB_SYSTEM = 2
+    private class Card(
+        val title: String,
+        val body: UInt,
+        val band: UInt,
+        val edge: UInt,
+        val art: PixelIcons.Icon,
+        val extension: String,
+    )
 
-    private val tabs = listOf("LIBRARY", "SETTINGS", "SYSTEM")
+    private val consoles = listOf(
+        Card("SNES", 0x00DCE7F7u, 0x006FA3DEu, 0x00A9C4E8u, ConsoleArt.SNES, ".sfc"),
+        Card("GB", 0x00E1EFD5u, 0x00A6C87Cu, 0x00BCD79Bu, ConsoleArt.GAME_BOY, ".gb"),
+        Card("GBC", 0x00EEDCF6u, 0x00C39BDFu, 0x00D3B6E8u, ConsoleArt.GAME_BOY_COLOR, ".gbc"),
+        Card("GBA", 0x00D6E8F7u, 0x00A7D0ECu, 0x00AAD0EAu, ConsoleArt.GAME_BOY_ADVANCE, ".gba"),
+    )
+
+    private const val SCREEN_HOME = 0
+    private const val SCREEN_LIBRARY = 1
+    private const val SCREEN_SETTINGS = 2
+    private const val SCREEN_SYSTEM = 3
 
     private const val SETTING_VOLUME = 0
     private const val SETTING_MUTE = 1
     private const val SETTING_ZONE = 2
     private const val SETTING_DST = 3
     private const val SETTING_FPS = 4
-    private const val SETTING_COUNT = 5
+    private const val SETTING_SYSTEM = 5
+    private const val SETTING_COUNT = 6
+
+    private val HINTS = listOf(
+        Chrome.Hint(HomeIcons.DPAD, null, Panels.BAR_TEXT, "NAVIGATE"),
+        Chrome.Hint(null, "A", Panels.GREEN, "SELECT"),
+        Chrome.Hint(null, "B", Panels.RED, "BACK"),
+        Chrome.Hint(HomeIcons.MENU, null, Panels.BAR_TEXT, "MENU"),
+    )
 
     private val padPrevious = BooleanArray(Pad.COUNT)
 
-    private var tab = TAB_LIBRARY
+    private var screen = SCREEN_HOME
+    private var card = 0
     private var selected = 0
-    private var setting = 0
     private var scroll = 0
+    private var setting = 0
 
     fun run(registry: CommandRegistry): Nothing {
         Settings.syncFromSystem()
@@ -53,85 +75,60 @@ object Home {
                 continue
             }
 
-            Status.context = null
-
             var games = GameLibrary.scan()
-            clampSelection(games.size)
-
             val sink = SurfaceSink(surface)
             flushInput()
 
+            var painted = -1L
             var clock = ""
             var dirty = true
 
             while (true) {
                 Input.poll()
 
-                val tick = clockText()
-                if (dirty || tick != clock) {
+                val tick = Chrome.clockText()
+                val stripes = stripeOffset()
+
+                if (dirty || stripes != painted || tick != clock) {
                     clock = tick
-                    render(surface, sink, games, clock)
+                    painted = stripes
                     dirty = false
+                    render(surface, sink, games, clock, stripes.toInt())
                 }
 
-                when (val action = read()) {
+                val action = read()
+                if (action != Action.NONE) dirty = true
+                if (action == Action.SELECT || action == Action.BACK || action == Action.MENU) Audio.click()
+
+                when (action) {
                     Action.NONE -> Time.idle()
-
-                    Action.UP -> {
-                        move(-1, games.size)
-                        dirty = true
-                    }
-
-                    Action.DOWN -> {
-                        move(1, games.size)
-                        dirty = true
-                    }
-
-                    Action.LEFT, Action.RIGHT -> {
-                        val delta = if (action == Action.LEFT) -1 else 1
-                        if (tab == TAB_SETTINGS) adjust(delta) else switchTab(delta)
-                        dirty = true
-                    }
-
-                    Action.PREV_TAB -> {
-                        switchTab(-1)
-                        dirty = true
-                    }
-
-                    Action.NEXT_TAB -> {
-                        switchTab(1)
-                        dirty = true
-                    }
+                    Action.UP -> move(-1, games)
+                    Action.DOWN -> move(1, games)
+                    Action.LEFT -> horizontal(-1)
+                    Action.RIGHT -> horizontal(1)
 
                     Action.SELECT -> {
-                        if (tab == TAB_SETTINGS) {
-                            adjust(1)
-                            dirty = true
-                        } else if (tab == TAB_SYSTEM) {
-                            openShell(registry)
-                            break
-                        } else if (games.isNotEmpty()) {
-                            saveSettings()
-                            play(surface, games[selected])
-                            Settings.syncFromSystem()
-                            Settings.flush()
-                            games = GameLibrary.scan()
-                            clampSelection(games.size)
-                            break
-                        }
+                        if (select(surface, games, registry)) break
+                        games = GameLibrary.scan()
+                        clampSelection(games)
+                    }
+
+                    Action.BACK -> if (screen != SCREEN_HOME) screen = SCREEN_HOME
+
+                    Action.MENU -> {
+                        setting = 0
+                        screen = if (screen == SCREEN_SETTINGS) SCREEN_HOME else SCREEN_SETTINGS
                     }
 
                     Action.LOUDER, Action.QUIETER -> {
                         val step = if (action == Action.LOUDER) VOLUME_STEP else -VOLUME_STEP
                         Settings.setVolume(Settings.volume + step)
                         Audio.showVolume()
-                        dirty = true
                     }
 
                     Action.REFRESH -> {
                         games = GameLibrary.scan()
-                        clampSelection(games.size)
-                        dirty = true
+                        clampSelection(games)
                     }
 
                     Action.SHELL -> {
@@ -145,21 +142,86 @@ object Home {
         }
     }
 
+    private fun select(surface: Surface, games: List<Game>, registry: CommandRegistry): Boolean {
+        when (screen) {
+            SCREEN_HOME -> {
+                selected = 0
+                scroll = 0
+                screen = SCREEN_LIBRARY
+            }
+
+            SCREEN_LIBRARY -> {
+                val shelf = shelf(games)
+                if (shelf.isEmpty()) return false
+
+                saveSettings()
+                play(surface, shelf[selected])
+                Settings.syncFromSystem()
+                Settings.flush()
+                return true
+            }
+
+            SCREEN_SETTINGS -> {
+                if (setting == SETTING_SYSTEM) screen = SCREEN_SYSTEM else adjust(1)
+            }
+
+            SCREEN_SYSTEM -> {
+                openShell(registry)
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private fun move(delta: Int, games: List<Game>) {
+        when (screen) {
+            SCREEN_SETTINGS -> setting = (setting + SETTING_COUNT + delta) % SETTING_COUNT
+
+            SCREEN_LIBRARY -> {
+                val count = shelf(games).size
+                if (count == 0) return
+                selected = (selected + count + delta) % count
+            }
+        }
+    }
+
+    private fun horizontal(delta: Int) {
+        when (screen) {
+            SCREEN_HOME -> card = (card + consoles.size + delta) % consoles.size
+            SCREEN_SETTINGS -> if (setting != SETTING_SYSTEM) adjust(delta)
+        }
+    }
+
+    private fun shelf(games: List<Game>): List<Game> {
+        val console = consoles[card]
+        return games.filter { it.path.endsWith(console.extension, ignoreCase = true) || alias(it, console) }
+    }
+
+    private fun alias(game: Game, console: Card): Boolean =
+        console.extension == ".sfc" && game.path.endsWith(".smc", ignoreCase = true)
+
+    private fun clampSelection(games: List<Game>) {
+        val count = shelf(games).size
+        if (count == 0) {
+            selected = 0
+            scroll = 0
+            return
+        }
+
+        if (selected >= count) selected = count - 1
+    }
+
     private fun openShell(registry: CommandRegistry) {
         saveSettings()
         Console.clear()
         Shell.run(registry)
         Console.clear()
+        screen = SCREEN_HOME
     }
 
     private fun play(surface: Surface, game: Game) {
-        Status.context = game.name.uppercase()
-        Console.clear()
-
         val failure = Player.play(surface, game)
-
-        Console.clear()
-        Status.context = null
 
         if (failure != null) Sys.toast(game.name.uppercase(), failure)
     }
@@ -172,34 +234,10 @@ object Home {
         }
     }
 
-    private fun move(delta: Int, count: Int) {
-        if (tab == TAB_SETTINGS) {
-            setting = (setting + SETTING_COUNT + delta) % SETTING_COUNT
-            return
-        }
-
-        if (tab != TAB_LIBRARY || count == 0) return
-        selected = (selected + count + delta) % count
-    }
-
-    private fun switchTab(delta: Int) {
-        if (tab == TAB_SETTINGS) saveSettings()
-        tab = (tab + tabs.size + delta) % tabs.size
-    }
-
-    private fun clampSelection(count: Int) {
-        if (count == 0) {
-            selected = 0
-            scroll = 0
-            return
-        }
-
-        if (selected >= count) selected = count - 1
-    }
-
     private fun adjust(delta: Int) {
         when (setting) {
-            SETTING_VOLUME -> Settings.setVolume(Settings.volume + delta * 5)
+            SETTING_SYSTEM -> Unit
+            SETTING_VOLUME -> Settings.setVolume(Settings.volume + delta * VOLUME_STEP)
             SETTING_MUTE -> Settings.setMuted(!Settings.muted)
             SETTING_ZONE -> Settings.setZoneOffset(Settings.zoneOffsetMinutes + delta * Settings.OFFSET_STEP)
             SETTING_DST -> Settings.setDaylightSaving(!Settings.daylightSaving)
@@ -207,33 +245,29 @@ object Home {
         }
     }
 
-    private enum class Action { NONE, UP, DOWN, LEFT, RIGHT, PREV_TAB, NEXT_TAB, SELECT, REFRESH, SHELL, LOUDER, QUIETER }
+    private enum class Action { NONE, UP, DOWN, LEFT, RIGHT, SELECT, BACK, MENU, REFRESH, SHELL, LOUDER, QUIETER }
 
     private fun read(): Action {
         if (Input.consumePress(Keys.UP)) return Action.UP
         if (Input.consumePress(Keys.DOWN)) return Action.DOWN
         if (Input.consumePress(Keys.LEFT)) return Action.LEFT
         if (Input.consumePress(Keys.RIGHT)) return Action.RIGHT
-        if (Input.consumePress(Keys.Q)) return Action.PREV_TAB
-        if (Input.consumePress(Keys.E)) return Action.NEXT_TAB
         if (Input.consumePress(Keys.ENTER)) return Action.SELECT
         if (Input.consumePress(Keys.SPACE)) return Action.SELECT
+        if (Input.consumePress(Keys.BACKSPACE)) return Action.BACK
+        if (Input.consumePress(Keys.ESC)) return Action.BACK
+        if (Input.consumePress(Keys.F2)) return Action.MENU
+        if (Input.consumePress(Keys.W)) return Action.UP
+        if (Input.consumePress(Keys.S)) return Action.DOWN
+        if (Input.consumePress(Keys.A)) return Action.LEFT
+        if (Input.consumePress(Keys.D)) return Action.RIGHT
         if (Input.consumePress(Keys.R)) return Action.REFRESH
         if (Input.consumePress(Keys.F1)) return Action.SHELL
-        if (Input.consumePress(Keys.ESC)) return Action.SHELL
 
-        val pad = padAction()
-        if (pad != Action.NONE) return pad
-
-        val character = Console.tryReadChar() ?: return Action.NONE
-        return when (character.lowercaseChar()) {
-            'w', 'k' -> Action.UP
-            's', 'j' -> Action.DOWN
-            'a', 'h' -> Action.LEFT
-            'd', 'l' -> Action.RIGHT
-            '\n', '\r', ' ' -> Action.SELECT
-            else -> Action.NONE
+        while (Console.tryReadChar() != null) {
         }
+
+        return padAction()
     }
 
     private fun padAction(): Action {
@@ -249,13 +283,13 @@ object Home {
                 action = when (button) {
                     Pad.UP -> Action.UP
                     Pad.DOWN -> Action.DOWN
-                    Pad.DPAD_LEFT -> Action.LEFT
-                    Pad.DPAD_RIGHT -> Action.RIGHT
-                    Pad.L -> Action.PREV_TAB
-                    Pad.R -> Action.NEXT_TAB
+                    Pad.LEFT -> Action.LEFT
+                    Pad.RIGHT -> Action.RIGHT
+                    Pad.A, Pad.START -> Action.SELECT
+                    Pad.B -> Action.BACK
+                    Pad.SELECT -> Action.MENU
                     Pad.LT -> Action.QUIETER
                     Pad.RT -> Action.LOUDER
-                    Pad.A, Pad.START -> Action.SELECT
                     Pad.Y -> Action.REFRESH
                     else -> Action.NONE
                 }
@@ -279,259 +313,307 @@ object Home {
         for (button in 0 until Pad.COUNT) padPrevious[button] = Gamepad.isDown(button)
     }
 
-    private fun render(surface: Surface, sink: PixelSink, games: List<Game>, clock: String) {
+    private fun stripeOffset(): Long = (Time.uptimeMillis() / STRIPE_MILLIS).toLong()
+
+    internal fun preview(surface: Surface, screenId: Int, cardIndex: Int, games: List<Game>, clock: String, stripes: Int) {
+        screen = screenId
+        card = cardIndex
+        selected = 0
+        scroll = 0
+        setting = 0
+        render(surface, SurfaceSink(surface), games, clock, stripes)
+    }
+
+    internal const val PREVIEW_HOME = SCREEN_HOME
+    internal const val PREVIEW_LIBRARY = SCREEN_LIBRARY
+    internal const val PREVIEW_SETTINGS = SCREEN_SETTINGS
+    internal const val PREVIEW_SYSTEM = SCREEN_SYSTEM
+
+    private fun render(surface: Surface, sink: PixelSink, games: List<Game>, clock: String, stripes: Int) {
         val width = surface.width.toInt()
         val height = surface.height.toInt()
 
-        surface.clear(BACKGROUND)
+        drawBackground(sink, width, height, stripes)
 
-        drawHeader(sink, width, games, clock)
-        drawTabs(sink, width)
+        val barHeight = Chrome.barHeight(height)
+        Chrome.drawStatusBar(sink, width, barHeight, "KurtOS ${BuildInfo.VERSION}", clock)
+        Chrome.drawNavBar(sink, width, height, barHeight, HINTS)
 
-        val top = CONTENT_Y
-        val bottom = height - MARGIN
+        val top = barHeight
+        val bottom = height - barHeight
 
-        when (tab) {
-            TAB_LIBRARY -> drawLibrary(sink, width, top, bottom, games)
-            TAB_SETTINGS -> drawSettings(sink, width, top, bottom)
+        when (screen) {
+            SCREEN_HOME -> drawHome(sink, width, top, bottom, games)
+            SCREEN_LIBRARY -> drawLibrary(sink, width, top, bottom, games)
+            SCREEN_SETTINGS -> drawSettings(sink, width, top, bottom)
             else -> drawSystem(sink, width, top, bottom)
         }
 
         surface.present()
     }
 
-    private fun drawHeader(sink: PixelSink, width: Int, games: List<Game>, clock: String) {
-        PixelFont.draw(sink, MARGIN, 24, "KURTOS", Panels.GOLD, 4, Panels.OUTLINE)
+    private fun drawBackground(sink: PixelSink, width: Int, height: Int, stripes: Int) {
+        sink.fill(0, 0, width, height, Panels.PAPER)
 
-        val systems = games.map { it.emulator.id }.distinct().size
-        val line = if (games.isEmpty()) {
-            "NO GAMES INSTALLED"
-        } else {
-            "${games.size} ${plural(games.size, "GAME")}   $systems ${plural(systems, "SYSTEM")}"
+        val period = STRIPE_WIDTH * 2
+        val shift = stripes % period
+        var x = shift - period
+
+        while (x < width) {
+            sink.fill(x, 0, STRIPE_WIDTH, height, Panels.STRIPE)
+            x += period
         }
-        PixelFont.draw(sink, MARGIN, 72, line, Panels.SUBTITLE, 2, Panels.OUTLINE)
-
-        val clockX = width - MARGIN - PixelFont.textWidth(clock, 3)
-        PixelFont.draw(sink, clockX, 24, clock, Panels.TITLE, 3, Panels.OUTLINE)
-
-        val date = dateText()
-        val dateX = width - MARGIN - PixelFont.textWidth(date, 2)
-        PixelFont.draw(sink, dateX, 72, date, Panels.DIM, 2, Panels.OUTLINE)
-
-        sink.fill(MARGIN, 100, width - MARGIN * 2, 2, Panels.SLOT)
     }
 
-    private fun drawTabs(sink: PixelSink, width: Int) {
-        var x = MARGIN
+    private fun drawHome(sink: PixelSink, width: Int, top: Int, bottom: Int, games: List<Game>) {
+        val space = bottom - top
 
-        for ((index, name) in tabs.withIndex()) {
-            val label = name
-            val tabWidth = PixelFont.textWidth(label, 2) + 48
-            val active = index == tab
+        val titleScale = maxOf(2, space / 108)
+        val leadScale = maxOf(1, space / 260)
 
-            if (active) {
-                sink.fill(x, TABS_Y, tabWidth, TAB_HEIGHT, Panels.GOLD)
-                sink.fill(x, TABS_Y + TAB_HEIGHT - 4, tabWidth, 4, Panels.GOLD_DARK)
-                PixelFont.draw(sink, x + 24, TABS_Y + 14, label, Panels.OUTLINE, 2)
-            } else {
-                sink.fill(x, TABS_Y, tabWidth, TAB_HEIGHT, PANEL)
-                PixelFont.draw(sink, x + 24, TABS_Y + 14, label, Panels.DIM, 2, Panels.OUTLINE)
-            }
+        val title = "WELCOME!"
+        PixelFont.draw(
+            sink,
+            (width - PixelFont.textWidth(title, titleScale)) / 2,
+            top + space / 12,
+            title,
+            Panels.INK,
+            titleScale,
+        )
 
-            x += tabWidth + 8
+        val lead = "Select a system to start playing."
+        PixelFont.draw(
+            sink,
+            (width - PixelFont.textWidth(lead, leadScale)) / 2,
+            top + space / 12 + PixelFont.HEIGHT * titleScale + space / 22,
+            lead,
+            Panels.QUIET,
+            leadScale,
+        )
+
+        val cardWidth = width * 22 / 100
+        val cardHeight = space * 58 / 100
+        val gap = width * 3 / 200
+        val total = consoles.size * cardWidth + (consoles.size - 1) * gap
+        val startX = (width - total) / 2
+        val cardY = top + space * 34 / 100
+
+        for ((index, console) in consoles.withIndex()) {
+            val x = startX + index * (cardWidth + gap)
+            drawCard(sink, x, cardY, cardWidth, cardHeight, console, index == card)
         }
+
+    }
+
+    private fun drawCard(
+        sink: PixelSink,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        console: Card,
+        active: Boolean,
+    ) {
+        val border = maxOf(2, width / 80)
+        val bandHeight = height * 20 / 100
+        val edge = if (active) Panels.ACCENT else console.edge
+        val body = if (active) 0x00FFFFFFu else console.body
+
+        if (active) {
+            val markWidth = width / 8
+            val markHeight = markWidth / 2
+            val markX = x + (width - markWidth) / 2
+            val markY = y - markHeight - border * 2
+
+            for (row in 0 until markHeight) {
+                val inset = row * markWidth / (markHeight * 2)
+                sink.fill(markX + inset, markY + row, markWidth - inset * 2, 1, Panels.ACCENT)
+            }
+        }
+
+        sink.fill(x, y, width, height, edge)
+        sink.fill(x + border, y + border, width - border * 2, height - border * 2, body)
+
+        val artArea = height - bandHeight - border
+        val scale = maxOf(1, minOf((width - border * 6) / console.art.width, (artArea - border * 4) / console.art.height))
+        val artX = x + (width - console.art.width * scale) / 2
+        val artY = y + border + (artArea - console.art.height * scale) / 2
+        console.art.draw(sink, artX, artY, scale)
+
+        val bandY = y + height - bandHeight - border
+        sink.fill(x + border, bandY, width - border * 2, bandHeight, console.band)
+
+        val room = width - border * 4
+        val fit = room / (console.title.length * PixelFont.WIDTH)
+        val labelScale = maxOf(2, minOf(fit, bandHeight / 12))
+
+        PixelFont.draw(
+            sink,
+            x + (width - PixelFont.textWidth(console.title, labelScale)) / 2,
+            bandY + (bandHeight - PixelFont.HEIGHT * labelScale) / 2,
+            console.title,
+            Panels.INK,
+            labelScale,
+        )
+    }
+
+    private fun drawPanel(sink: PixelSink, width: Int, top: Int, bottom: Int, title: String): Int {
+        val space = bottom - top
+        val scale = maxOf(2, space / 200)
+
+        PixelFont.draw(sink, width * 6 / 100, top + space / 20, title, Panels.INK, scale)
+
+        val y = top + space / 20 + PixelFont.HEIGHT * scale + space / 40
+        sink.fill(width * 6 / 100, y, width * 88 / 100, maxOf(2, space / 300), Panels.EDGE)
+
+        return y + space / 30
     }
 
     private fun drawLibrary(sink: PixelSink, width: Int, top: Int, bottom: Int, games: List<Game>) {
-        val available = width - MARGIN * 2
-        val listWidth = available * 58 / 100
-        val detailX = MARGIN + listWidth + 24
-        val detailWidth = width - MARGIN - detailX
+        val console = consoles[card]
+        val shelf = shelf(games)
+        val space = bottom - top
 
-        sink.fill(MARGIN, top, listWidth, bottom - top, PANEL)
+        var y = drawPanel(sink, width, top, bottom, console.title)
 
-        if (games.isEmpty()) {
-            PixelIcons.QUESTION_BLOCK.draw(sink, MARGIN + 32, top + 32, 3)
-            PixelFont.draw(sink, MARGIN + 32, top + 116, "NO GAMES FOUND", Panels.TITLE, 2, Panels.OUTLINE)
+        val scale = maxOf(1, space / 260)
+        val left = width * 6 / 100
+        val listWidth = width * 88 / 100
+
+        if (shelf.isEmpty()) {
+            PixelFont.draw(sink, left, y + space / 20, "NO GAMES FOUND", Panels.QUIET, scale + 1)
             PixelFont.draw(
                 sink,
-                MARGIN + 32,
-                top + 148,
-                "COPY ROMS TO ${GameLibrary.DIRECTORY.uppercase()}",
-                Panels.DIM,
-                2,
-                Panels.OUTLINE,
+                left,
+                y + space / 20 + PixelFont.HEIGHT * (scale + 1) + space / 40,
+                "COPY ${console.extension.uppercase()} FILES TO ${GameLibrary.DIRECTORY.uppercase()}",
+                Panels.QUIET,
+                scale,
             )
-            drawDetailPanel(sink, detailX, top, detailWidth, bottom - top, null)
             return
         }
 
-        val capacity = maxOf(1, (bottom - top - PADDING * 2) / (ROW_HEIGHT + ROW_GAP))
+        val rowHeight = maxOf(28, space / 12)
+        val gap = rowHeight / 6
+        val capacity = maxOf(1, (bottom - y - space / 20) / (rowHeight + gap))
+
         if (selected < scroll) scroll = selected
         if (selected >= scroll + capacity) scroll = selected - capacity + 1
-        if (scroll > maxOf(0, games.size - capacity)) scroll = maxOf(0, games.size - capacity)
+        if (scroll > maxOf(0, shelf.size - capacity)) scroll = maxOf(0, shelf.size - capacity)
 
-        for (slot in 0 until minOf(capacity, games.size - scroll)) {
+        for (slot in 0 until minOf(capacity, shelf.size - scroll)) {
             val index = scroll + slot
-            val game = games[index]
-            val rowY = top + PADDING + slot * (ROW_HEIGHT + ROW_GAP)
-            val rowX = MARGIN + PADDING
-            val rowWidth = listWidth - PADDING * 2
+            val game = shelf[index]
+            val rowY = y + slot * (rowHeight + gap)
             val active = index == selected
+            val border = maxOf(2, rowHeight / 20)
 
-            if (active) {
-                sink.fill(rowX, rowY, rowWidth, ROW_HEIGHT, Panels.GOLD)
-                sink.fill(rowX + 3, rowY + 3, rowWidth - 6, ROW_HEIGHT - 6, ROW_SELECTED)
-                sink.fill(rowX + 3, rowY + 3, 6, ROW_HEIGHT - 6, Panels.GOLD)
-            } else {
-                sink.fill(rowX, rowY, rowWidth, ROW_HEIGHT, ROW_FILL)
-            }
+            sink.fill(left, rowY, listWidth, rowHeight, if (active) Panels.ACCENT else Panels.EDGE)
+            sink.fill(
+                left + border,
+                rowY + border,
+                listWidth - border * 2,
+                rowHeight - border * 2,
+                if (active) 0x00FFFFFFu else console.body,
+            )
 
-            val icon = iconFor(game.emulator)
-            icon.draw(sink, rowX + 22, rowY + (ROW_HEIGHT - icon.height * 2) / 2, 2)
+            val artScale = maxOf(1, (rowHeight - border * 4) / console.art.height)
+            console.art.draw(
+                sink,
+                left + border * 3,
+                rowY + (rowHeight - console.art.height * artScale) / 2,
+                artScale,
+            )
 
-            val textX = rowX + 22 + icon.width * 2 + 18
-            val tag = game.emulator.system.uppercase()
-            val tagWidth = PixelFont.textWidth(tag, 2)
-            val room = (rowX + rowWidth - 24 - tagWidth - 24 - textX) / (PixelFont.WIDTH * 2)
+            val textX = left + border * 3 + console.art.width * artScale + width / 60
+            val room = (listWidth - (textX - left) - width / 10) / (PixelFont.WIDTH * scale)
 
-            val color = if (active) Panels.TITLE else Panels.SUBTITLE
-            PixelFont.draw(sink, textX, rowY + 18, clip(game.name.uppercase(), room), color, 2, Panels.OUTLINE)
+            PixelFont.draw(
+                sink,
+                textX,
+                rowY + (rowHeight - PixelFont.HEIGHT * scale) / 2,
+                clip(game.name.uppercase(), room),
+                Panels.INK,
+                scale,
+            )
 
-            val tagX = rowX + rowWidth - 24 - tagWidth
-            PixelFont.draw(sink, tagX, rowY + 18, tag, if (active) Panels.GOLD else Panels.DIM, 2, Panels.OUTLINE)
+            val size = "${game.size / 1024UL} KIB"
+            PixelFont.draw(
+                sink,
+                left + listWidth - border * 3 - PixelFont.textWidth(size, scale),
+                rowY + (rowHeight - PixelFont.HEIGHT * scale) / 2,
+                size,
+                Panels.QUIET,
+                scale,
+            )
         }
-
-        if (games.size > capacity) {
-            val trackX = MARGIN + listWidth - 10
-            val trackY = top + PADDING
-            val trackHeight = bottom - top - PADDING * 2
-
-            sink.fill(trackX, trackY, 4, trackHeight, Panels.SLOT)
-
-            val thumb = maxOf(24, trackHeight * capacity / games.size)
-            val span = trackHeight - thumb
-            val offset = if (games.size == capacity) 0 else span * scroll / (games.size - capacity)
-            sink.fill(trackX, trackY + offset, 4, thumb, Panels.GOLD)
-        }
-
-        drawDetailPanel(sink, detailX, top, detailWidth, bottom - top, games[selected])
-    }
-
-    private fun drawDetailPanel(sink: PixelSink, x: Int, y: Int, width: Int, height: Int, game: Game?) {
-        sink.fill(x, y, width, height, PANEL)
-        sink.fill(x, y, width, 3, Panels.SLOT)
-
-        val inner = x + 24
-        val room = (width - 48) / (PixelFont.WIDTH * 2)
-
-        if (game == null) {
-            PixelFont.draw(sink, inner, y + 32, "NOTHING TO PLAY", Panels.DIM, 2, Panels.OUTLINE)
-            return
-        }
-
-        val artHeight = minOf(height / 3, 300)
-        sink.fill(inner, y + 24, width - 48, artHeight, ART)
-
-        val icon = iconFor(game.emulator)
-        val iconScale = maxOf(4, minOf(10, (artHeight - 64) / icon.height))
-        val iconX = x + (width - icon.width * iconScale) / 2
-        val iconY = y + 24 + (artHeight - icon.height * iconScale) / 2
-        icon.draw(sink, iconX, iconY, iconScale)
-
-        var textY = y + 24 + artHeight + 32
-
-        PixelFont.draw(sink, inner, textY, clip(game.name.uppercase(), room), Panels.TITLE, 2, Panels.OUTLINE)
-        textY += 40
-
-        sink.fill(inner, textY, width - 48, 2, Panels.SLOT)
-        textY += 24
-
-        val saved = Files.read(GameLibrary.savePath(game), 1u) != null
-
-        textY = detailRow(sink, inner, textY, width, "SYSTEM", game.emulator.system.uppercase())
-        textY = detailRow(sink, inner, textY, width, "SIZE", "${game.size / 1024UL} KIB")
-        detailRow(sink, inner, textY, width, "SAVE", if (saved) "PRESENT" else "NONE")
-    }
-
-    private fun detailRow(sink: PixelSink, x: Int, y: Int, width: Int, label: String, value: String): Int {
-        PixelFont.draw(sink, x, y, label, Panels.DIM, 2, Panels.OUTLINE)
-
-        val valueX = x + width - 48 - PixelFont.textWidth(value, 2)
-        PixelFont.draw(sink, valueX, y, value, Panels.SUBTITLE, 2, Panels.OUTLINE)
-
-        return y + 32
     }
 
     private fun drawSettings(sink: PixelSink, width: Int, top: Int, bottom: Int) {
-        val panelWidth = width - MARGIN * 2
-        val panelHeight = minOf(
-            bottom - top,
-            PADDING * 2 + SETTING_COUNT * (SETTING_HEIGHT + ROW_GAP) + 44,
-        )
-        sink.fill(MARGIN, top, panelWidth, panelHeight, PANEL)
+        val space = bottom - top
+        var y = drawPanel(sink, width, top, bottom, "SETTINGS")
 
         val rows = listOf(
             Triple("VOLUME", "${Settings.volume}%", "HOW LOUD EMULATED SOUND PLAYS"),
             Triple("MUTE", onOff(Settings.muted), "SILENCE ALL AUDIO OUTPUT"),
             Triple("TIME ZONE", Settings.zoneLabel(), "THE CMOS CLOCK KEEPS UTC - THIS SHIFTS THE DISPLAYED TIME"),
-            Triple("DAYLIGHT SAVING", if (Settings.daylightSaving) "AUTO (EU)" else "OFF", "ADDS AN HOUR BETWEEN LATE MARCH AND LATE OCTOBER"),
+            Triple(
+                "DAYLIGHT SAVING",
+                if (Settings.daylightSaving) "AUTO (EU)" else "OFF",
+                "ADDS AN HOUR BETWEEN LATE MARCH AND LATE OCTOBER",
+            ),
             Triple("FPS OVERLAY", onOff(Settings.showFps), "SHOWS A LIVE FRAME RATE WHILE A GAME RUNS"),
+            Triple("SYSTEM INFO", "OPEN", "DRIVER STATUS AND A WAY INTO THE SHELL"),
         )
+
+        val scale = maxOf(1, space / 260)
+        val rowHeight = maxOf(34, space / 10)
+        val gap = rowHeight / 8
+        val left = width * 6 / 100
+        val rowWidth = width * 88 / 100
 
         for ((index, row) in rows.withIndex()) {
-            val rowY = top + PADDING + index * (SETTING_HEIGHT + ROW_GAP)
-            val rowX = MARGIN + PADDING
-            val rowWidth = panelWidth - PADDING * 2
+            val rowY = y + index * (rowHeight + gap)
             val active = index == setting
+            val border = maxOf(2, rowHeight / 22)
 
-            if (active) {
-                sink.fill(rowX, rowY, rowWidth, SETTING_HEIGHT, Panels.GOLD)
-                sink.fill(rowX + 3, rowY + 3, rowWidth - 6, SETTING_HEIGHT - 6, ROW_SELECTED)
-                sink.fill(rowX + 3, rowY + 3, 6, SETTING_HEIGHT - 6, Panels.GOLD)
-            } else {
-                sink.fill(rowX, rowY, rowWidth, SETTING_HEIGHT, ROW_FILL)
-            }
+            sink.fill(left, rowY, rowWidth, rowHeight, if (active) Panels.ACCENT else Panels.EDGE)
+            sink.fill(
+                left + border,
+                rowY + border,
+                rowWidth - border * 2,
+                rowHeight - border * 2,
+                if (active) 0x00FFFFFFu else Panels.CARD,
+            )
 
-            val labelColor = if (active) Panels.TITLE else Panels.SUBTITLE
-            PixelFont.draw(sink, rowX + 24, rowY + 14, row.first, labelColor, 2, Panels.OUTLINE)
-            PixelFont.draw(sink, rowX + 24, rowY + 44, row.third, Panels.DIM, 1, Panels.OUTLINE)
+            PixelFont.draw(sink, left + border * 4, rowY + rowHeight / 5, row.first, Panels.INK, scale)
+            PixelFont.draw(sink, left + border * 4, rowY + rowHeight * 3 / 5, row.third, Panels.QUIET, maxOf(1, scale - 1))
 
-            val valueX = rowX + rowWidth - 24 - PixelFont.textWidth(row.second, 2)
-
-            if (index == SETTING_VOLUME) {
-                drawMeter(sink, rowX + rowWidth - 24 - METER_WIDTH - 90, rowY + 22, Settings.volume)
-            }
-
-            PixelFont.draw(sink, valueX, rowY + 22, row.second, if (active) Panels.GOLD else Panels.SUBTITLE, 2, Panels.OUTLINE)
+            val value = row.second
+            PixelFont.draw(
+                sink,
+                left + rowWidth - border * 4 - PixelFont.textWidth(value, scale),
+                rowY + (rowHeight - PixelFont.HEIGHT * scale) / 2,
+                value,
+                Panels.INK,
+                scale,
+            )
         }
 
-        val hintY = top + PADDING + SETTING_COUNT * (SETTING_HEIGHT + ROW_GAP) + 20
+        y += rows.size * (rowHeight + gap) + space / 30
         PixelFont.draw(
             sink,
-            MARGIN + PADDING,
-            hintY,
-            "CHANGES ARE WRITTEN TO ${Settings.PATH.uppercase()} ON THE DATA DISK",
-            Panels.DIM,
-            2,
-            Panels.OUTLINE,
+            left,
+            y,
+            "SAVED TO ${Settings.PATH.uppercase()}",
+            Panels.QUIET,
+            maxOf(1, scale - 1),
         )
-    }
-
-    private fun drawMeter(sink: PixelSink, x: Int, y: Int, percent: Int) {
-        val filled = (percent + 9) / 10
-
-        for (i in 0 until 10) {
-            val cellX = x + i * (METER_CELL + 4)
-            val color = if (i < filled && !Settings.muted) Panels.GOLD else Panels.SLOT
-            sink.fill(cellX, y, METER_CELL, 16, color)
-        }
     }
 
     private fun drawSystem(sink: PixelSink, width: Int, top: Int, bottom: Int) {
-        val panelWidth = width - MARGIN * 2
-        val panelHeight = minOf(bottom - top, PADDING * 2 + 5 * 40 + 80)
-        sink.fill(MARGIN, top, panelWidth, panelHeight, PANEL)
+        val space = bottom - top
+        var y = drawPanel(sink, width, top, bottom, "SYSTEM")
 
         val rows = listOf(
             "DISPLAY" to Graphics.status().uppercase(),
@@ -541,59 +623,30 @@ object Home {
             "MEMORY" to Sys.memoryReport().uppercase(),
         )
 
-        var y = top + PADDING + 8
-        val room = (panelWidth - PADDING * 2 - 260) / (PixelFont.WIDTH * 2)
+        val scale = maxOf(1, space / 260)
+        val left = width * 6 / 100
+        val step = maxOf(24, space / 14)
+        val room = (width * 88 / 100 - width / 5) / (PixelFont.WIDTH * scale)
 
         for ((label, value) in rows) {
-            PixelFont.draw(sink, MARGIN + PADDING, y, label, Panels.DIM, 2, Panels.OUTLINE)
-            PixelFont.draw(sink, MARGIN + PADDING + 260, y, clip(value, room), Panels.SUBTITLE, 2, Panels.OUTLINE)
-            y += 40
+            PixelFont.draw(sink, left, y, label, Panels.QUIET, scale)
+            PixelFont.draw(sink, left + width / 5, y, clip(value, room), Panels.INK, scale)
+            y += step
         }
 
-        y += 16
-        PixelIcons.TERMINAL.draw(sink, MARGIN + PADDING, y, 2)
-        PixelFont.draw(sink, MARGIN + PADDING + 56, y + 8, "ENTER  OPEN SHELL", Panels.GOLD, 2, Panels.OUTLINE)
-
-        y = top + panelHeight + 28
-        if (y + 120 > bottom) return
-
-        PixelIcons.GAMEPAD.draw(sink, MARGIN, y, 2)
-        PixelFont.draw(sink, MARGIN + 56, y + 8, "CONTROLLER", Panels.SUBTITLE, 2, Panels.OUTLINE)
-        y += 48
-
-        val binds = listOf(
-            "START + SELECT" to "LEAVE THE GAME",
-            "RT / LT" to "VOLUME UP / DOWN",
-            "L / R" to "SWITCH TABS IN THE LAUNCHER",
+        y += step / 2
+        PixelIcons.TERMINAL.draw(sink, left, y, maxOf(1, scale))
+        PixelFont.draw(
+            sink,
+            left + PixelIcons.TERMINAL.width * maxOf(1, scale) + width / 60,
+            y + PixelFont.HEIGHT * scale / 4,
+            "A  OPEN SHELL",
+            Panels.INK,
+            scale,
         )
-
-        for ((bind, meaning) in binds) {
-            PixelFont.draw(sink, MARGIN + 16, y, bind, Panels.GOLD, 2, Panels.OUTLINE)
-            PixelFont.draw(sink, MARGIN + 16 + 320, y, meaning, Panels.DIM, 2, Panels.OUTLINE)
-            y += 32
-        }
     }
-
-    private fun clockText(): String {
-        val now = Time.now() ?: return uptimeText()
-        return "${pad(now.hour)}:${pad(now.minute)}"
-    }
-
-    private fun dateText(): String {
-        val now = Time.now() ?: return "NO CLOCK"
-        return "${now.year}-${pad(now.month)}-${pad(now.day)}"
-    }
-
-    private fun uptimeText(): String {
-        val seconds = (Time.uptimeMillis() / 1000UL).toInt()
-        return "${pad(seconds / 3600)}:${pad((seconds / 60) % 60)}"
-    }
-
-    private fun pad(value: Int): String = value.toString().padStart(2, '0')
 
     private fun onOff(value: Boolean): String = if (value) "ON" else "OFF"
-
-    private fun plural(count: Int, word: String): String = if (count == 1) word else "${word}S"
 
     private fun clip(text: String, room: Int): String {
         if (room <= 0) return ""
@@ -601,26 +654,8 @@ object Home {
         return text.take(maxOf(0, room - 1)) + "."
     }
 
-    private fun iconFor(emulator: Emulator): PixelIcons.Icon = when (emulator.id) {
-        "gba" -> PixelIcons.CARTRIDGE_GBA
-        else -> PixelIcons.CARTRIDGE
-    }
 
-    private const val BACKGROUND: UInt = 0x000B0F14u
-    private const val PANEL: UInt = 0x00121A26u
-    private const val ROW_FILL: UInt = 0x00182231u
-    private const val ROW_SELECTED: UInt = 0x00243349u
-    private const val ART: UInt = 0x000E1520u
-
-    private const val MARGIN = 40
-    private const val PADDING = 16
-    private const val TABS_Y = 116
-    private const val TAB_HEIGHT = 46
-    private const val CONTENT_Y = 182
-    private const val ROW_HEIGHT = 56
-    private const val ROW_GAP = 8
-    private const val SETTING_HEIGHT = 72
     private const val VOLUME_STEP = 5
-    private const val METER_CELL = 12
-    private const val METER_WIDTH = 10 * (METER_CELL + 4)
+    private const val STRIPE_WIDTH = 28
+    private const val STRIPE_MILLIS = 90UL
 }

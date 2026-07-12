@@ -7,21 +7,20 @@ import kapi.Gamepad
 import kernel.drivers.Keyboard
 import kernel.graphics.Framebuffer
 import kernel.graphics.GraphicsService
-import kernel.ui.HUD
 import kernel.ui.UI
 
 private const val SCALE = 2u
 private const val LEADING = 2u
 private const val MARGIN = 8u
 
-private const val COLOR_BACKGROUND: UInt = 0x000B0F14u
-private const val COLOR_TEXT: UInt = 0x00C8D3DEu
+private const val COLOR_BACKGROUND: UInt = 0x00F6F4EFu
+private const val COLOR_TEXT: UInt = 0x001E2430u
 
 class FramebufferConsole(private val fb: Framebuffer, private val background: UInt = COLOR_BACKGROUND) {
     private val glyphWidth = Font.ADVANCE.toUInt() * SCALE
     private val glyphHeight = (Font.HEIGHT.toUInt() + LEADING) * SCALE
 
-    private val top = HUD.RESERVED
+    private val top = 0u
 
     private val columns = ((fb.width - MARGIN * 2u) / glyphWidth).toInt()
     private val rows = ((fb.height - top - MARGIN * 2u) / glyphHeight).toInt()
@@ -33,7 +32,6 @@ class FramebufferConsole(private val fb: Framebuffer, private val background: UI
         fb.clear(background)
         column = 0
         row = 0
-        HUD.draw()
         fb.presentAll()
     }
 

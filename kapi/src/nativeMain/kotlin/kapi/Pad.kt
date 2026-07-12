@@ -22,5 +22,8 @@ object Pad {
     const val DPAD_LEFT = 17
     const val DPAD_RIGHT = 18
 
-    const val COUNT = 19
+    const val L3 = 19
+    const val R3 = 20
+
+    const val COUNT = 21
 }

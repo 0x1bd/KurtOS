@@ -2,6 +2,29 @@ plugins {
     kotlin("multiplatform")
 }
 
+val generateBuildInfo by tasks.registering {
+    val output = layout.buildDirectory.dir("generated/buildinfo")
+    val value = project.version.toString()
+
+    inputs.property("version", value)
+    outputs.dir(output)
+
+    doLast {
+        val file = output.get().file("frontend/BuildInfo.kt").asFile
+        file.parentFile.mkdirs()
+        file.writeText(
+            """
+            package frontend
+
+            object BuildInfo {
+                const val VERSION = "$value"
+            }
+
+            """.trimIndent(),
+        )
+    }
+}
+
 kotlin {
     linuxX64()
 
@@ -15,5 +38,15 @@ kotlin {
                 implementation(project(":snes"))
             }
         }
+
+        val linuxX64Test by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
     }
+}
+
+kotlin.sourceSets.matching { it.name == "nativeMain" }.configureEach {
+    kotlin.srcDir(generateBuildInfo)
 }

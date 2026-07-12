@@ -4,6 +4,5 @@ object UI {
     fun tick() {
         OSD.tick()
         SystemSounds.tick()
-        HUD.tick()
     }
 }

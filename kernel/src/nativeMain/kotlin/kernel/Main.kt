@@ -23,7 +23,6 @@ import kernel.graphics.GraphicsService
 import kernel.memory.PageAllocator
 import kernel.shellext.KernelShell
 import kapi.ui.PixelIcons
-import kernel.ui.HUD
 import kernel.ui.OSD
 import kernel.ui.SystemSounds
 import shell.CommandRegistry
@@ -85,7 +84,6 @@ fun main() {
     CoreCommands.install(registry)
     KernelShell.install(registry)
 
-    HUD.draw()
     OSD.notify(PixelIcons.MUSHROOM, "WELCOME TO KURTOS", "LET'S-A GO!", SystemSounds.Clip.Fanfare)
 
     Home.run(registry)

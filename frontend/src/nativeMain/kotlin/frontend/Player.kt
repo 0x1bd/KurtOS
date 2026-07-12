@@ -19,9 +19,6 @@ import kapi.ui.SurfaceSink
 
 object Player {
     fun play(surface: Surface, game: Game): String? {
-        Console.clear()
-        Console.println("loading ${game.name}...")
-
         val image = GameLibrary.load(game)
         if (image == null) return "cannot read ${game.path} (${Files.status()})"
         if (image.size < game.size.toInt()) return "${game.name}: read ${image.size} of ${game.size} bytes"
@@ -33,10 +30,13 @@ object Player {
         if (screen == null) return "cannot create a ${session.video.width}x${session.video.height} buffer"
 
         val saved = GameLibrary.loadSave(game, MAX_SAVE_BYTES)
-        if (saved != null) {
-            session.loadSaveData(saved)
-            Console.println("restored ${saved.size} byte save from ${GameLibrary.savePath(game)}")
-        }
+        if (saved != null) session.loadSaveData(saved)
+
+        val title = game.name.uppercase()
+        val chrome = SurfaceSink(surface)
+        var fullscreen = false
+        var repaint = true
+        var clock = ""
 
         var written = session.saveVersion()
         var seen = written
@@ -56,7 +56,6 @@ object Player {
         var next = started * MICROS_PER_MILLI
         var volumeRepeat = 0UL
 
-        val overlay = SurfaceSink(surface)
         var measured = started
         var counted = 0
         var rate = 0
@@ -94,6 +93,28 @@ object Player {
 
             if (padded) volumeRepeat = adjustVolume(volumeRepeat)
 
+            if (padded && sticksClicked()) {
+                fullscreen = !fullscreen
+                repaint = true
+                Audio.click()
+            }
+
+            if (repaint) {
+                repaint = false
+                clock = ""
+                surface.clear(BACKDROP)
+                screen.layout(surface, fullscreen, session.video)
+                surface.presentAll()
+            }
+
+            if (!fullscreen) {
+                val tick = Chrome.clockText()
+                if (tick != clock) {
+                    clock = tick
+                    Chrome.drawStatusBar(chrome, surface.width.toInt(), Chrome.barHeight(surface.height.toInt()), title, tick)
+                }
+            }
+
             session.setButtons(buttons(padded))
 
             session.runFrame()
@@ -116,7 +137,7 @@ object Player {
                     measured = tock
                 }
 
-                drawRate(surface, overlay, rate)
+                drawRate(surface, chrome, rate, fullscreen)
             }
 
             surface.present()
@@ -149,22 +170,21 @@ object Player {
         if (session.saveVersion() != written) failed = !store(game, session)
 
         releaseQuitKey()
-        Console.clear()
 
         if (!failed) return null
 
         return "${game.name}: could not save to ${GameLibrary.savePath(game)}"
     }
 
-    private fun drawRate(surface: Surface, sink: SurfaceSink, rate: Int) {
+    private fun drawRate(surface: Surface, sink: SurfaceSink, rate: Int, fullscreen: Boolean) {
         val text = "$rate FPS"
         val width = PixelFont.textWidth(text, FPS_SCALE)
 
         val x = surface.width.toInt() - width - FPS_MARGIN * 2 - 12
-        val y = FPS_MARGIN
+        val y = if (fullscreen) FPS_MARGIN else Chrome.barHeight(surface.height.toInt()) + FPS_MARGIN
 
-        sink.fill(x, y, width + 16, 8 * FPS_SCALE + 12, FPS_BACKGROUND)
-        PixelFont.draw(sink, x + 8, y + 6, text, Panels.GOLD, FPS_SCALE, Panels.OUTLINE)
+        sink.fill(x, y, width + 16, PixelFont.HEIGHT * FPS_SCALE + 12, Panels.BAR)
+        PixelFont.draw(sink, x + 8, y + 6, text, Panels.GREEN, FPS_SCALE)
     }
 
     private fun store(game: Game, session: EmulatorSession): Boolean {
@@ -172,21 +192,34 @@ object Player {
         return GameLibrary.storeSave(game, data)
     }
 
-    private interface Screen {
-        fun draw()
+    private abstract class Screen {
+        var scale = 1u
+        var originX = 0u
+        var originY = 0u
+
+        abstract fun draw()
+
+        fun layout(surface: Surface, fullscreen: Boolean, video: Video) {
+            val top = if (fullscreen) 0 else Chrome.barHeight(surface.height.toInt())
+            val room = surface.height - top.toUInt()
+
+            val horizontal = surface.width / video.width.toUInt()
+            val vertical = room / video.height.toUInt()
+            val fit = if (horizontal < vertical) horizontal else vertical
+
+            scale = if (fit < 1u) 1u else fit
+            originX = (surface.width - video.width.toUInt() * scale) / 2u
+            originY = top.toUInt() + (room - video.height.toUInt() * scale) / 2u
+        }
     }
 
     private fun screenFor(surface: Surface, video: Video): Screen? {
-        val scale = scaleFor(surface, video)
-        val originX = (surface.width - video.width.toUInt() * scale) / 2u
-        val originY = (surface.height - video.height.toUInt() * scale) / 2u
-
-        return when (video) {
+        val screen = when (video) {
             is Video.Indexed -> {
                 val bitmap = surface.createBitmap(video.width.toUInt(), video.height.toUInt(), video.paletteSize)
                     ?: return null
 
-                object : Screen {
+                object : Screen() {
                     private var paletteVersion = -1
 
                     override fun draw() {
@@ -208,7 +241,7 @@ object Player {
                 val bitmap = surface.createHighColorBitmap(video.width.toUInt(), video.height.toUInt())
                     ?: return null
 
-                object : Screen {
+                object : Screen() {
                     override fun draw() {
                         video.frame.copyInto(bitmap.pixels)
                         bitmap.draw(originX, originY, scale)
@@ -216,6 +249,21 @@ object Player {
                 }
             }
         }
+
+        screen.layout(surface, false, video)
+
+        return screen
+    }
+
+    private var sticksPrevious = false
+
+    private fun sticksClicked(): Boolean {
+        val down = Gamepad.isDown(Pad.L3) && Gamepad.isDown(Pad.R3)
+        val fired = down && !sticksPrevious
+
+        sticksPrevious = down
+
+        return fired
     }
 
     private val comboPrevious = BooleanArray(Pad.COUNT)
@@ -297,13 +345,6 @@ object Player {
         Input.drain()
     }
 
-    private fun scaleFor(surface: Surface, video: Video): UInt {
-        val horizontal = surface.width / video.width.toUInt()
-        val vertical = surface.height / video.height.toUInt()
-        val scale = if (horizontal < vertical) horizontal else vertical
-        return if (scale < 1u) 1u else scale
-    }
-
     private const val MICROS_PER_MILLI = 1000UL
 
     private const val SAVE_POLL_MS = 2000UL
@@ -317,5 +358,5 @@ object Player {
     private const val FPS_WINDOW_MS = 500UL
     private const val FPS_SCALE = 2
     private const val FPS_MARGIN = 16
-    private const val FPS_BACKGROUND: UInt = 0x00060A10u
+    private const val BACKDROP: UInt = 0x000E1116u
 }
