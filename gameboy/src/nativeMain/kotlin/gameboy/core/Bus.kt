@@ -18,6 +18,8 @@ class Bus(
     private var serialData = 0
     private var serialControl = 0
 
+    var onSerial: ((Int) -> Unit)? = null
+
     var doubleSpeed = false
         private set
 
@@ -99,7 +101,14 @@ class Bus(
             a < 0xFF00 -> return
             a == 0xFF00 -> joypad.write(v)
             a == 0xFF01 -> serialData = v
-            a == 0xFF02 -> serialControl = v
+            a == 0xFF02 -> {
+                serialControl = v
+                if (v and 0x81 == 0x81) {
+                    onSerial?.invoke(serialData)
+                    serialControl = v and 0x80.inv()
+                    interrupts.request(Interrupts.SERIAL)
+                }
+            }
             a in 0xFF04..0xFF07 -> timer.write(a, v)
             a == 0xFF0F -> interrupts.flags = v and 0x1F
             a in 0xFF10..0xFF3F -> apu.write(a, v)

@@ -1,5 +1,8 @@
 package gba.core
 
+import kapi.state.StateReader
+import kapi.state.StateWriter
+
 class GBA(rom: ByteArray, clock: RtcClock? = null) {
     val cartridge = Cartridge(rom, clock)
 
@@ -28,6 +31,46 @@ class GBA(rom: ByteArray, clock: RtcClock? = null) {
         ppu.onVBlank = { dma.onVBlank() }
     }
 
+    fun saveState(): ByteArray {
+        val writer = StateWriter()
+
+        writer.int(MAGIC)
+        writer.int(VERSION)
+
+        cpu.save(writer)
+        bus.save(writer)
+        ppu.save(writer)
+        apu.save(writer)
+        dma.save(writer)
+        timers.save(writer)
+        sio.save(writer)
+        interrupts.save(writer)
+        keypad.save(writer)
+        cartridge.save(writer)
+
+        return writer.toByteArray()
+    }
+
+    fun loadState(data: ByteArray): Boolean {
+        val reader = StateReader(data)
+
+        if (reader.int() != MAGIC) return false
+        if (reader.int() != VERSION) return false
+
+        cpu.load(reader)
+        bus.load(reader)
+        ppu.load(reader)
+        apu.load(reader)
+        dma.load(reader)
+        timers.load(reader)
+        sio.load(reader)
+        interrupts.load(reader)
+        keypad.load(reader)
+        cartridge.load(reader)
+
+        return reader.valid
+    }
+
     fun runFrame() {
         var elapsed = 0
 
@@ -51,5 +94,8 @@ class GBA(rom: ByteArray, clock: RtcClock? = null) {
 
     companion object {
         const val FRAME_CYCLES = 280896
+
+        private const val MAGIC = 0x41425347
+        private const val VERSION = 1
     }
 }

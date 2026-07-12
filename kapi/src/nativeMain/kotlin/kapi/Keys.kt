@@ -17,6 +17,9 @@ object Keys {
     const val RSHIFT: UShort = 54u
     const val SPACE: UShort = 57u
     const val F1: UShort = 59u
+    const val F2: UShort = 60u
+    const val F3: UShort = 61u
+    const val F4: UShort = 62u
     const val F5: UShort = 63u
     const val F6: UShort = 64u
     const val F7: UShort = 65u

@@ -1,5 +1,8 @@
 package gba.core
 
+import kapi.state.StateReader
+import kapi.state.StateWriter
+
 class DMA(private val interrupts: Interrupts) {
     lateinit var bus: Bus
 
@@ -10,6 +13,24 @@ class DMA(private val interrupts: Interrupts) {
 
     private val internalSource = IntArray(4)
     private val internalDestination = IntArray(4)
+
+    fun save(writer: StateWriter) {
+        writer.ints(source)
+        writer.ints(destination)
+        writer.ints(count)
+        writer.ints(control)
+        writer.ints(internalSource)
+        writer.ints(internalDestination)
+    }
+
+    fun load(reader: StateReader) {
+        reader.ints(source)
+        reader.ints(destination)
+        reader.ints(count)
+        reader.ints(control)
+        reader.ints(internalSource)
+        reader.ints(internalDestination)
+    }
 
     fun ioRead(offset: Int): Int {
         val channel = (offset - 0xB0) / 12

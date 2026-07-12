@@ -249,8 +249,8 @@ object Home {
                 action = when (button) {
                     Pad.UP -> Action.UP
                     Pad.DOWN -> Action.DOWN
-                    Pad.LEFT -> Action.LEFT
-                    Pad.RIGHT -> Action.RIGHT
+                    Pad.DPAD_LEFT -> Action.LEFT
+                    Pad.DPAD_RIGHT -> Action.RIGHT
                     Pad.L -> Action.PREV_TAB
                     Pad.R -> Action.NEXT_TAB
                     Pad.LT -> Action.QUIETER

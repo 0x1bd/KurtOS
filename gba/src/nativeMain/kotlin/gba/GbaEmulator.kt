@@ -109,5 +109,9 @@ object GbaEmulator : Emulator {
         override fun loadSaveData(data: ByteArray) = console.cartridge.loadSaveData(data)
 
         override fun saveVersion(): Int = console.cartridge.saveVersion
+
+        override fun saveState(): ByteArray = console.saveState()
+
+        override fun loadState(data: ByteArray): Boolean = console.loadState(data)
     }
 }

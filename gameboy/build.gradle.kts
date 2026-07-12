@@ -19,3 +19,7 @@ kotlin {
         }
     }
 }
+
+tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest>().configureEach {
+    environment("KURTOS_TESTROMS", rootProject.file("third_party/testroms").absolutePath)
+}

@@ -1,11 +1,26 @@
 package gba.core
 
+import kapi.state.StateReader
+import kapi.state.StateWriter
+
 class Interrupts {
     var master = false
     var enabled = 0
     var flags = 0
 
     val pending: Boolean get() = master && (enabled and flags) != 0
+
+    fun save(writer: StateWriter) {
+        writer.bool(master)
+        writer.int(enabled)
+        writer.int(flags)
+    }
+
+    fun load(reader: StateReader) {
+        master = reader.bool()
+        enabled = reader.int()
+        flags = reader.int()
+    }
 
     fun request(interrupt: Int) {
         flags = flags or interrupt

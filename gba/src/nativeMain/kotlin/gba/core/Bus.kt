@@ -1,5 +1,8 @@
 package gba.core
 
+import kapi.state.StateReader
+import kapi.state.StateWriter
+
 class Bus(
     val cartridge: Cartridge,
     val ppu: PPU,
@@ -17,6 +20,22 @@ class Bus(
     var haltRequested = false
     var waitControl = 0
     var postFlag = 0
+
+    fun save(writer: StateWriter) {
+        writer.bytes(ewram)
+        writer.bytes(iwram)
+        writer.bool(haltRequested)
+        writer.int(waitControl)
+        writer.int(postFlag)
+    }
+
+    fun load(reader: StateReader) {
+        reader.bytes(ewram)
+        reader.bytes(iwram)
+        haltRequested = reader.bool()
+        waitControl = reader.int()
+        postFlag = reader.int()
+    }
 
     fun read8(address: Int): Int = when ((address ushr 24) and 0xF) {
         0x0 -> 0

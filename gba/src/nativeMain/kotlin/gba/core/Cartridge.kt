@@ -1,5 +1,8 @@
 package gba.core
 
+import kapi.state.StateReader
+import kapi.state.StateWriter
+
 class Cartridge(val rom: ByteArray, clock: RtcClock? = null) {
     val sram = ByteArray(0x20000)
 
@@ -20,6 +23,23 @@ class Cartridge(val rom: ByteArray, clock: RtcClock? = null) {
 
     var saveVersion = 0
         private set
+
+    fun save(writer: StateWriter) {
+        writer.bytes(sram)
+        writer.int(flashState)
+        writer.int(flashMode)
+        writer.int(flashBank)
+        gpio.save(writer)
+    }
+
+    fun load(reader: StateReader) {
+        reader.bytes(sram)
+        flashState = reader.int()
+        flashMode = reader.int()
+        flashBank = reader.int()
+        gpio.load(reader)
+        saveVersion++
+    }
 
     fun saveData(): ByteArray = sram.copyOf()
 

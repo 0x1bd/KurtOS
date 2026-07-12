@@ -1,5 +1,8 @@
 package gba.core
 
+import kapi.state.StateReader
+import kapi.state.StateWriter
+
 class Sio(private val interrupts: Interrupts) {
     private val multi = IntArray(4) { 0xFFFF }
     private var control = 0
@@ -7,6 +10,24 @@ class Sio(private val interrupts: Interrupts) {
     private var data32Low = 0xFFFF
     private var data32High = 0xFFFF
     private var rcnt = 0
+
+    fun save(writer: StateWriter) {
+        writer.ints(multi)
+        writer.int(control)
+        writer.int(send)
+        writer.int(data32Low)
+        writer.int(data32High)
+        writer.int(rcnt)
+    }
+
+    fun load(reader: StateReader) {
+        reader.ints(multi)
+        control = reader.int()
+        send = reader.int()
+        data32Low = reader.int()
+        data32High = reader.int()
+        rcnt = reader.int()
+    }
 
     fun ioRead(offset: Int): Int = when (offset) {
         0x120 -> if (mode() == MODE_MULTI) multi[0] else data32Low

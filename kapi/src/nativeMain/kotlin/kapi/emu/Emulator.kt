@@ -43,6 +43,9 @@ interface EmulatorSession {
     fun saveData(): ByteArray? = null
     fun loadSaveData(data: ByteArray) {}
     fun saveVersion(): Int = 0
+
+    fun saveState(): ByteArray? = null
+    fun loadState(data: ByteArray): Boolean = false
 }
 
 interface Emulator {

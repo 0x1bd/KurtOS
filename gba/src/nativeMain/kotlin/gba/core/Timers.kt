@@ -1,5 +1,8 @@
 package gba.core
 
+import kapi.state.StateReader
+import kapi.state.StateWriter
+
 class Timers(private val interrupts: Interrupts) {
     lateinit var apu: APU
 
@@ -7,6 +10,20 @@ class Timers(private val interrupts: Interrupts) {
     private val counter = IntArray(4)
     private val control = IntArray(4)
     private val prescalerCount = IntArray(4)
+
+    fun save(writer: StateWriter) {
+        writer.ints(reload)
+        writer.ints(counter)
+        writer.ints(control)
+        writer.ints(prescalerCount)
+    }
+
+    fun load(reader: StateReader) {
+        reader.ints(reload)
+        reader.ints(counter)
+        reader.ints(control)
+        reader.ints(prescalerCount)
+    }
 
     fun ioRead(offset: Int): Int {
         val timer = (offset - 0x100) / 4

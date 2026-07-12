@@ -74,10 +74,15 @@ class Gamepad(private val device: USBDevice) {
 
         applyStick(axis(base + 6), axis(base + 8))
 
-        buttons[Pad.UP] = buttons[Pad.UP] || first and 0x01 != 0
-        buttons[Pad.DOWN] = buttons[Pad.DOWN] || first and 0x02 != 0
-        buttons[Pad.LEFT] = buttons[Pad.LEFT] || first and 0x04 != 0
-        buttons[Pad.RIGHT] = buttons[Pad.RIGHT] || first and 0x08 != 0
+        buttons[Pad.DPAD_UP] = first and 0x01 != 0
+        buttons[Pad.DPAD_DOWN] = first and 0x02 != 0
+        buttons[Pad.DPAD_LEFT] = first and 0x04 != 0
+        buttons[Pad.DPAD_RIGHT] = first and 0x08 != 0
+
+        buttons[Pad.UP] = buttons[Pad.UP] || buttons[Pad.DPAD_UP]
+        buttons[Pad.DOWN] = buttons[Pad.DOWN] || buttons[Pad.DPAD_DOWN]
+        buttons[Pad.LEFT] = buttons[Pad.LEFT] || buttons[Pad.DPAD_LEFT]
+        buttons[Pad.RIGHT] = buttons[Pad.RIGHT] || buttons[Pad.DPAD_RIGHT]
 
         buttons[Pad.START] = first and 0x10 != 0
         buttons[Pad.SELECT] = first and 0x20 != 0

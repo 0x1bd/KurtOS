@@ -1,5 +1,8 @@
 package gba.core
 
+import kapi.state.StateReader
+import kapi.state.StateWriter
+
 class APU(private val interrupts: Interrupts) {
     lateinit var dma: DMA
 
@@ -46,6 +49,39 @@ class APU(private val interrupts: Interrupts) {
             0xA4, 0xA6 -> fifoWrite(true, value or (value shl 16))
             in 0x60..0x9E -> ioStore[(offset - 0x60) / 2] = value
         }
+    }
+
+    fun save(writer: StateWriter) {
+        writer.bytes(fifoA)
+        writer.bytes(fifoB)
+        writer.int(fifoAHead)
+        writer.int(fifoATail)
+        writer.int(fifoBHead)
+        writer.int(fifoBTail)
+        writer.int(sampleA)
+        writer.int(sampleB)
+        writer.int(soundCntH)
+        writer.int(soundCntX)
+        writer.int(soundBias)
+        writer.ints(ioStore)
+        writer.int(sampleCounter)
+    }
+
+    fun load(reader: StateReader) {
+        reader.bytes(fifoA)
+        reader.bytes(fifoB)
+        fifoAHead = reader.int()
+        fifoATail = reader.int()
+        fifoBHead = reader.int()
+        fifoBTail = reader.int()
+        sampleA = reader.int()
+        sampleB = reader.int()
+        soundCntH = reader.int()
+        soundCntX = reader.int()
+        soundBias = reader.int()
+        reader.ints(ioStore)
+        sampleCounter = reader.int()
+        frames = 0
     }
 
     fun fifoWrite(fifoB: Boolean, value: Int) {

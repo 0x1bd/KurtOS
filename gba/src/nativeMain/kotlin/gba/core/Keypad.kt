@@ -1,8 +1,21 @@
 package gba.core
 
+import kapi.state.StateReader
+import kapi.state.StateWriter
+
 class Keypad {
     var state = 0x3FF
     var control = 0
+
+    fun save(writer: StateWriter) {
+        writer.int(state)
+        writer.int(control)
+    }
+
+    fun load(reader: StateReader) {
+        state = reader.int()
+        control = reader.int()
+    }
 
     fun setButtons(pressed: Int) {
         state = pressed.inv() and 0x3FF

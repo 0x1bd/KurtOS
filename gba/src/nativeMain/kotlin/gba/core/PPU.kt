@@ -1,5 +1,8 @@
 package gba.core
 
+import kapi.state.StateReader
+import kapi.state.StateWriter
+
 class PPU(private val interrupts: Interrupts) {
     val palette = ByteArray(0x400)
     val vram = ByteArray(0x18000)
@@ -42,6 +45,70 @@ class PPU(private val interrupts: Interrupts) {
     private val objLine = IntArray(WIDTH)
     private val objPriority = IntArray(WIDTH)
     private val objSemi = BooleanArray(WIDTH)
+
+    fun save(writer: StateWriter) {
+        writer.bytes(palette)
+        writer.bytes(vram)
+        writer.bytes(oam)
+        writer.shorts(frame)
+        writer.shorts(working)
+        writer.bool(framePending)
+
+        writer.int(dispcnt)
+        writer.int(dispstat)
+        writer.int(vcount)
+        writer.int(dots)
+
+        writer.ints(bgcnt)
+        writer.ints(bghofs)
+        writer.ints(bgvofs)
+        writer.ints(bgpa)
+        writer.ints(bgpb)
+        writer.ints(bgpc)
+        writer.ints(bgpd)
+        writer.ints(bgRefX)
+        writer.ints(bgRefY)
+        writer.ints(internalX)
+        writer.ints(internalY)
+        writer.ints(winRegs)
+
+        writer.int(bldcnt)
+        writer.int(bldalpha)
+        writer.int(bldy)
+        writer.int(mosaic)
+    }
+
+    fun load(reader: StateReader) {
+        reader.bytes(palette)
+        reader.bytes(vram)
+        reader.bytes(oam)
+        reader.shorts(frame)
+        reader.shorts(working)
+        framePending = reader.bool()
+
+        dispcnt = reader.int()
+        dispstat = reader.int()
+        vcount = reader.int()
+        dots = reader.int()
+
+        reader.ints(bgcnt)
+        reader.ints(bghofs)
+        reader.ints(bgvofs)
+        reader.ints(bgpa)
+        reader.ints(bgpb)
+        reader.ints(bgpc)
+        reader.ints(bgpd)
+        reader.ints(bgRefX)
+        reader.ints(bgRefY)
+        reader.ints(internalX)
+        reader.ints(internalY)
+        reader.ints(winRegs)
+
+        bldcnt = reader.int()
+        bldalpha = reader.int()
+        bldy = reader.int()
+        mosaic = reader.int()
+    }
 
     fun consumeFrame(): Boolean {
         if (!framePending) return false

@@ -13,6 +13,12 @@ class GameBoy(rom: ByteArray, monochromeShades: IntArray, clock: RTCClock? = nul
     val joypad = Joypad(interrupts)
 
     private val bus = Bus(cartridge, ppu, timer, joypad, apu, interrupts, color)
+
+    var onSerial: ((Int) -> Unit)?
+        get() = bus.onSerial
+        set(value) {
+            bus.onSerial = value
+        }
     private val cpu = CPU(bus, interrupts, color)
 
     val frame: ByteArray get() = ppu.frame

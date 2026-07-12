@@ -11,5 +11,15 @@ kotlin {
                 implementation(project(":kapi"))
             }
         }
+
+        val linuxX64Test by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
     }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest>().configureEach {
+    environment("KURTOS_TESTROMS", rootProject.file("third_party/testroms").absolutePath)
 }

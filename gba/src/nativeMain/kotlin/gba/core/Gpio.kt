@@ -1,5 +1,8 @@
 package gba.core
 
+import kapi.state.StateReader
+import kapi.state.StateWriter
+
 data class RtcTime(
     val year: Int,
     val month: Int,
@@ -31,6 +34,34 @@ class Gpio(private val clock: RtcClock?) {
     private var control = 0x40
 
     private val time = IntArray(7)
+
+    fun save(writer: StateWriter) {
+        writer.bool(readable)
+        writer.int(pinState)
+        writer.int(direction)
+        writer.int(transferStep)
+        writer.int(bitsRead)
+        writer.int(bits)
+        writer.int(bytesRemaining)
+        writer.bool(commandActive)
+        writer.int(command)
+        writer.int(control)
+        writer.ints(time)
+    }
+
+    fun load(reader: StateReader) {
+        readable = reader.bool()
+        pinState = reader.int()
+        direction = reader.int()
+        transferStep = reader.int()
+        bitsRead = reader.int()
+        bits = reader.int()
+        bytesRemaining = reader.int()
+        commandActive = reader.bool()
+        command = reader.int()
+        control = reader.int()
+        reader.ints(time)
+    }
 
     fun read(address: Int): Int = when (address and 0xFF) {
         0xC4 -> pinState

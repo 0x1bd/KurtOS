@@ -1,5 +1,8 @@
 package gba.core
 
+import kapi.state.StateReader
+import kapi.state.StateWriter
+
 class Arm7(private val bus: Bus, private val interrupts: Interrupts) {
     val r = IntArray(16)
 
@@ -27,6 +30,50 @@ class Arm7(private val bus: Bus, private val interrupts: Interrupts) {
         bankedRegs[bankIndex(MODE_IRQ)][0] = 0x03007FA0
         r[13] = 0x03007F00
         r[14] = 0x08000000
+    }
+
+    fun save(writer: StateWriter) {
+        writer.ints(r)
+        for (bank in bankedRegs) writer.ints(bank)
+        writer.ints(fiqRegs)
+        writer.ints(usrRegs)
+        writer.ints(spsr)
+
+        writer.int(pc)
+        writer.bool(thumb)
+        writer.bool(halted)
+        writer.int(waitFlags)
+        writer.int(waitReturn)
+
+        writer.int(mode)
+        writer.bool(negative)
+        writer.bool(zero)
+        writer.bool(carry)
+        writer.bool(overflow)
+        writer.bool(irqDisable)
+        writer.bool(fiqDisable)
+    }
+
+    fun load(reader: StateReader) {
+        reader.ints(r)
+        for (bank in bankedRegs) reader.ints(bank)
+        reader.ints(fiqRegs)
+        reader.ints(usrRegs)
+        reader.ints(spsr)
+
+        pc = reader.int()
+        thumb = reader.bool()
+        halted = reader.bool()
+        waitFlags = reader.int()
+        waitReturn = reader.int()
+
+        mode = reader.int()
+        negative = reader.bool()
+        zero = reader.bool()
+        carry = reader.bool()
+        overflow = reader.bool()
+        irqDisable = reader.bool()
+        fiqDisable = reader.bool()
     }
 
     fun step(): Int {
@@ -528,6 +575,8 @@ class Arm7(private val bus: Bus, private val interrupts: Interrupts) {
             } else {
                 r[rd] = result
             }
+        } else if (setFlags && rd == 15) {
+            setCpsr(spsr[spsrIndex()])
         }
 
         return cycles
@@ -632,9 +681,10 @@ class Arm7(private val bus: Bus, private val interrupts: Interrupts) {
         val rn = (opcode ushr 16) and 0xF
         var list = opcode and 0xFFFF
 
-        if (list == 0) list = 0x8000
+        val empty = list == 0
+        if (empty) list = 0x8000
 
-        val count = list.countOneBits()
+        val count = if (empty) 16 else list.countOneBits()
         val base = r[rn]
 
         var address = if (up) base else base - count * 4

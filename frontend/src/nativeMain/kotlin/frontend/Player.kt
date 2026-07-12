@@ -8,6 +8,7 @@ import kapi.Input
 import kapi.Keys
 import kapi.Pad
 import kapi.Surface
+import kapi.Sys
 import kapi.Time
 import kapi.emu.Button
 import kapi.emu.EmulatorSession
@@ -68,6 +69,28 @@ object Player {
 
             if (Input.consumePress(Keys.ESC) || Input.isKeyDown(Keys.ESC)) break
             if (padded && quitting()) break
+
+            if (Input.consumePress(Keys.F2) || (padded && shortcut(Pad.L))) {
+                val state = session.saveState()
+                if (state == null) {
+                    Sys.toast("NO SAVE STATE", "${game.emulator.system} DOES NOT SUPPORT STATES")
+                } else if (GameLibrary.storeState(game, state)) {
+                    Sys.toast("STATE SAVED", game.name.uppercase())
+                } else {
+                    Sys.toast("STATE NOT SAVED", "CANNOT WRITE ${GameLibrary.statePath(game)}")
+                }
+            }
+
+            if (Input.consumePress(Keys.F4) || (padded && shortcut(Pad.R))) {
+                val state = GameLibrary.loadState(game, MAX_STATE_BYTES)
+                if (state == null) {
+                    Sys.toast("NO STATE", "NOTHING SAVED FOR ${game.name.uppercase()}")
+                } else if (session.loadState(state)) {
+                    Sys.toast("STATE LOADED", game.name.uppercase())
+                } else {
+                    Sys.toast("STATE REJECTED", "SAVED BY A DIFFERENT BUILD")
+                }
+            }
 
             if (padded) volumeRepeat = adjustVolume(volumeRepeat)
 
@@ -195,6 +218,20 @@ object Player {
         }
     }
 
+    private val comboPrevious = BooleanArray(Pad.COUNT)
+
+    private fun shortcut(button: Int): Boolean {
+        val down = Gamepad.isDown(Pad.SELECT) && Gamepad.isDown(button)
+        val fired = down && !comboPrevious[button]
+
+        comboPrevious[button] = down
+
+        return fired
+    }
+
+    private fun combo(): Boolean =
+        Gamepad.isDown(Pad.SELECT) && (Gamepad.isDown(Pad.L) || Gamepad.isDown(Pad.R))
+
     private fun quitting(): Boolean {
         if (Gamepad.isDown(Pad.GUIDE)) return true
 
@@ -232,6 +269,8 @@ object Player {
         if (Input.isKeyDown(Keys.A) || (padded && Gamepad.isDown(Pad.L))) mask = mask or Button.L
         if (Input.isKeyDown(Keys.S) || (padded && Gamepad.isDown(Pad.R))) mask = mask or Button.R
 
+        if (padded && combo()) mask = mask and (Button.SELECT or Button.L or Button.R).inv()
+
         return mask
     }
 
@@ -267,6 +306,7 @@ object Player {
 
     private const val SAVE_POLL_MS = 2000UL
     private const val MAX_SAVE_BYTES = 262144u
+    private const val MAX_STATE_BYTES = 4194304u
 
     private const val VOLUME_STEP = 5
     private const val VOLUME_DELAY_MS = 400UL

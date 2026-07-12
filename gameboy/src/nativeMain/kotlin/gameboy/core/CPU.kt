@@ -158,7 +158,10 @@ class CPU(private val bus: Bus, private val interrupts: Interrupts, color: Boole
                 bus.write((address + 1) and 0xFFFF, (registers.sp shr 8) and 0xFF)
             }
 
-            0x18 -> return cycles + jumpRelative(true)
+            0x18 -> {
+                jumpRelative(true)
+                return cycles
+            }
             0x20 -> return cycles + jumpRelative(!registers.zero)
             0x28 -> return cycles + jumpRelative(registers.zero)
             0x30 -> return cycles + jumpRelative(!registers.carry)
