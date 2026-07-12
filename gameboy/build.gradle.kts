@@ -11,5 +11,11 @@ kotlin {
                 implementation(project(":kapi"))
             }
         }
+
+        val linuxX64Test by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
     }
 }

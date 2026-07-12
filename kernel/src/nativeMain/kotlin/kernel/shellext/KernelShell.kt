@@ -3,7 +3,6 @@ package kernel.shellext
 import apps.AppRegistry
 import hal.Arch
 import hal.BootInfo
-import hal.MemoryKind
 import hal.Serial
 import kapi.Console
 import kapi.FileKind
@@ -16,8 +15,8 @@ import kernel.arch.Acpi
 import kernel.arch.Apic
 import kernel.audio.AudioService
 import kapi.Audio
-import kernel.drivers.I8042
 import kernel.drivers.Pci
+import kernel.drivers.usb.USBService
 import kernel.drivers.Keyboard
 import kernel.drivers.KeyboardLayout
 import kernel.memory.PageAllocator
@@ -147,6 +146,39 @@ object KernelShell {
             Console.println("volume: ${volumeText()}")
         }
 
+        registry.register("usb", "list usb controller and ports") {
+            USBService.initialize()
+            USBService.describe().forEach { Console.println(it) }
+        }
+
+        registry.register("usbpoll", "poll a usb device's interrupt endpoint") { args ->
+            USBService.initialize()
+
+            val index = args.getOrNull(0)?.toIntOrNull() ?: 0
+            val millis = args.getOrNull(1)?.toIntOrNull() ?: 3000
+
+            val buffer = ByteArray(32)
+            val deadline = Time.uptimeMillis() + millis.toULong()
+            var reports = 0
+
+            Console.println("polling device $index for $millis ms")
+
+            while (Time.uptimeMillis() < deadline) {
+                val length = USBService.report(index, buffer)
+                if (length <= 0) continue
+
+                var empty = true
+                for (i in 0 until length) if (buffer[i].toInt() != 0) empty = false
+                if (empty) continue
+
+                Console.println("  " + bytes(buffer, length))
+                reports++
+                if (reports >= 12) break
+            }
+
+            Console.println("$reports reports")
+        }
+
         registry.register("hdainfo", "dump the audio codec widget graph") {
             AudioService.describe().forEach { Console.println(it) }
         }
@@ -190,6 +222,15 @@ object KernelShell {
                 else -> Console.println("usage: crash <pf|de>")
             }
         }
+    }
+
+    private fun bytes(data: ByteArray, length: Int): String {
+        val builder = StringBuilder()
+        for (i in 0 until length) {
+            builder.append((data[i].toInt() and 0xFF).toString(16).padStart(2, '0'))
+            builder.append(' ')
+        }
+        return builder.toString()
     }
 
     private fun volumeText(): String =

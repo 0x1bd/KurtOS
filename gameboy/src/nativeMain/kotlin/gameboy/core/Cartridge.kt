@@ -4,14 +4,11 @@ class Cartridge(private val rom: ByteArray) {
     val title: String = readTitle()
 
     private val cartridgeType: Int = byteAt(0x147)
-    private val romBanks: Int = romBankCount()
-    private val ramBanks: Int = ramBankCount()
-
-    private val ram = ByteArray(ramBanks * 0x2000)
 
     private val kind: Int = when (cartridgeType) {
         0x00, 0x08, 0x09 -> NONE
         0x01, 0x02, 0x03 -> MBC1
+        0x05, 0x06 -> MBC2
         0x0F, 0x10, 0x11, 0x12, 0x13 -> MBC3
         0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E -> MBC5
         else -> NONE
@@ -19,10 +16,16 @@ class Cartridge(private val rom: ByteArray) {
 
     val kindName: String = when (kind) {
         MBC1 -> "MBC1"
+        MBC2 -> "MBC2"
         MBC3 -> "MBC3"
         MBC5 -> "MBC5"
         else -> "ROM"
     }
+
+    private val romBanks: Int = romBankCount()
+    private val ramBanks: Int = if (kind == MBC2) 0 else ramBankCount()
+
+    private val ram = ByteArray(if (kind == MBC2) MBC2_RAM_BYTES else ramBanks * 0x2000)
 
     val supported: Boolean = rom.size >= 0x8000
 
@@ -49,6 +52,12 @@ class Cartridge(private val rom: ByteArray) {
 
     fun readRam(address: Int): Int {
         if (!ramEnabled || ram.isEmpty()) return 0xFF
+
+        if (kind == MBC2) {
+            val offset = (address - 0xA000) and MBC2_RAM_MASK
+            return (ram[offset].toInt() and 0x0F) or 0xF0
+        }
+
         val offset = currentRamBank() * 0x2000 + (address - 0xA000)
         if (offset < 0 || offset >= ram.size) return 0xFF
         return ram[offset].toInt() and 0xFF
@@ -56,6 +65,13 @@ class Cartridge(private val rom: ByteArray) {
 
     fun writeRam(address: Int, value: Int) {
         if (!ramEnabled || ram.isEmpty()) return
+
+        if (kind == MBC2) {
+            val offset = (address - 0xA000) and MBC2_RAM_MASK
+            ram[offset] = (value and 0x0F).toByte()
+            return
+        }
+
         val offset = currentRamBank() * 0x2000 + (address - 0xA000)
         if (offset < 0 || offset >= ram.size) return
         ram[offset] = value.toByte()
@@ -65,9 +81,22 @@ class Cartridge(private val rom: ByteArray) {
         when (kind) {
             NONE -> return
             MBC1 -> writeMbc1(address, value)
+            MBC2 -> writeMbc2(address, value)
             MBC3 -> writeMbc3(address, value)
             MBC5 -> writeMbc5(address, value)
         }
+    }
+
+    private fun writeMbc2(address: Int, value: Int) {
+        if (address >= 0x4000) return
+
+        if (address and 0x0100 == 0) {
+            ramEnabled = (value and 0x0F) == 0x0A
+            return
+        }
+
+        val bank = value and 0x0F
+        romBank = if (bank == 0) 1 else bank
     }
 
     private fun writeMbc1(address: Int, value: Int) {
@@ -132,12 +161,7 @@ class Cartridge(private val rom: ByteArray) {
         0x03 -> 4
         0x04 -> 16
         0x05 -> 8
-        else -> if (kind() == MBC2) 1 else 0
-    }
-
-    private fun kind(): Int = when (byteAt(0x147)) {
-        0x05, 0x06 -> MBC2
-        else -> NONE
+        else -> 0
     }
 
     private fun readTitle(): String {
@@ -156,5 +180,8 @@ class Cartridge(private val rom: ByteArray) {
         const val MBC2 = 2
         const val MBC3 = 3
         const val MBC5 = 5
+
+        const val MBC2_RAM_BYTES = 512
+        const val MBC2_RAM_MASK = 0x1FF
     }
 }
