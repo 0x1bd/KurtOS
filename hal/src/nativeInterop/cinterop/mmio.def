@@ -186,6 +186,7 @@ extern uint64_t kurtos_ticks;
 
 extern int kbd_ring_pop(void);
 extern uint64_t kbd_ring_overflows(void);
+extern uint64_t usb_irq_count(void);
 extern void lgdt_load(void *ptr, uint16_t code_sel, uint16_t data_sel);
 extern void ltr_load(uint16_t sel);
 extern void lidt_load(void *ptr);

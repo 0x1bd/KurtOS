@@ -65,10 +65,13 @@ interface SystemBackend {
     fun collectGarbage()
 }
 
+enum class GamepadEvent { Connected, Disconnected }
+
 interface GamepadBackend {
     fun available(): Boolean
     fun status(): String
     fun refresh()
+    fun pump(): GamepadEvent?
     fun poll()
     fun isDown(button: Int): Boolean
 }
@@ -109,7 +112,10 @@ object Graphics {
 object Input {
     internal var backend: InputBackend? = null
 
-    fun poll() = backend?.poll() ?: Unit
+    fun poll() {
+        backend?.poll()
+        Gamepad.pump()
+    }
     fun isKeyDown(code: UShort): Boolean = backend?.isKeyDown(code) ?: false
     fun consumePress(code: UShort): Boolean = backend?.consumePress(code) ?: false
     fun nextEvent(): KeyEvent? = backend?.nextEvent()
@@ -127,7 +133,10 @@ object Time {
 
     fun uptimeMillis(): ULong = backend?.uptimeMillis() ?: 0UL
 
-    fun idle() = backend?.idle() ?: Unit
+    fun idle() {
+        backend?.idle()
+        Gamepad.pump()
+    }
 }
 
 object Files {
@@ -149,11 +158,34 @@ object Sys {
 object Gamepad {
     internal var backend: GamepadBackend? = null
 
+    private val connectListeners = mutableListOf<() -> Unit>()
+    private val disconnectListeners = mutableListOf<() -> Unit>()
+
     fun available(): Boolean = backend?.available() ?: false
     fun status(): String = backend?.status() ?: "unavailable"
     fun refresh() = backend?.refresh() ?: Unit
-    fun poll() = backend?.poll() ?: Unit
     fun isDown(button: Int): Boolean = backend?.isDown(button) ?: false
+
+    fun poll() {
+        pump()
+        backend?.poll()
+    }
+
+    fun onConnect(listener: () -> Unit) {
+        connectListeners.add(listener)
+    }
+
+    fun onDisconnect(listener: () -> Unit) {
+        disconnectListeners.add(listener)
+    }
+
+    fun pump() {
+        when (backend?.pump()) {
+            GamepadEvent.Connected -> connectListeners.forEach { it() }
+            GamepadEvent.Disconnected -> disconnectListeners.forEach { it() }
+            null -> Unit
+        }
+    }
 }
 
 object Audio {

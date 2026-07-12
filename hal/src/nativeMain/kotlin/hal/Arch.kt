@@ -9,6 +9,7 @@ import mmio.lgdt_load
 import mmio.lidt_load
 import mmio.ltr_load
 import mmio.timer_ticks
+import mmio.usb_irq_count
 
 @OptIn(ExperimentalForeignApi::class)
 object Arch {
@@ -28,6 +29,8 @@ object Arch {
     fun nextScancode(): Int = kbd_ring_pop()
 
     fun droppedScancodes(): ULong = kbd_ring_overflows()
+
+    fun usbInterrupts(): ULong = usb_irq_count()
 }
 
 @OptIn(ExperimentalForeignApi::class)

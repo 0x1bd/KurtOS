@@ -1,5 +1,6 @@
 package kernel.drivers.usb
 
+import hal.Arch
 import kernel.drivers.Pci
 
 object USBService {
@@ -10,7 +11,25 @@ object USBService {
     var status: String = "not initialized"
         private set
 
+    var interruptsArmed = false
+        private set
+
+    val ready: Boolean get() = controllers.isNotEmpty()
+
     fun all(): List<USBDevice> = devices
+
+    fun armInterrupts(vector: Int, apicId: UInt) {
+        for (xhci in controllers) {
+            if (xhci.enableInterrupts(vector, apicId)) interruptsArmed = true
+        }
+    }
+
+    fun acknowledgeInterrupts() {
+        for (xhci in controllers) xhci.acknowledgeInterrupt()
+    }
+
+    fun interruptStatus(): String =
+        if (interruptsArmed) "armed, ${Arch.usbInterrupts()} received" else "polling (no msi/msi-x)"
 
     fun initialize(): Boolean {
         if (controllers.isNotEmpty()) return true

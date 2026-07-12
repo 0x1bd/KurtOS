@@ -2,6 +2,7 @@ package gameboy.core
 
 class PPU(private val interrupts: Interrupts, internal val color: Boolean) {
     val frame = ByteArray(WIDTH * HEIGHT)
+    internal val working = ByteArray(WIDTH * HEIGHT)
     val vram = ByteArray(VRAM_BANKS * VRAM_BANK_SIZE)
     val oam = ByteArray(0xA0)
 
@@ -28,6 +29,7 @@ class PPU(private val interrupts: Interrupts, internal val color: Boolean) {
     private var dots = 0
     private var statLine = false
     private var hblankPending = false
+    private var framePending = false
 
     private val renderer = PPURenderer(this)
 
@@ -37,6 +39,12 @@ class PPU(private val interrupts: Interrupts, internal val color: Boolean) {
     fun consumeHBlank(): Boolean {
         if (!hblankPending) return false
         hblankPending = false
+        return true
+    }
+
+    fun consumeFrame(): Boolean {
+        if (!framePending) return false
+        framePending = false
         return true
     }
 
@@ -57,6 +65,7 @@ class PPU(private val interrupts: Interrupts, internal val color: Boolean) {
                 line = 0
                 dots = 0
                 windowLine = 0
+                working.fill(0)
                 frame.fill(0)
             }
             return
@@ -82,6 +91,8 @@ class PPU(private val interrupts: Interrupts, internal val color: Boolean) {
                 advanceLine()
                 if (line == HEIGHT) {
                     setMode(1)
+                    working.copyInto(frame)
+                    framePending = true
                     interrupts.request(Interrupts.VBLANK)
                 } else {
                     setMode(2)

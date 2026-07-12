@@ -19,7 +19,7 @@ class PPURenderer(private val ppu: PPU) {
             for (x in 0 until PPU.WIDTH) {
                 backgroundColors[x] = 0
                 backgroundPriority[x] = false
-                ppu.frame[base + x] = 0
+                ppu.working[base + x] = 0
             }
         }
 
@@ -79,7 +79,7 @@ class PPURenderer(private val ppu: PPU) {
             backgroundColors[x] = color
             backgroundPriority[x] = priority
 
-            ppu.frame[base + x] = if (ppu.color) {
+            ppu.working[base + x] = if (ppu.color) {
                 (paletteBase + color).toByte()
             } else {
                 shade(color, ppu.bgPalette).toByte()
@@ -169,7 +169,7 @@ class PPURenderer(private val ppu: PPU) {
 
             if (hidden(screenX, masterPriority, behindBackground)) continue
 
-            ppu.frame[base + screenX] = if (ppu.color) {
+            ppu.working[base + screenX] = if (ppu.color) {
                 (PPU.OBJ_PALETTE_BASE + (flags and PALETTE_MASK) * 4 + color).toByte()
             } else {
                 val palette = if (flags and DMG_PALETTE != 0) ppu.objPalette1 else ppu.objPalette0

@@ -3,6 +3,7 @@ package kernel.console
 import hal.Cpu
 import hal.Serial
 import kapi.ConsoleBackend
+import kapi.Gamepad
 import kernel.drivers.Keyboard
 import kernel.graphics.Framebuffer
 import kernel.graphics.GraphicsService
@@ -172,6 +173,7 @@ object SystemConsole : ConsoleBackend {
         while (true) {
             tryReadChar()?.let { return it }
             Cpu.waitForInterrupt()
+            Gamepad.pump()
         }
     }
 }

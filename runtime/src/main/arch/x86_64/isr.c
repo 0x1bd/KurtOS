@@ -2,6 +2,7 @@
 
 #define VECTOR_TIMER    0x20
 #define VECTOR_KEYBOARD 0x21
+#define VECTOR_USB      0x22
 #define VECTOR_SPURIOUS 0xFF
 
 #define RING_CAPACITY 256
@@ -13,6 +14,12 @@ static volatile uint32_t ring_head;
 static volatile uint32_t ring_tail;
 static volatile uint8_t  ring_buf[RING_CAPACITY];
 static volatile uint64_t ring_dropped;
+
+static volatile uint64_t usb_events;
+
+uint64_t usb_irq_count(void) {
+    return usb_events;
+}
 
 int kbd_ring_pop(void) {
     uint32_t head = ring_head;
@@ -69,6 +76,10 @@ void isr_dispatch(uint64_t *frame) {
             }
             break;
         }
+
+        case VECTOR_USB:
+            usb_events++;
+            break;
 
         case VECTOR_SPURIOUS:
             return;

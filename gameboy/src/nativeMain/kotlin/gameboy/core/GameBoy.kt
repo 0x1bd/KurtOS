@@ -44,6 +44,8 @@ class GameBoy(rom: ByteArray, monochromeShades: IntArray) {
             if (ppu.consumeHBlank()) bus.stepHBlank()
 
             elapsed += dots
+
+            if (ppu.consumeFrame()) return
         }
     }
 

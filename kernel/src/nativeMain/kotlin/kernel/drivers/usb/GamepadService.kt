@@ -1,7 +1,13 @@
 package kernel.drivers.usb
 
+import hal.Arch
+import hal.Clock
+import kapi.GamepadEvent
+
 object GamepadService {
     private var gamepad: Gamepad? = null
+    private var seenInterrupts = 0UL
+    private var nextPoll = 0UL
 
     var status: String = "no gamepad"
         private set
@@ -37,6 +43,34 @@ object GamepadService {
 
         return rescan()
     }
+
+    fun pump(): GamepadEvent? {
+        if (!USBService.ready) return null
+
+        val interrupts = Arch.usbInterrupts()
+        val now = Clock.uptimeMillis()
+        if (interrupts == seenInterrupts && now < nextPoll) return null
+
+        seenInterrupts = interrupts
+        nextPoll = now + if (USBService.interruptsArmed) ARMED_POLL_MS else FALLBACK_POLL_MS
+        USBService.acknowledgeInterrupts()
+
+        if (!USBService.changed()) return null
+
+        val before = identity()
+        rescan()
+        val after = identity()
+
+        return when {
+            before == null && after != null -> GamepadEvent.Connected
+            before != null && after == null -> GamepadEvent.Disconnected
+            after != null && before != after -> GamepadEvent.Connected
+            else -> null
+        }
+    }
+
+    private fun identity(): String? =
+        gamepad?.let { "${it.vendorId}:${it.productId}:${it.port}" }
 
     fun summary(): String {
         val pad = gamepad ?: return status
@@ -88,4 +122,7 @@ object GamepadService {
     private const val VENDOR_CLASS = 0xFF
     private const val XINPUT_SUBCLASS = 0x5D
     private const val HID_CLASS = 0x03
+
+    private const val ARMED_POLL_MS = 2000UL
+    private const val FALLBACK_POLL_MS = 400UL
 }

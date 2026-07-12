@@ -301,6 +301,28 @@ class Xhci(private val device: PciDevice) {
         Clock.sleepMillis(CONNECT_SETTLE_MS)
     }
 
+    fun enableInterrupts(vector: Int, apicId: UInt): Boolean {
+        if (!ready) return false
+        if (!device.enableMessageInterrupt(vector, apicId)) return false
+
+        val interrupter = runtime + INTERRUPTER
+        write32(interrupter + IMOD, IMOD_INTERVAL)
+        write32(interrupter + IMAN, read32(interrupter + IMAN) or IMAN_ENABLE or IMAN_PENDING)
+        write32(operational + USBCMD, read32(operational + USBCMD) or INTERRUPTS)
+
+        return true
+    }
+
+    fun acknowledgeInterrupt() {
+        val ring = events ?: return
+
+        val interrupter = runtime + INTERRUPTER
+        val iman = read32(interrupter + IMAN)
+        if (iman and IMAN_PENDING != 0u) write32(interrupter + IMAN, iman)
+
+        RawMemory.write64(interrupter + ERDP, ring.dequeuePointer() or EVENT_BUSY)
+    }
+
     fun portRegister(port: Int): ULong = operational + PORTSC + ((port - 1) * 0x10).toULong()
 
     fun scanPorts(): List<XhciPort> {
@@ -510,12 +532,19 @@ class Xhci(private val device: PciDevice) {
         private const val PORTSC = 0x400UL
 
         private const val INTERRUPTER = 0x20UL
+        private const val IMAN = 0x00UL
+        private const val IMOD = 0x04UL
         private const val ERSTSZ = 0x08UL
         private const val ERSTBA = 0x10UL
         private const val ERDP = 0x18UL
 
+        private const val IMAN_PENDING = 0x1u
+        private const val IMAN_ENABLE = 0x2u
+        private const val IMOD_INTERVAL = 4000u
+
         private const val RUN = 0x1u
         private const val RESET = 0x2u
+        private const val INTERRUPTS = 0x4u
         private const val HALTED = 0x1u
         private const val NOT_READY = 0x800u
 

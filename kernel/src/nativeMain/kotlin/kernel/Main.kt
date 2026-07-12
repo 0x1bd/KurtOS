@@ -11,8 +11,10 @@ import kernel.arch.Gdt
 import kernel.arch.Idt
 import kernel.arch.IoApic
 import kernel.arch.Pic
+import kapi.Gamepad
 import kernel.audio.AudioService
 import kernel.drivers.usb.GamepadService
+import kernel.drivers.usb.USBService
 import kernel.console.SystemConsole
 import kernel.drivers.I8042
 import kernel.graphics.GraphicsService
@@ -54,6 +56,10 @@ fun main() {
 
     AudioService.initialize()
     GamepadService.initialize()
+    USBService.armInterrupts(Idt.VECTOR_USB, Apic.localId())
+
+    Gamepad.onConnect { Console.println("gamepad connected: ${GamepadService.status}") }
+    Gamepad.onDisconnect { Console.println("gamepad disconnected") }
 
     Console.println("KurtOS")
     Console.println(KernelSystem.memoryReport())

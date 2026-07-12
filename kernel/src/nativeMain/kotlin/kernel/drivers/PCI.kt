@@ -1,6 +1,8 @@
 package kernel.drivers
 
 import hal.PCIConfig
+import hal.RawMemory
+import kernel.memory.Mmio
 
 class PciDevice(val bus: Int, val slot: Int, val function: Int) {
     val vendorId: Int = PCIConfig.read16(bus, slot, function, 0x00).toInt()
@@ -34,6 +36,79 @@ class PciDevice(val bus: Int, val slot: Int, val function: Int) {
         PCIConfig.write16(bus, slot, function, 0x04, (command or 0x0006u).toUShort())
     }
 
+    fun enableMessageInterrupt(vector: Int, apicId: UInt): Boolean =
+        enableMsi(vector, apicId) || enableMsix(vector, apicId)
+
+    private fun enableMsi(vector: Int, apicId: UInt): Boolean {
+        val offset = findCapability(CAPABILITY_MSI)
+        if (offset == 0) return false
+
+        val control = PCIConfig.read16(bus, slot, function, offset + 2).toUInt()
+        val wide = control and MSI_64BIT != 0u
+
+        PCIConfig.write32(bus, slot, function, offset + 4, messageAddress(apicId))
+
+        val dataOffset = if (wide) {
+            PCIConfig.write32(bus, slot, function, offset + 8, 0u)
+            offset + 12
+        } else {
+            offset + 8
+        }
+
+        PCIConfig.write16(bus, slot, function, dataOffset, vector.toUShort())
+        PCIConfig.write16(bus, slot, function, offset + 2, ((control and MSI_MULTIPLE.inv()) or MSI_ENABLE).toUShort())
+
+        disableIntx()
+        return true
+    }
+
+    private fun enableMsix(vector: Int, apicId: UInt): Boolean {
+        val offset = findCapability(CAPABILITY_MSIX)
+        if (offset == 0) return false
+
+        val location = PCIConfig.read32(bus, slot, function, offset + 4)
+        val barBase = bar((location and 0x7u).toInt())
+        if (barBase == 0UL) return false
+
+        val entry = Mmio.map(barBase + (location and 0x7u.inv()).toULong(), 16UL)
+        if (entry == 0UL) return false
+
+        RawMemory.write32(entry, messageAddress(apicId))
+        RawMemory.write32(entry + 4UL, 0u)
+        RawMemory.write32(entry + 8UL, vector.toUInt())
+        RawMemory.write32(entry + 12UL, 0u)
+
+        val control = PCIConfig.read16(bus, slot, function, offset + 2).toUInt()
+        PCIConfig.write16(bus, slot, function, offset + 2, ((control or MSIX_ENABLE) and MSIX_FUNCTION_MASK.inv()).toUShort())
+
+        disableIntx()
+        return true
+    }
+
+    private fun messageAddress(apicId: UInt): UInt = 0xFEE00000u or (apicId shl 12)
+
+    private fun disableIntx() {
+        val command = PCIConfig.read16(bus, slot, function, 0x04).toUInt()
+        PCIConfig.write16(bus, slot, function, 0x04, (command or INTX_DISABLE).toUShort())
+    }
+
+    private fun findCapability(id: Int): Int {
+        val status = PCIConfig.read16(bus, slot, function, 0x06).toUInt()
+        if (status and CAPABILITIES_LIST == 0u) return 0
+
+        var offset = PCIConfig.read8(bus, slot, function, 0x34).toInt() and 0xFC
+        var guard = 0
+
+        while (offset != 0 && guard < 48) {
+            guard++
+
+            if (PCIConfig.read8(bus, slot, function, offset).toInt() == id) return offset
+            offset = PCIConfig.read8(bus, slot, function, offset + 1).toInt() and 0xFC
+        }
+
+        return 0
+    }
+
     fun describe(): String {
         val location = "${hex(bus, 2)}:${hex(slot, 2)}.${function}"
         val identity = "${hex(vendorId, 4)}:${hex(deviceId, 4)}"
@@ -53,6 +128,18 @@ class PciDevice(val bus: Int, val slot: Int, val function: Int) {
 
     private fun hex(value: Int, width: Int): String =
         value.toString(16).padStart(width, '0')
+
+    private companion object {
+        const val CAPABILITY_MSI = 0x05
+        const val CAPABILITY_MSIX = 0x11
+        const val CAPABILITIES_LIST = 0x10u
+        const val MSI_ENABLE = 0x1u
+        const val MSI_64BIT = 0x80u
+        const val MSI_MULTIPLE = 0x70u
+        const val MSIX_ENABLE = 0x8000u
+        const val MSIX_FUNCTION_MASK = 0x4000u
+        const val INTX_DISABLE = 0x400u
+    }
 }
 
 object Pci {

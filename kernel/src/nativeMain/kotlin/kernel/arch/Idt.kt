@@ -6,6 +6,7 @@ import hal.RawMemory
 object Idt {
     const val VECTOR_TIMER = 0x20
     const val VECTOR_KEYBOARD = 0x21
+    const val VECTOR_USB = 0x22
     const val VECTOR_SPURIOUS = 0xFF
 
     private const val ENTRY_SIZE = 16

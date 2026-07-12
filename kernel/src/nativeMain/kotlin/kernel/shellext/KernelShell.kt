@@ -166,6 +166,7 @@ object KernelShell {
             }
 
             USBService.describe().forEach { Console.println(it) }
+            Console.println("irq: ${USBService.interruptStatus()}")
             Console.println("gamepad: ${GamepadService.summary()}")
         }
 

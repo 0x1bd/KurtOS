@@ -2,6 +2,7 @@ package kernel
 
 import kapi.AudioBackend
 import kapi.GamepadBackend
+import kapi.GamepadEvent
 import kernel.drivers.usb.GamepadService
 import kernel.audio.AudioService
 import hal.BootInfo
@@ -82,6 +83,8 @@ object KernelGamepad : GamepadBackend {
     override fun refresh() {
         GamepadService.refresh()
     }
+
+    override fun pump(): GamepadEvent? = GamepadService.pump()
 
     override fun poll() = GamepadService.poll()
 
