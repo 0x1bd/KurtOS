@@ -1,6 +1,7 @@
 package shell
 
 import kapi.Console
+import kapi.Sys
 
 class ShellContext(val registry: CommandRegistry)
 
@@ -49,6 +50,7 @@ object Shell {
                     Console.println("Unknown command: $trimmed. Type 'help'.")
                 }
             }
+            Sys.collectGarbage()
         }
     }
 }

@@ -1,4 +1,4 @@
-char __libc_single_threaded = 1;
+char __libc_single_threaded = 0;
 void *__dso_handle = 0;
 void * _ZTISt12system_error[4] = {0};
 void * _ZTVSt12system_error[4] = {0};

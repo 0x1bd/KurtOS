@@ -1,6 +1,7 @@
 package hal
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import mmio.raw_blit_indexed
 import mmio.raw_copy
 import mmio.raw_fill32
 import mmio.raw_read16
@@ -36,6 +37,24 @@ object RawMemory {
     fun copy(destination: ULong, source: ULong, bytes: ULong) = raw_copy(destination, source, bytes)
 
     fun zero(address: ULong, length: ULong) = raw_zero(address, length)
+
+    fun blitIndexed(
+        destination: ULong,
+        destinationStride: UInt,
+        source: ULong,
+        sourceWidth: UInt,
+        sourceHeight: UInt,
+        palette: ULong,
+        scale: UInt,
+    ) = raw_blit_indexed(
+        destination,
+        destinationStride.toULong(),
+        source,
+        sourceWidth,
+        sourceHeight,
+        palette,
+        scale,
+    )
 
     fun readBytes(address: ULong, length: Int): ByteArray {
         val result = ByteArray(length)

@@ -1,162 +1,387 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define HDR_SIZE  (sizeof(heap_block_t))
+extern void *memcpy(void *dst, const void *src, size_t n);
+extern void *memset(void *s, int c, size_t n);
+extern void debug_print(const char *msg);
 
-typedef struct heap_block {
+#define ALIGN_LOG2      4
+#define ALIGN_SIZE      ((uint64_t)1 << ALIGN_LOG2)
+#define SL_LOG2         4
+#define SL_COUNT        (1 << SL_LOG2)
+#define FL_SHIFT        (SL_LOG2 + ALIGN_LOG2)
+#define FL_MAX          36
+#define FL_COUNT        (FL_MAX - (FL_SHIFT - 1) + 1)
+#define SMALL_BLOCK     ((uint64_t)1 << FL_SHIFT)
+
+#define BLOCK_FREE      ((uint64_t)1)
+#define BLOCK_PREV_FREE ((uint64_t)2)
+#define BLOCK_FLAGS     (BLOCK_FREE | BLOCK_PREV_FREE)
+
+typedef struct block {
+    uint64_t prev_size;
     uint64_t size;
-    uint64_t free;
-} heap_block_t;
+    struct block *next_free;
+    struct block *prev_free;
+} block_t;
 
-static uint8_t *heap_base = 0;
-static uint8_t *heap_limit = 0;
-static uint8_t *heap_bump = 0;
-int      heap_ready = 0;
+#define HDR_SIZE    ((uint64_t)16)
+#define MIN_PAYLOAD ((uint64_t)16)
 
-static inline size_t align16(size_t n) {
-    return (n + 15u) & ~(size_t)15u;
+static uint32_t fl_bitmap;
+static uint32_t sl_bitmap[FL_COUNT];
+static block_t *free_lists[FL_COUNT][SL_COUNT];
+
+static uint8_t *heap_base;
+static uint8_t *heap_limit;
+static block_t *heap_sentinel;
+static uint64_t live_bytes;
+
+int heap_ready = 0;
+
+static inline int fls64(uint64_t x) {
+    return 63 - __builtin_clzll(x);
+}
+
+static inline int ffs32(uint32_t x) {
+    return __builtin_ctz(x);
+}
+
+static inline uint64_t payload_of(const block_t *b) {
+    return b->size & ~BLOCK_FLAGS;
+}
+
+static inline int is_free(const block_t *b) {
+    return (b->size & BLOCK_FREE) != 0;
+}
+
+static inline int prev_is_free(const block_t *b) {
+    return (b->size & BLOCK_PREV_FREE) != 0;
+}
+
+static inline block_t *next_block(block_t *b) {
+    return (block_t *)((uint8_t *)b + HDR_SIZE + payload_of(b));
+}
+
+static inline block_t *prev_block(block_t *b) {
+    return (block_t *)((uint8_t *)b - b->prev_size);
+}
+
+static inline void *payload_ptr(block_t *b) {
+    return (void *)((uint8_t *)b + HDR_SIZE);
+}
+
+static inline block_t *block_of(void *p) {
+    return (block_t *)((uint8_t *)p - HDR_SIZE);
+}
+
+static inline uint64_t adjust_size(uint64_t n) {
+    uint64_t s = (n + ALIGN_SIZE - 1) & ~(ALIGN_SIZE - 1);
+    return s < MIN_PAYLOAD ? MIN_PAYLOAD : s;
+}
+
+static void mapping_insert(uint64_t size, int *fl, int *sl) {
+    if (size < SMALL_BLOCK) {
+        *fl = 0;
+        *sl = (int)(size / (SMALL_BLOCK / SL_COUNT));
+    } else {
+        int f = fls64(size);
+        *sl = (int)((size >> (f - SL_LOG2)) - SL_COUNT);
+        *fl = f - (FL_SHIFT - 1);
+    }
+}
+
+static void mapping_search(uint64_t size, int *fl, int *sl) {
+    if (size >= SMALL_BLOCK) {
+        uint64_t round = ((uint64_t)1 << (fls64(size) - SL_LOG2)) - 1;
+        size += round;
+    }
+    mapping_insert(size, fl, sl);
+}
+
+static void insert_free(block_t *b) {
+    int fl, sl;
+    mapping_insert(payload_of(b), &fl, &sl);
+
+    block_t *head = free_lists[fl][sl];
+    b->next_free = head;
+    b->prev_free = (block_t *)0;
+    if (head) head->prev_free = b;
+    free_lists[fl][sl] = b;
+
+    fl_bitmap |= (uint32_t)1 << fl;
+    sl_bitmap[fl] |= (uint32_t)1 << sl;
+}
+
+static void remove_free(block_t *b) {
+    int fl, sl;
+    mapping_insert(payload_of(b), &fl, &sl);
+
+    if (b->prev_free) b->prev_free->next_free = b->next_free;
+    if (b->next_free) b->next_free->prev_free = b->prev_free;
+
+    if (free_lists[fl][sl] == b) {
+        free_lists[fl][sl] = b->next_free;
+        if (!b->next_free) {
+            sl_bitmap[fl] &= ~((uint32_t)1 << sl);
+            if (!sl_bitmap[fl]) fl_bitmap &= ~((uint32_t)1 << fl);
+        }
+    }
+}
+
+static block_t *find_suitable(uint64_t size) {
+    int fl, sl;
+    mapping_search(size, &fl, &sl);
+    if (fl >= FL_COUNT) return (block_t *)0;
+
+    uint32_t map = sl_bitmap[fl] & (~(uint32_t)0 << sl);
+    if (!map) {
+        uint32_t fmap = fl_bitmap & (~(uint32_t)0 << (fl + 1));
+        if (!fmap) return (block_t *)0;
+        fl = ffs32(fmap);
+        map = sl_bitmap[fl];
+        if (!map) return (block_t *)0;
+    }
+    sl = ffs32(map);
+    return free_lists[fl][sl];
+}
+
+static void mark_used(block_t *b) {
+    b->size &= ~BLOCK_FREE;
+    block_t *n = next_block(b);
+    n->size &= ~BLOCK_PREV_FREE;
+}
+
+static void mark_free(block_t *b) {
+    b->size |= BLOCK_FREE;
+    block_t *n = next_block(b);
+    n->size |= BLOCK_PREV_FREE;
+    n->prev_size = HDR_SIZE + payload_of(b);
+}
+
+static block_t *merge_next(block_t *b) {
+    block_t *n = next_block(b);
+    if (n == heap_sentinel || !is_free(n)) return b;
+    remove_free(n);
+    b->size = (payload_of(b) + HDR_SIZE + payload_of(n)) | (b->size & BLOCK_FLAGS);
+    return b;
+}
+
+static block_t *merge_prev(block_t *b) {
+    if (!prev_is_free(b)) return b;
+    block_t *p = prev_block(b);
+    remove_free(p);
+    p->size = (payload_of(p) + HDR_SIZE + payload_of(b)) | (p->size & BLOCK_FLAGS);
+    return p;
+}
+
+static void release(block_t *b) {
+    mark_free(b);
+    b = merge_prev(b);
+    b = merge_next(b);
+    mark_free(b);
+    insert_free(b);
+}
+
+static void split_block(block_t *b, uint64_t size) {
+    uint64_t total = payload_of(b);
+    if (total < size + HDR_SIZE + MIN_PAYLOAD) return;
+
+    uint64_t rest = total - size - HDR_SIZE;
+    b->size = size | (b->size & BLOCK_FLAGS);
+
+    block_t *r = (block_t *)((uint8_t *)b + HDR_SIZE + size);
+    r->prev_size = HDR_SIZE + size;
+    r->size = rest;
+
+    mark_free(r);
+    r = merge_next(r);
+    mark_free(r);
+    insert_free(r);
 }
 
 void heap_init(uint64_t base, uint64_t size) {
-    heap_base = (uint8_t *)base;
-    heap_limit = (uint8_t *)(base + size);
-    heap_bump  = heap_base;
+    heap_ready = 0;
+    fl_bitmap = 0;
+    live_bytes = 0;
+
+    for (int i = 0; i < FL_COUNT; i++) {
+        sl_bitmap[i] = 0;
+        for (int j = 0; j < SL_COUNT; j++) free_lists[i][j] = (block_t *)0;
+    }
+
+    uint8_t *start = (uint8_t *)((base + ALIGN_SIZE - 1) & ~(ALIGN_SIZE - 1));
+    uint8_t *end = (uint8_t *)((base + size) & ~(ALIGN_SIZE - 1));
+
+    if (end < start || (uint64_t)(end - start) < 4 * HDR_SIZE + MIN_PAYLOAD) {
+        debug_print("heap_init: region too small\n");
+        return;
+    }
+
+    heap_base = start;
+    heap_limit = end;
+    heap_sentinel = (block_t *)(end - HDR_SIZE);
+
+    block_t *b = (block_t *)start;
+    uint64_t payload = (uint64_t)((uint8_t *)heap_sentinel - start) - HDR_SIZE;
+
+    b->prev_size = 0;
+    b->size = payload;
+
+    heap_sentinel->prev_size = HDR_SIZE + payload;
+    heap_sentinel->size = 0;
+
+    mark_free(b);
+    insert_free(b);
+
     heap_ready = 1;
 }
 
 uint64_t heap_used(void) {
-    return (uint64_t)(heap_bump - heap_base);
+    return live_bytes;
 }
 
 uint64_t heap_total(void) {
-    return (uint64_t)(heap_limit - heap_base);
+    return heap_ready ? (uint64_t)(heap_limit - heap_base) : 0;
 }
 
-extern void debug_print(const char *s);
 void *malloc(size_t n) {
     if (!heap_ready || n == 0) return (void *)0;
 
-    size_t aligned = align16(n);
-    uint8_t *p = heap_base;
-    
-    while (p + HDR_SIZE <= heap_bump) {
-        heap_block_t *hdr = (heap_block_t *)p;
-        if (hdr->free && hdr->size >= aligned) {
-            if (hdr->size >= aligned + HDR_SIZE + 16u) {
-                uint8_t *new_p = p + HDR_SIZE + aligned;
-                heap_block_t *new_hdr = (heap_block_t *)new_p;
-                new_hdr->size = hdr->size - aligned - HDR_SIZE;
-                new_hdr->free = 1;
-                hdr->size = aligned;
-            }
-            hdr->free = 0;
-            return (void *)(p + HDR_SIZE);
-        }
-        p += HDR_SIZE + hdr->size;
+    uint64_t size = adjust_size((uint64_t)n);
+    block_t *b = find_suitable(size);
+    if (!b) {
+        debug_print("malloc: out of memory\n");
+        return (void *)0;
     }
 
-    if (heap_bump + HDR_SIZE + aligned > heap_limit) {
-        debug_print("malloc: heap exhausted\n");
-        for (;;) __asm__ volatile("cli; hlt");
-    }
+    remove_free(b);
+    mark_used(b);
+    split_block(b, size);
+    live_bytes += payload_of(b);
 
-    heap_block_t *hdr = (heap_block_t *)heap_bump;
-    hdr->size = aligned;
-    hdr->free = 0;
-    heap_bump += HDR_SIZE + aligned;
-    return (void *)((uint8_t *)hdr + HDR_SIZE);
+    return payload_ptr(b);
 }
 
 void free(void *ptr) {
-    if (!ptr) return;
+    if (!ptr || !heap_ready) return;
 
-    heap_block_t *hdr = (heap_block_t *)((uint8_t *)ptr - HDR_SIZE);
-    hdr->free = 1;
+    block_t *b = block_of(ptr);
+    if (is_free(b)) return;
 
-    uint8_t *next_p = (uint8_t *)hdr + HDR_SIZE + hdr->size;
-    while (next_p + HDR_SIZE <= heap_bump) {
-        heap_block_t *next = (heap_block_t *)next_p;
-        if (!next->free) break;
-        hdr->size += HDR_SIZE + next->size;
-        next_p    += HDR_SIZE + next->size;
-    }
+    live_bytes -= payload_of(b);
+    release(b);
 }
 
 void *calloc(size_t nmemb, size_t size) {
+    if (nmemb != 0 && size > (size_t)-1 / nmemb) return (void *)0;
+
     size_t total = nmemb * size;
-    void  *p     = malloc(total);
-    if (p) {
-        uint8_t *b = (uint8_t *)p;
-        for (size_t i = 0; i < total; i++) b[i] = 0;
-    }
+    void *p = malloc(total);
+    if (p) memset(p, 0, total);
     return p;
 }
 
 void *realloc(void *ptr, size_t size) {
-    if (!ptr)   return malloc(size);
-    if (!size)  { free(ptr); return (void *)0; }
+    if (!ptr) return malloc(size);
+    if (size == 0) {
+        free(ptr);
+        return (void *)0;
+    }
 
-    heap_block_t *hdr = (heap_block_t *)((uint8_t *)ptr - HDR_SIZE);
-    size_t old_size   = hdr->size;
-    size_t aligned    = align16(size);
+    block_t *b = block_of(ptr);
+    uint64_t need = adjust_size((uint64_t)size);
+    uint64_t cur = payload_of(b);
 
-    if (aligned <= old_size) return ptr;
+    if (need <= cur) {
+        split_block(b, need);
+        live_bytes -= cur - payload_of(b);
+        return ptr;
+    }
 
-    void *newp = malloc(size);
-    if (!newp) return (void *)0;
+    block_t *n = next_block(b);
+    if (n != heap_sentinel && is_free(n) && cur + HDR_SIZE + payload_of(n) >= need) {
+        remove_free(n);
+        b->size = (cur + HDR_SIZE + payload_of(n)) | (b->size & BLOCK_FLAGS);
+        mark_used(b);
+        split_block(b, need);
+        live_bytes += payload_of(b) - cur;
+        return ptr;
+    }
 
-    uint8_t *src = (uint8_t *)ptr;
-    uint8_t *dst = (uint8_t *)newp;
-    for (size_t i = 0; i < old_size; i++) dst[i] = src[i];
+    void *np = malloc(size);
+    if (!np) return (void *)0;
+
+    memcpy(np, ptr, cur);
     free(ptr);
-    return newp;
+    return np;
 }
 
 int posix_memalign(void **memptr, size_t alignment, size_t size) {
-    if (!heap_ready || size == 0) return 22;
-    if (alignment < 16) alignment = 16;
-    size_t aligned_size = align16(size);
+    if (!memptr) return 22;
+    if (alignment < sizeof(void *) || (alignment & (alignment - 1)) != 0) return 22;
+    if (!heap_ready) return 12;
 
-    size_t offset = (size_t)(heap_bump + HDR_SIZE) % alignment;
-    size_t shift = (offset == 0) ? 0 : alignment - offset;
-
-    
-    if (shift > 0 && shift < HDR_SIZE + 16u) {
-        shift += alignment;
+    if (size == 0) {
+        *memptr = (void *)0;
+        return 0;
     }
 
-    if (heap_bump + shift + HDR_SIZE + aligned_size > heap_limit) {
+    if (alignment <= ALIGN_SIZE) {
+        void *p = malloc(size);
+        if (!p) return 12;
+        *memptr = p;
+        return 0;
+    }
+
+    uint64_t need = adjust_size((uint64_t)size);
+    uint64_t slack = (uint64_t)alignment + HDR_SIZE + MIN_PAYLOAD + ALIGN_SIZE;
+
+    block_t *b = find_suitable(need + slack);
+    if (!b) {
+        debug_print("posix_memalign: out of memory\n");
         return 12;
     }
 
-    if (shift > 0) {
-        heap_block_t *padding = (heap_block_t *)heap_bump;
-        padding->size = shift - HDR_SIZE;
-        padding->free = 1;
-        heap_bump += shift;
+    remove_free(b);
+    mark_used(b);
+
+    uint64_t start = (uint64_t)(uintptr_t)payload_ptr(b);
+    uint64_t aligned = (start + alignment - 1) & ~((uint64_t)alignment - 1);
+
+    if (aligned != start && aligned - start < HDR_SIZE + MIN_PAYLOAD) {
+        aligned = (start + HDR_SIZE + MIN_PAYLOAD + alignment - 1) & ~((uint64_t)alignment - 1);
     }
 
-    heap_block_t *hdr = (heap_block_t *)heap_bump;
-    hdr->size = aligned_size;
-    hdr->free = 0;
-    heap_bump += HDR_SIZE + aligned_size;
+    if (aligned != start) {
+        uint64_t total = payload_of(b);
+        uint64_t lead = aligned - start - HDR_SIZE;
+        uint64_t rest = total - lead - HDR_SIZE;
 
-    *memptr = (void *)((uint8_t *)hdr + HDR_SIZE);
+        block_t *r = (block_t *)(uintptr_t)(aligned - HDR_SIZE);
+        b->size = lead | (b->size & BLOCK_FLAGS);
+        r->prev_size = HDR_SIZE + lead;
+        r->size = rest;
+
+        mark_used(r);
+        release(b);
+        b = r;
+    }
+
+    split_block(b, need);
+    live_bytes += payload_of(b);
+
+    *memptr = payload_ptr(b);
     return 0;
 }
 
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, long offset) {
     (void)addr; (void)prot; (void)flags; (void)fd; (void)offset;
 
-    void *p = (void*)0;
-    if (posix_memalign(&p, 4096, length) != 0) {
-        return (void *)-1;
-    }
+    void *p = (void *)0;
+    if (posix_memalign(&p, 4096, length) != 0) return (void *)-1;
 
-    
-    uint8_t *b = (uint8_t *)p;
-    for (size_t i = 0; i < length; i++) b[i] = 0;
-
+    memset(p, 0, length);
     return p;
 }
 

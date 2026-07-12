@@ -3,8 +3,13 @@ package kernel.graphics
 import hal.BootInfo
 import hal.FramebufferInfo
 import hal.RawMemory
+import kapi.IndexedBitmap
 import kapi.Surface
 import kernel.memory.PageAllocator
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.pin
+import kotlinx.cinterop.toLong
 
 class Framebuffer(private val info: FramebufferInfo, private val backbuffer: ULong) : Surface {
     override val width: UInt = info.width
@@ -41,6 +46,55 @@ class Framebuffer(private val info: FramebufferInfo, private val backbuffer: ULo
         }
 
         markDirty(y, endY)
+    }
+
+    override fun createBitmap(width: UInt, height: UInt, paletteSize: Int): IndexedBitmap? {
+        if (width == 0u || height == 0u || paletteSize <= 0) return null
+        if (width > this.width || height > this.height) return null
+        return PinnedBitmap(width, height, paletteSize)
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private inner class PinnedBitmap(
+        override val width: UInt,
+        override val height: UInt,
+        paletteSize: Int,
+    ) : IndexedBitmap {
+        override val pixels = ByteArray((width * height).toInt())
+
+        private val palette = IntArray(paletteSize)
+
+        private val pinnedPixels = pixels.pin()
+        private val pinnedPalette = palette.pin()
+
+        private val pixelsAddress = pinnedPixels.addressOf(0).toLong().toULong()
+        private val paletteAddress = pinnedPalette.addressOf(0).toLong().toULong()
+
+        override fun setPalette(index: Int, color: UInt) {
+            if (index < 0 || index >= palette.size) return
+            palette[index] = encode(color).toInt()
+        }
+
+        override fun draw(x: UInt, y: UInt, scale: UInt) {
+            if (scale == 0u) return
+
+            val drawnWidth = width * scale
+            val drawnHeight = height * scale
+            if (x + drawnWidth > this@Framebuffer.width) return
+            if (y + drawnHeight > this@Framebuffer.height) return
+
+            RawMemory.blitIndexed(
+                backbuffer + y.toULong() * stride.toULong() + x.toULong() * 4UL,
+                stride,
+                pixelsAddress,
+                width,
+                height,
+                paletteAddress,
+                scale,
+            )
+
+            markDirty(y, y + drawnHeight)
+        }
     }
 
     fun setPixel(x: UInt, y: UInt, color: UInt) {

@@ -1,19 +1,3 @@
-int pthread_mutex_init(void *m, const void *attr): return0
-int pthread_mutex_lock(void *m): return0
-int pthread_mutex_trylock(void *m): return0
-int pthread_mutex_unlock(void *m): return0
-int pthread_mutex_destroy(void *m): return0
-unsigned long pthread_self(void): return1
-
-# Single-core kernel contract
-int pthread_create(void *tid, const void *attr, void *(*start)(void *), void *arg): return_eagain
-void pthread_exit(void *retval): abort
-int pthread_cond_init(void *cond, const void *attr): return0
-int pthread_cond_broadcast(void *cond): return0
-int pthread_cond_signal(void *cond): return0
-int pthread_cond_destroy(void *cond): return0
-int pthread_detach(unsigned long thread): return0
-
 void abort(void): abort
 void exit(int code): abort
 void _Exit(int status): abort
@@ -23,22 +7,17 @@ int sigemptyset(void *set): return0
 int __fxstat(int ver, int fd, void *stat_buf): return_enosys
 long syscall(long number, ...): return_enosysL
 
-int clock_gettime(int clk_id, void *tp): return_enosys
 unsigned int sleep(unsigned int seconds): abort
 int usleep(unsigned int usec): abort
 int getpagesize(void): return_pagesize
 int gettimeofday(void *tv, void *tz): return_enosys
 int getrusage(int who, void *usage): return_enosys
 int getpid(void): return1
-int sched_yield(void): return0
 char* getenv(const char *name): return_null
 int fcntl(int fd, int cmd, ...): return_enosys
 void* fdopen(int fd, const char *mode): return_null
 long readlink(const char *path, char *buf, unsigned long len): return_enosysL
 int pthread_setname_np(unsigned long thread, const char *name): return0
-int pthread_join(unsigned long thread, void **retval): return_enosys
-int pthread_cond_wait(void *cond, void *mutex): abort
-int pthread_cond_timedwait(void *cond, void *mutex, const void *abstime): abort
 int __lxstat(int ver, const char *path, void *buf): return_enosys
 
 int fflush(void *stream): return0
@@ -60,28 +39,16 @@ void __stack_chk_fail(void): abort
 long __getauxval(unsigned long type): return0
 void _ZSt21__glibcxx_assert_failPKciS0_S0_(const char *file, int line, const char *fn, const char *cond): abort
 
-# std::thread and std::system_error are reachable only from code paths a
-# single-threaded kernel never takes; they are referenced, never called.
-void _ZNSt6thread15_M_start_threadESt10unique_ptrINS_6_StateESt14default_deleteIS1_EEPFvvE(void *t, void *s, void *f): abort
 unsigned int _ZNSt6thread20hardware_concurrencyEv(void): return1
-void _ZNSt6thread4joinEv(void *t): abort
-void _ZNSt6thread6detachEv(void *t): empty
 void _ZNSt6thread6_StateD2Ev(void *s): empty
 void _ZNSt12system_errorD1Ev(void *e): empty
 void _ZNSt13runtime_errorC2ERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE(void *e, const void *what): empty
-void _ZNSt18condition_variable10notify_oneEv(void *cv): empty
 void* _ZNSt3_V215system_categoryEv(void): return_null
 void* _ZNSt3_V216generic_categoryEv(void): return_null
-long _ZNSt6chrono3_V212system_clock3nowEv(void): return0
 
 void _ZdlPv(void *p): free_arg0
 void _ZdlPvm(void *p, unsigned long s): free_arg0
 void* _Znwm(unsigned long s): return_malloc
-void _ZNSt18condition_variable10notify_allEv(void): empty
-void _ZNSt18condition_variable4waitERSt11unique_lockISt5mutexE(void): abort
-void _ZNSt18condition_variableC1Ev(void): empty
-void _ZNSt18condition_variableD1Ev(void): empty
-void _ZNSt6chrono3_V212steady_clock3nowEv(void): abort
 void _ZSt20__throw_system_errori(int e): abort
 void _ZSt25__throw_bad_function_callv(void): abort
 

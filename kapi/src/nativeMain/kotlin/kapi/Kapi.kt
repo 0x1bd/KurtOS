@@ -8,12 +8,22 @@ interface ConsoleBackend {
     fun clear()
 }
 
+interface IndexedBitmap {
+    val width: UInt
+    val height: UInt
+    val pixels: ByteArray
+
+    fun setPalette(index: Int, color: UInt)
+    fun draw(x: UInt, y: UInt, scale: UInt)
+}
+
 interface Surface {
     val width: UInt
     val height: UInt
 
     fun clear(color: UInt)
     fun fillRect(x: UInt, y: UInt, width: UInt, height: UInt, color: UInt)
+    fun createBitmap(width: UInt, height: UInt, paletteSize: Int): IndexedBitmap?
     fun present()
     fun presentAll()
 }
@@ -29,6 +39,7 @@ interface InputBackend {
     fun poll()
     fun isKeyDown(code: UShort): Boolean
     fun nextEvent(): KeyEvent?
+    fun characterFor(code: UShort): Char?
     fun status(): String
 }
 
@@ -50,6 +61,13 @@ interface FilesBackend {
 interface SystemBackend {
     fun halt(): Nothing
     fun memoryReport(): String
+    fun collectGarbage()
+}
+
+interface AudioBackend {
+    fun status(): String
+    fun sampleRate(): UInt
+    fun queue(samples: ShortArray, count: Int)
 }
 
 object Console {
@@ -76,6 +94,7 @@ object Input {
     fun poll() = backend?.poll() ?: Unit
     fun isKeyDown(code: UShort): Boolean = backend?.isKeyDown(code) ?: false
     fun nextEvent(): KeyEvent? = backend?.nextEvent()
+    fun characterFor(code: UShort): Char? = backend?.characterFor(code)
     fun status(): String = backend?.status() ?: "unavailable"
 
     fun drain() {
@@ -105,6 +124,15 @@ object Sys {
 
     fun halt(): Nothing = backend?.halt() ?: error("no system backend")
     fun memoryReport(): String = backend?.memoryReport() ?: "unavailable"
+    fun collectGarbage() = backend?.collectGarbage() ?: Unit
+}
+
+object Audio {
+    internal var backend: AudioBackend? = null
+
+    fun status(): String = backend?.status() ?: "unavailable"
+    fun sampleRate(): UInt = backend?.sampleRate() ?: 0u
+    fun queue(samples: ShortArray, count: Int) = backend?.queue(samples, count) ?: Unit
 }
 
 object KapiRuntime {
@@ -115,6 +143,7 @@ object KapiRuntime {
         time: TimeBackend,
         files: FilesBackend,
         system: SystemBackend,
+        audio: AudioBackend,
     ) {
         Console.backend = console
         Graphics.backend = graphics
@@ -122,5 +151,6 @@ object KapiRuntime {
         Time.backend = time
         Files.backend = files
         Sys.backend = system
+        Audio.backend = audio
     }
 }

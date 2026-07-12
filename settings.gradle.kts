@@ -7,4 +7,5 @@ include(
     "runtime",
     "shell",
     "apps",
+    "gameboy",
 )

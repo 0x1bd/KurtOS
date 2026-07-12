@@ -1,5 +1,6 @@
 package kernel
 
+import kapi.AudioBackend
 import hal.BootInfo
 import hal.Clock
 import hal.Cpu
@@ -32,6 +33,8 @@ object KernelInput : InputBackend {
     override fun isKeyDown(code: UShort): Boolean = Keyboard.isKeyDown(code)
 
     override fun nextEvent(): KeyEvent? = Keyboard.nextEvent()
+
+    override fun characterFor(code: UShort): Char? = Keyboard.characterFor(code)
 
     override fun status(): String =
         if (kernel.drivers.I8042.present) "ps/2 keyboard" else "no keyboard"
@@ -66,9 +69,23 @@ object KernelFiles : FilesBackend {
     }
 }
 
+object KernelAudio : AudioBackend {
+    override fun status(): String = "no audio device"
+
+    override fun sampleRate(): UInt = 0u
+
+    override fun queue(samples: ShortArray, count: Int) {
+    }
+}
+
 object KernelSystem : SystemBackend {
     override fun halt(): Nothing {
         Cpu.hang()
+    }
+
+    @OptIn(kotlin.native.runtime.NativeRuntimeApi::class)
+    override fun collectGarbage() {
+        kotlin.native.runtime.GC.collect()
     }
 
     override fun memoryReport(): String {

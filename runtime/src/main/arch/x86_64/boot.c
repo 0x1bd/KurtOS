@@ -3,6 +3,7 @@
 #include "kurtos.h"
 
 extern void kotlin_main(void);
+extern void kthread_init(void);
 extern void (*__init_array_start[])(void);
 extern void (*__init_array_end[])(void);
 extern void __cpu_indicator_init(void);
@@ -177,6 +178,17 @@ static void collect_module(void) {
 #define TLS_ARENA_SIZE 65536
 static uint8_t tls_arena[TLS_ARENA_SIZE] __attribute__((aligned(64)));
 
+uint64_t tls_main = 0;
+
+extern int posix_memalign(void **memptr, size_t alignment, size_t size);
+extern void free(void *p);
+
+static void tls_fill(uint8_t *tp, size_t tls_size, size_t tdata_size) {
+    for (size_t i = 0; i < tdata_size; i++) tp[i - tls_size] = __tdata_start[i];
+    for (size_t i = tdata_size; i < tls_size; i++) tp[i - tls_size] = 0;
+    *(uint64_t *)tp = (uint64_t)tp;
+}
+
 static void tls_init(void) {
     size_t tls_size = (size_t)(__tbss_end - __tdata_start);
     size_t tdata_size = (size_t)(__tdata_end - __tdata_start);
@@ -187,14 +199,31 @@ static void tls_init(void) {
     }
 
     uint8_t *tp = tls_arena + tls_size;
-
-    for (size_t i = 0; i < tdata_size; i++) tp[i - tls_size] = __tdata_start[i];
-    for (size_t i = tdata_size; i < tls_size; i++) tp[i - tls_size] = 0;
-
-    *(uint64_t *)tp = (uint64_t)tp;
+    tls_fill(tp, tls_size, tdata_size);
+    tls_main = (uint64_t)tp;
 
     uint64_t base = (uint64_t)tp;
     __asm__ volatile("wrmsr" : : "c"(0xC0000100), "a"((uint32_t)base), "d"((uint32_t)(base >> 32)));
+}
+
+uint64_t tls_alloc(uint64_t *base_out) {
+    size_t tls_size = (size_t)(__tbss_end - __tdata_start);
+    size_t tdata_size = (size_t)(__tdata_end - __tdata_start);
+    size_t bytes = tls_size + 64;
+
+    void *raw = 0;
+    if (posix_memalign(&raw, 64, bytes) != 0) return 0;
+    uint8_t *block = (uint8_t *)raw;
+
+    uint8_t *tp = block + tls_size;
+    tls_fill(tp, tls_size, tdata_size);
+
+    if (base_out) *base_out = (uint64_t)block;
+    return (uint64_t)tp;
+}
+
+void tls_free(uint64_t base) {
+    if (base) free((void *)base);
 }
 
 static void enable_sse(void) {
@@ -238,6 +267,7 @@ void kmain_entry(void) {
     tls_init();
     heap_init(kurtos_boot_info.heap_start,
               kurtos_boot_info.heap_end - kurtos_boot_info.heap_start);
+    kthread_init();
 
     __cpu_indicator_init();
 

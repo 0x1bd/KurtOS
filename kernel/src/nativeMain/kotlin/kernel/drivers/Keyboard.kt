@@ -14,6 +14,16 @@ object Keyboard {
     private var extended = false
     private var shift = false
 
+    private var layout = KeyboardLayout.DE
+
+    val layoutName: String get() = layout.name
+
+    fun selectLayout(name: String): Boolean {
+        val next = KeyboardLayout.find(name) ?: return false
+        layout = next
+        return true
+    }
+
     fun poll() {
         while (true) {
             val raw = Arch.nextScancode()
@@ -30,6 +40,8 @@ object Keyboard {
     fun nextEvent(): KeyEvent? = events.removeFirstOrNull()
 
     fun nextChar(): Char? = characters.removeFirstOrNull()
+
+    fun characterFor(code: UShort): Char? = layout.character(code.toInt(), false)
 
     fun drain() {
         events.clear()
@@ -58,7 +70,7 @@ object Keyboard {
         events.addLast(KeyEvent(keycode.toUShort(), !released))
 
         if (!released) {
-            asciiFor(keycode)?.let { characters.addLast(it) }
+            layout.character(keycode, shift)?.let { characters.addLast(it) }
         }
     }
 
@@ -71,28 +83,5 @@ object Keyboard {
         0x38 -> 100
         0x1D -> 97
         else -> 0
-    }
-
-    private val unshifted = arrayOf(
-        "", "", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "\b",
-        "\t", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "[", "]", "\n",
-        "", "a", "s", "d", "f", "g", "h", "j", "k", "l", ";", "'", "`",
-        "", "\\", "z", "x", "c", "v", "b", "n", "m", ",", ".", "/",
-        "", "*", "", " ",
-    )
-
-    private val shifted = arrayOf(
-        "", "", "!", "@", "#", "$", "%", "^", "&", "*", "(", ")", "_", "+", "\b",
-        "\t", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "{", "}", "\n",
-        "", "A", "S", "D", "F", "G", "H", "J", "K", "L", ":", "\"", "~",
-        "", "|", "Z", "X", "C", "V", "B", "N", "M", "<", ">", "?",
-        "", "*", "", " ",
-    )
-
-    private fun asciiFor(keycode: Int): Char? {
-        val table = if (shift) shifted else unshifted
-        if (keycode >= table.size) return null
-        val text = table[keycode]
-        return if (text.isEmpty()) null else text[0]
     }
 }

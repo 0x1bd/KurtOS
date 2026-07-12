@@ -6,7 +6,12 @@ kotlin {
     linuxX64 {
         binaries {
             staticLib("kurtos") {
-                freeCompilerArgs = freeCompilerArgs + listOf("-Xbinary=gc=noop", "-g")
+                freeCompilerArgs = freeCompilerArgs + listOf(
+                    "-Xbinary=gc=stwms",
+                    "-Xbinary=gcMarkSingleThreaded=true",
+                    "-Xbinary=gcSchedulerType=manual",
+                    "-g",
+                )
                 if (buildType.name == "RELEASE") {
                     freeCompilerArgs = freeCompilerArgs + "-opt"
                 }

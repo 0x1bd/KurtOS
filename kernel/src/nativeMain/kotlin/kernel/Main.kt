@@ -44,6 +44,7 @@ fun main() {
         time = KernelTime,
         files = KernelFiles,
         system = KernelSystem,
+        audio = KernelAudio,
     )
 
     startInterrupts()

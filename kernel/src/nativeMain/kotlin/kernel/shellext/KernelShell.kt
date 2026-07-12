@@ -10,10 +10,13 @@ import kapi.FileKind
 import kapi.Files
 import kapi.Graphics
 import kapi.Input
+import kapi.Sys
 import kapi.Time
 import kernel.arch.Acpi
 import kernel.arch.Apic
 import kernel.drivers.I8042
+import kernel.drivers.Keyboard
+import kernel.drivers.KeyboardLayout
 import kernel.memory.PageAllocator
 import shell.CommandRegistry
 
@@ -99,7 +102,40 @@ object KernelShell {
                 Console.println("usage: run <app>")
                 return@register
             }
-            AppLoader.run(name)
+
+            val application = AppRegistry.find(name)
+            if (application == null) {
+                Console.println("no such application: $name")
+                return@register
+            }
+
+            application.run()
+            Console.clear()
+            Sys.collectGarbage()
+        }
+
+        registry.register("keymap", "show or set the keyboard layout") { args ->
+            val name = args.getOrNull(0)
+            if (name == null) {
+                Console.println("layout: ${Keyboard.layoutName}")
+                Console.println("available: ${KeyboardLayout.all.joinToString(", ") { it.name }}")
+                return@register
+            }
+
+            if (!Keyboard.selectLayout(name)) {
+                Console.println("unknown layout: $name")
+                return@register
+            }
+
+            Console.println("layout: ${Keyboard.layoutName}")
+        }
+
+        registry.register("gc", "run a garbage collection") {
+            Console.println("before: ${Sys.memoryReport()}")
+            val start = Time.uptimeMillis()
+            Sys.collectGarbage()
+            val elapsed = Time.uptimeMillis() - start
+            Console.println("after:  ${Sys.memoryReport()} (${elapsed} ms)")
         }
 
         registry.register("crash", "trigger a fault, to test the panic handler") { args ->
@@ -122,46 +158,5 @@ object KernelShell {
             )
         }
         return builder.toString()
-    }
-}
-
-private object AppLoader {
-    fun run(name: String) {
-        val manifestBytes = Files.read("/apps/$name.app", 2048u)
-        if (manifestBytes == null) {
-            Console.println("no such application: $name")
-            return
-        }
-
-        val manifest = parse(manifestBytes.decodeToString())
-        if (manifest["name"] != name || manifest["type"] != "kotlin") {
-            Console.println("invalid manifest for $name")
-            return
-        }
-
-        val entry = manifest["entry"]
-        val application = entry?.let { AppRegistry.find(it) }
-        if (application == null) {
-            Console.println("manifest names an unknown entry point: ${entry ?: "<missing>"}")
-            return
-        }
-
-        application.run()
-        Console.clear()
-    }
-
-    private fun parse(text: String): Map<String, String> {
-        val lines = text.split("\n", "\r\n", "\r")
-        if (lines.firstOrNull()?.trim() != "KAPP1") return emptyMap()
-
-        val values = mutableMapOf<String, String>()
-        lines.drop(1).forEach { line ->
-            val trimmed = line.trim()
-            val separator = trimmed.indexOf('=')
-            if (separator > 0) {
-                values[trimmed.substring(0, separator)] = trimmed.substring(separator + 1)
-            }
-        }
-        return values
     }
 }
