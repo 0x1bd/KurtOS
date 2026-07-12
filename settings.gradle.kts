@@ -9,4 +9,5 @@ include(
     "frontend",
     "gameboy",
     "gba",
+    "snes",
 )

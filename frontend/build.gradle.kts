@@ -12,6 +12,7 @@ kotlin {
                 implementation(project(":shell"))
                 implementation(project(":gameboy"))
                 implementation(project(":gba"))
+                implementation(project(":snes"))
             }
         }
     }

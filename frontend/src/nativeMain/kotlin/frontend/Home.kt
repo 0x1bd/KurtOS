@@ -256,6 +256,7 @@ object Home {
                     Pad.LT -> Action.QUIETER
                     Pad.RT -> Action.LOUDER
                     Pad.A, Pad.START -> Action.SELECT
+                    Pad.Y -> Action.REFRESH
                     else -> Action.NONE
                 }
             }

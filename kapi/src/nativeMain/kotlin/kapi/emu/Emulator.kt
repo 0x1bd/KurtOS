@@ -11,6 +11,8 @@ object Button {
     const val DOWN = 0x080
     const val R = 0x100
     const val L = 0x200
+    const val X = 0x400
+    const val Y = 0x800
 }
 
 sealed class Video(val width: Int, val height: Int) {

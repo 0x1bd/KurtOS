@@ -50,3 +50,6 @@ uart.log
 NOTES.md
 third_party/limine/limine
 third_party/limine/*.o
+
+# Generated CPU test vectors (tools/mkcpuvectors.py)
+third_party/testroms/*.vec

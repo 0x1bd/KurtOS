@@ -268,6 +268,8 @@ object Player {
         if (Input.isKeyDown(Keys.DOWN) || (padded && Gamepad.isDown(Pad.DOWN))) mask = mask or Button.DOWN
         if (Input.isKeyDown(Keys.A) || (padded && Gamepad.isDown(Pad.L))) mask = mask or Button.L
         if (Input.isKeyDown(Keys.S) || (padded && Gamepad.isDown(Pad.R))) mask = mask or Button.R
+        if (Input.isKeyDown(Keys.D) || (padded && Gamepad.isDown(Pad.X))) mask = mask or Button.X
+        if (Input.isKeyDown(Keys.C) || (padded && Gamepad.isDown(Pad.Y))) mask = mask or Button.Y
 
         if (padded && combo()) mask = mask and (Button.SELECT or Button.L or Button.R).inv()
 
