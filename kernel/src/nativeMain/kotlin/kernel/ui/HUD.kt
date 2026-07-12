@@ -1,8 +1,11 @@
 package kernel.ui
 
 import hal.Clock
+import kapi.Status
 import kapi.Time
+import kapi.ui.Panels
 import kapi.ui.PixelFont
+import kapi.ui.PixelIcons
 import kernel.audio.AudioService
 import kernel.graphics.GraphicsService
 import kernel.memory.PageAllocator
@@ -29,87 +32,96 @@ object HUD {
 
         lastDraw = Clock.uptimeMillis()
 
-        target.fill(0, 0, width, RESERVED.toInt() - 2, COLOR_BACKGROUND)
-        target.fill(0, RESERVED.toInt() - 2, width, 2, COLOR_LINE)
+        target.fill(0, 0, width, BAR_HEIGHT, COLOR_BACKGROUND)
+        target.fill(0, BAR_HEIGHT, width, 2, COLOR_LINE)
 
-        val x0 = 16
-        val x1 = width * 32 / 100
-        val x2 = width * 54 / 100
-        val x3 = width * 72 / 100
+        PixelFont.draw(target, MARGIN, TEXT_Y, "KURTOS", Panels.GOLD, SCALE, COLOR_SHADOW)
 
-        PixelFont.draw(target, x0, LABEL_Y, "KURTOS", COLOR_LABEL, SCALE, COLOR_SHADOW)
-        PixelFont.draw(target, x1, LABEL_Y, "WORLD", COLOR_LABEL, SCALE, COLOR_SHADOW)
-        PixelFont.draw(target, x2, LABEL_Y, "TIME", COLOR_LABEL, SCALE, COLOR_SHADOW)
-        PixelFont.draw(target, x3, LABEL_Y, "♪ SOUND", COLOR_LABEL, SCALE, COLOR_SHADOW)
+        var x = MARGIN + PixelFont.textWidth("KURTOS", SCALE) + GAP
+        separator(target, x)
+        x += GAP
 
-        PixelFont.draw(target, x0, VALUE_Y, score(), COLOR_VALUE, SCALE, COLOR_SHADOW)
-        PixelFont.draw(target, x1, VALUE_Y, " 1-1", COLOR_VALUE, SCALE, COLOR_SHADOW)
-        PixelFont.draw(target, x2, VALUE_Y, clock(x3 - x2 - COLUMN_GAP), COLOR_VALUE, SCALE, COLOR_SHADOW)
+        val context = Status.context ?: "LIBRARY"
+        PixelFont.draw(target, x, TEXT_Y, context, COLOR_VALUE, SCALE, COLOR_SHADOW)
 
-        drawVolume(target, x3)
+        var right = width - MARGIN
+
+        val clock = clock()
+        right -= PixelFont.textWidth(clock, SCALE)
+        PixelFont.draw(target, right, TEXT_Y, clock, COLOR_VALUE, SCALE, COLOR_SHADOW)
+
+        right -= GAP
+        separator(target, right)
+        right -= GAP
+
+        right -= meterWidth()
+        drawVolume(target, right)
+
+        right -= GAP
+        separator(target, right)
+        right -= GAP
+
+        val memory = memory()
+        right -= PixelFont.textWidth(memory, SCALE)
+        PixelFont.draw(target, right, TEXT_Y, memory, Panels.DIM, SCALE, COLOR_SHADOW)
     }
+
+    private fun separator(target: FramebufferSink, x: Int) {
+        target.fill(x, 12, 2, BAR_HEIGHT - 24, COLOR_LINE)
+    }
+
+    private fun meterWidth(): Int = PixelIcons.SPEAKER.width * SCALE + 10 + CELLS * (CELL_W + CELL_GAP)
 
     private fun drawVolume(target: FramebufferSink, x: Int) {
-        if (AudioService.muted()) {
-            PixelFont.draw(target, x, VALUE_Y, "MUTED", COLOR_MUTED, SCALE, COLOR_SHADOW)
-            return
-        }
+        val muted = AudioService.muted()
+        val icon = if (muted) PixelIcons.SPEAKER_MUTE else PixelIcons.SPEAKER
 
-        val filled = (AudioService.volume() + 9) / 10
+        icon.draw(target, x, (BAR_HEIGHT - icon.height * SCALE) / 2, SCALE)
+
+        val cellsX = x + icon.width * SCALE + 10
+        val filled = if (muted) 0 else (AudioService.volume() + 9) / 10
 
         for (i in 0 until CELLS) {
-            val cellX = x + i * (CELL_W + CELL_GAP)
-            val color = if (i < filled) COLOR_COIN else COLOR_SLOT
-            target.fill(cellX, VALUE_Y + 1, CELL_W, CELL_H, color)
+            val cellX = cellsX + i * (CELL_W + CELL_GAP)
+            val color = if (i < filled) Panels.GOLD else COLOR_SLOT
+            target.fill(cellX, (BAR_HEIGHT - CELL_H) / 2, CELL_W, CELL_H, color)
         }
     }
 
-    private fun score(): String {
-        val used = PageAllocator.totalPages - PageAllocator.freePages
-        return used.toString().padStart(6, '0')
-    }
-
-    private fun clock(available: Int): String {
+    private fun clock(): String {
         val now = Time.now() ?: return uptime()
-
-        val date = "${now.year}-${pad(now.month)}-${pad(now.day)}"
-        val time = "${pad(now.hour)}:${pad(now.minute)}"
-
-        val options = listOf(
-            "$date $time:${pad(now.second)}",
-            "$date $time",
-            "${pad(now.month)}-${pad(now.day)} $time",
-            "$time:${pad(now.second)}",
-            time,
-        )
-
-        return options.firstOrNull { PixelFont.textWidth(it, SCALE) <= available } ?: time
+        return "${pad(now.hour)}:${pad(now.minute)}"
     }
 
     private fun uptime(): String {
         val seconds = (Clock.uptimeMillis() / 1000UL).toInt()
-        return "${pad(seconds / 3600)}:${pad((seconds / 60) % 60)}:${pad(seconds % 60)}"
+        return "${pad(seconds / 3600)}:${pad((seconds / 60) % 60)}"
+    }
+
+    private fun memory(): String {
+        val used = PageAllocator.totalPages - PageAllocator.freePages
+        return "${used / PAGES_PER_MIB} / ${PageAllocator.totalPages / PAGES_PER_MIB} MIB"
     }
 
     private fun pad(value: Int): String = value.toString().padStart(2, '0')
 
     private const val SCALE = 2
-    private const val LABEL_Y = 8
-    private const val VALUE_Y = 28
+    private const val BAR_HEIGHT = 50
+    private const val TEXT_Y = 17
+    private const val MARGIN = 16
+    private const val GAP = 16
     private const val REFRESH_MS = 500UL
-    private const val COLUMN_GAP = 16
+
+    private const val PAGES_PER_MIB = 256
 
     private const val CELLS = 10
-    private const val CELL_W = 10
-    private const val CELL_H = 14
-    private const val CELL_GAP = 4
+    private const val CELL_W = 8
+    private const val CELL_GAP = 3
+    private const val CELL_H = 16
 
     private const val COLOR_BACKGROUND: UInt = 0x00060A10u
     private const val COLOR_LINE: UInt = 0x00283048u
-    private const val COLOR_LABEL: UInt = 0x00F8D878u
     private const val COLOR_VALUE: UInt = 0x00F8F8F8u
     private const val COLOR_SHADOW: UInt = 0x00101018u
-    private const val COLOR_MUTED: UInt = 0x00E04838u
-    private const val COLOR_COIN: UInt = 0x00F8B800u
     private const val COLOR_SLOT: UInt = 0x00283048u
 }

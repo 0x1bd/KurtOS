@@ -1,7 +1,7 @@
 package gameboy.core
 
-class GameBoy(rom: ByteArray, monochromeShades: IntArray) {
-    val cartridge = Cartridge(rom)
+class GameBoy(rom: ByteArray, monochromeShades: IntArray, clock: RTCClock? = null) {
+    val cartridge = Cartridge(rom, clock)
 
     val color: Boolean = cartridge.colorCapable
 

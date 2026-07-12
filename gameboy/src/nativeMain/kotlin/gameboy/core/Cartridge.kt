@@ -1,9 +1,13 @@
 package gameboy.core
 
-class Cartridge(private val rom: ByteArray) {
+class Cartridge(private val rom: ByteArray, clock: RTCClock? = null) {
     val title: String = readTitle()
 
     private val cartridgeType: Int = byteAt(0x147)
+
+    val timer: Boolean = cartridgeType == 0x0F || cartridgeType == 0x10
+
+    private val rtc = RTC(if (timer) clock else null)
 
     private val kind: Int = when (cartridgeType) {
         0x00, 0x08, 0x09 -> NONE
@@ -59,7 +63,11 @@ class Cartridge(private val rom: ByteArray) {
     }
 
     fun readRam(address: Int): Int {
-        if (!ramEnabled || ram.isEmpty()) return 0xFF
+        if (!ramEnabled) return 0xFF
+
+        if (timer && ramBank in RTC.SECONDS..RTC.DAYS_HIGH) return rtc.read(ramBank)
+
+        if (ram.isEmpty()) return 0xFF
 
         if (kind == MBC2) {
             val offset = (address - 0xA000) and MBC2_RAM_MASK
@@ -72,7 +80,15 @@ class Cartridge(private val rom: ByteArray) {
     }
 
     fun writeRam(address: Int, value: Int) {
-        if (!ramEnabled || ram.isEmpty()) return
+        if (!ramEnabled) return
+
+        if (timer && ramBank in RTC.SECONDS..RTC.DAYS_HIGH) {
+            rtc.write(ramBank, value)
+            saveVersion++
+            return
+        }
+
+        if (ram.isEmpty()) return
 
         if (kind == MBC2) {
             val offset = (address - 0xA000) and MBC2_RAM_MASK
@@ -88,15 +104,27 @@ class Cartridge(private val rom: ByteArray) {
     }
 
     fun saveData(): ByteArray? {
-        if (!battery || ram.isEmpty()) return null
-        return ram.copyOf()
+        if (!battery) return null
+        if (ram.isEmpty() && !timer) return null
+
+        if (!timer) return ram.copyOf()
+
+        val out = ByteArray(ram.size + RTC.SAVE_BYTES)
+        ram.copyInto(out)
+        rtc.save().copyInto(out, ram.size)
+
+        return out
     }
 
     fun loadSaveData(data: ByteArray) {
-        if (!battery || ram.isEmpty()) return
+        if (!battery) return
 
-        val length = if (data.size < ram.size) data.size else ram.size
-        data.copyInto(ram, 0, 0, length)
+        if (ram.isNotEmpty()) {
+            val length = if (data.size < ram.size) data.size else ram.size
+            data.copyInto(ram, 0, 0, length)
+        }
+
+        if (timer) rtc.load(data, ram.size)
     }
 
     fun writeControl(address: Int, value: Int) {
@@ -141,6 +169,7 @@ class Cartridge(private val rom: ByteArray) {
                 romBank = if (bank == 0) 1 else bank
             }
             2 -> ramBank = value and 0x0F
+            3 -> if (timer) rtc.writeLatch(value and 0xFF)
         }
     }
 

@@ -3,6 +3,8 @@ package gameboy
 import gameboy.core.GameBoy
 import gameboy.core.Joypad
 import gameboy.core.PPU
+import gameboy.core.RTCClock
+import kapi.Time
 import kapi.emu.Button
 import kapi.emu.Emulator
 import kapi.emu.EmulatorSession
@@ -17,9 +19,14 @@ object GameBoyEmulator : Emulator {
     private val shades = intArrayOf(0x9BBC0F, 0x8BAC0F, 0x306230, 0x0F380F)
 
     override fun load(image: ByteArray): EmulatorSession? {
-        val console = GameBoy(image, shades)
+        val clock = if (Time.epochSeconds() != null) SystemClock else null
+        val console = GameBoy(image, shades, clock)
         if (!console.cartridge.supported) return null
         return Session(console)
+    }
+
+    private object SystemClock : RTCClock {
+        override fun epochSeconds(): Long = Time.epochSeconds() ?: 0L
     }
 
     private class Session(private val console: GameBoy) : EmulatorSession {
@@ -51,7 +58,8 @@ object GameBoyEmulator : Emulator {
 
         override fun describe(): String {
             val mode = if (console.color) "cgb" else "dmg"
-            return "$mode, ${console.cartridge.kindName}"
+            val timer = if (console.cartridge.timer) " + rtc" else ""
+            return "$mode, ${console.cartridge.kindName}$timer"
         }
 
         override fun saveData(): ByteArray? = console.cartridge.saveData()

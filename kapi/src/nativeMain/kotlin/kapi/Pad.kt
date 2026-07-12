@@ -14,6 +14,8 @@ object Pad {
     const val L = 10
     const val R = 11
     const val GUIDE = 12
+    const val LT = 13
+    const val RT = 14
 
-    const val COUNT = 13
+    const val COUNT = 15
 }

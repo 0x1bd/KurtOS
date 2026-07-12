@@ -67,7 +67,10 @@ interface TimeBackend {
     fun uptimeMillis(): ULong
     fun idle()
     fun now(): DateTime? = null
-    fun timestamp(): ULong = 0UL
+    fun epochSeconds(): Long? = null
+    fun zoneOffsetMinutes(): Int = 0
+    fun daylightSaving(): Boolean = false
+    fun setZone(offsetMinutes: Int, daylightSaving: Boolean) {}
 }
 
 enum class FileKind { File, Directory }
@@ -87,6 +90,7 @@ interface SystemBackend {
     fun halt(): Nothing
     fun memoryReport(): String
     fun collectGarbage()
+    fun toast(title: String, subtitle: String?) {}
 }
 
 enum class GamepadEvent { Connected, Disconnected }
@@ -109,6 +113,7 @@ interface AudioBackend {
     fun setVolume(percent: Int)
     fun muted(): Boolean
     fun toggleMuted()
+    fun showVolume() {}
     fun open(): Boolean
     fun close()
     fun availableFrames(): Int
@@ -160,7 +165,13 @@ object Time {
 
     fun now(): DateTime? = backend?.now()
 
-    fun timestamp(): ULong = backend?.timestamp() ?: 0UL
+    fun epochSeconds(): Long? = backend?.epochSeconds()
+
+    fun zoneOffsetMinutes(): Int = backend?.zoneOffsetMinutes() ?: 0
+
+    fun daylightSaving(): Boolean = backend?.daylightSaving() ?: false
+
+    fun setZone(offsetMinutes: Int, daylightSaving: Boolean) = backend?.setZone(offsetMinutes, daylightSaving) ?: Unit
 
     fun idle() {
         backend?.idle()
@@ -185,6 +196,7 @@ object Sys {
     fun halt(): Nothing = backend?.halt() ?: error("no system backend")
     fun memoryReport(): String = backend?.memoryReport() ?: "unavailable"
     fun collectGarbage() = backend?.collectGarbage() ?: Unit
+    fun toast(title: String, subtitle: String? = null) = backend?.toast(title, subtitle) ?: Unit
 }
 
 object Gamepad {
@@ -231,6 +243,7 @@ object Audio {
     fun setVolume(percent: Int) = backend?.setVolume(percent) ?: Unit
     fun muted(): Boolean = backend?.muted() ?: false
     fun toggleMuted() = backend?.toggleMuted() ?: Unit
+    fun showVolume() = backend?.showVolume() ?: Unit
     fun open(): Boolean = backend?.open() ?: false
     fun close() = backend?.close() ?: Unit
     fun availableFrames(): Int = backend?.availableFrames() ?: 0

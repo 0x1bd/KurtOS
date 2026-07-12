@@ -3,7 +3,7 @@ package kernel.drivers
 import hal.Port
 import kapi.DateTime
 
-object Rtc {
+object RTC {
     private const val INDEX: UShort = 0x70u
     private const val DATA: UShort = 0x71u
 
@@ -31,6 +31,13 @@ object Rtc {
         }
 
         return decode(previous)
+    }
+
+    fun epochSeconds(): Long? {
+        val utc = utc() ?: return null
+
+        val days = daysFromCivil(utc.year, utc.month, utc.day).toLong()
+        return days * 86400L + utc.hour * 3600L + utc.minute * 60L + utc.second
     }
 
     private fun localize(utc: DateTime): DateTime {

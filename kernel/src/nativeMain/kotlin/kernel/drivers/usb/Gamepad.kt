@@ -90,6 +90,9 @@ class Gamepad(private val device: USBDevice) {
         buttons[Pad.B] = second and 0x20 != 0
         buttons[Pad.X] = second and 0x40 != 0
         buttons[Pad.Y] = second and 0x80 != 0
+
+        buttons[Pad.LT] = (report[base + 4].toInt() and 0xFF) > TRIGGER_THRESHOLD
+        buttons[Pad.RT] = (report[base + 5].toInt() and 0xFF) > TRIGGER_THRESHOLD
     }
 
     private fun payloadOffset(length: Int): Int {
@@ -127,6 +130,7 @@ class Gamepad(private val device: USBDevice) {
     private companion object {
         const val REPORT_BYTES = 20
         const val DEADZONE = 12000
+        const val TRIGGER_THRESHOLD = 64
 
         const val VENDOR_CLASS = 0xFF
         const val XINPUT_SUBCLASS = 0x5D

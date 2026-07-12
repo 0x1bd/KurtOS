@@ -368,7 +368,7 @@ object KernelShell {
 
     private val PAD_NAMES = arrayOf(
         "up", "down", "left", "right", "A", "B", "X", "Y",
-        "start", "select", "L", "R", "guide",
+        "start", "select", "L", "R", "guide", "LT", "RT",
     )
 
     private fun dump(data: ByteArray) {

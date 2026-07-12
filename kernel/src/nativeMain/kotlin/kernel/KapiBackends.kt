@@ -64,9 +64,18 @@ object KernelInput : InputBackend {
 object KernelTime : TimeBackend {
     override fun uptimeMillis(): ULong = Clock.uptimeMillis()
 
-    override fun now(): DateTime? = kernel.drivers.Rtc.now()
+    override fun now(): DateTime? = kernel.drivers.RTC.now()
 
-    override fun timestamp(): ULong = Clock.timestamp()
+    override fun epochSeconds(): Long? = kernel.drivers.RTC.epochSeconds()
+
+    override fun zoneOffsetMinutes(): Int = kernel.drivers.RTC.standardOffsetMinutes
+
+    override fun daylightSaving(): Boolean = kernel.drivers.RTC.daylightSaving
+
+    override fun setZone(offsetMinutes: Int, daylightSaving: Boolean) {
+        kernel.drivers.RTC.standardOffsetMinutes = offsetMinutes
+        kernel.drivers.RTC.daylightSaving = daylightSaving
+    }
 
     override fun idle() {
         Cpu.waitForInterrupt()
@@ -146,6 +155,11 @@ object KernelAudio : AudioBackend {
 
     override fun toggleMuted() = AudioService.toggleMuted()
 
+    override fun showVolume() {
+        kernel.ui.SystemSounds.play(kernel.ui.SystemSounds.Clip.Blip)
+        kernel.ui.OSD.showVolume()
+    }
+
     override fun open(): Boolean = AudioService.open()
 
     override fun close() = AudioService.close()
@@ -158,6 +172,15 @@ object KernelAudio : AudioBackend {
 object KernelSystem : SystemBackend {
     override fun halt(): Nothing {
         Cpu.hang()
+    }
+
+    override fun toast(title: String, subtitle: String?) {
+        kernel.ui.OSD.notify(
+            kapi.ui.PixelIcons.QUESTION_BLOCK,
+            title,
+            subtitle,
+            kernel.ui.SystemSounds.Clip.Blip,
+        )
     }
 
     @OptIn(kotlin.native.runtime.NativeRuntimeApi::class)

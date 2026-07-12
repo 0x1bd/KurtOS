@@ -12,6 +12,9 @@ import kapi.Time
 import kapi.emu.Button
 import kapi.emu.EmulatorSession
 import kapi.emu.Video
+import kapi.ui.Panels
+import kapi.ui.PixelFont
+import kapi.ui.SurfaceSink
 
 object Player {
     fun play(surface: Surface, game: Game): String? {
@@ -50,11 +53,12 @@ object Player {
         val started = Time.uptimeMillis()
         var frames = 0
         var next = started * MICROS_PER_MILLI
+        var volumeRepeat = 0UL
 
-        var emulateCycles = 0UL
-        var audioCycles = 0UL
-        var videoCycles = 0UL
-        var idleCycles = 0UL
+        val overlay = SurfaceSink(surface)
+        var measured = started
+        var counted = 0
+        var rate = 0
 
         while (true) {
             Input.poll()
@@ -63,32 +67,36 @@ object Player {
             if (padded) Gamepad.poll()
 
             if (Input.consumePress(Keys.ESC) || Input.isKeyDown(Keys.ESC)) break
-            if (padded && Gamepad.isDown(Pad.GUIDE)) break
+            if (padded && quitting()) break
+
+            if (padded) volumeRepeat = adjustVolume(volumeRepeat)
 
             session.setButtons(buttons(padded))
 
-            var mark = Time.timestamp()
-
             session.runFrame()
             frames++
-
-            var stamp = Time.timestamp()
-            emulateCycles += stamp - mark
-            mark = stamp
 
             if (sound) {
                 Audio.write(session.audioSamples, session.audioFrames)
             }
             session.drainAudio()
 
-            stamp = Time.timestamp()
-            audioCycles += stamp - mark
-            mark = stamp
+            screen.draw()
 
-            screen.present()
+            if (Settings.showFps) {
+                val tock = Time.uptimeMillis()
+                counted++
 
-            stamp = Time.timestamp()
-            videoCycles += stamp - mark
+                if (tock - measured >= FPS_WINDOW_MS) {
+                    rate = (counted.toULong() * 1000UL / (tock - measured)).toInt()
+                    counted = 0
+                    measured = tock
+                }
+
+                drawRate(surface, overlay, rate)
+            }
+
+            surface.present()
 
             Input.drain()
 
@@ -108,9 +116,7 @@ object Player {
             if (now > next) {
                 next = now
             } else {
-                val waiting = Time.timestamp()
                 while (Time.uptimeMillis() * MICROS_PER_MILLI < next) Time.idle()
-                idleCycles += Time.timestamp() - waiting
             }
         }
 
@@ -122,10 +128,20 @@ object Player {
         releaseQuitKey()
         Console.clear()
 
-        val summary = report(game, session, started, frames, emulateCycles, audioCycles, videoCycles, idleCycles)
-        if (!failed) return summary
+        if (!failed) return null
 
-        return "${summary ?: game.name}: could not save to ${GameLibrary.savePath(game)}"
+        return "${game.name}: could not save to ${GameLibrary.savePath(game)}"
+    }
+
+    private fun drawRate(surface: Surface, sink: SurfaceSink, rate: Int) {
+        val text = "$rate FPS"
+        val width = PixelFont.textWidth(text, FPS_SCALE)
+
+        val x = surface.width.toInt() - width - FPS_MARGIN * 2 - 12
+        val y = FPS_MARGIN
+
+        sink.fill(x, y, width + 16, 8 * FPS_SCALE + 12, FPS_BACKGROUND)
+        PixelFont.draw(sink, x + 8, y + 6, text, Panels.GOLD, FPS_SCALE, Panels.OUTLINE)
     }
 
     private fun store(game: Game, session: EmulatorSession): Boolean {
@@ -134,7 +150,7 @@ object Player {
     }
 
     private interface Screen {
-        fun present()
+        fun draw()
     }
 
     private fun screenFor(surface: Surface, video: Video): Screen? {
@@ -150,7 +166,7 @@ object Player {
                 object : Screen {
                     private var paletteVersion = -1
 
-                    override fun present() {
+                    override fun draw() {
                         val version = video.paletteVersion()
                         if (version != paletteVersion) {
                             paletteVersion = version
@@ -161,7 +177,6 @@ object Player {
 
                         video.frame.copyInto(bitmap.pixels)
                         bitmap.draw(originX, originY, scale)
-                        surface.present()
                     }
                 }
             }
@@ -171,14 +186,36 @@ object Player {
                     ?: return null
 
                 object : Screen {
-                    override fun present() {
+                    override fun draw() {
                         video.frame.copyInto(bitmap.pixels)
                         bitmap.draw(originX, originY, scale)
-                        surface.present()
                     }
                 }
             }
         }
+    }
+
+    private fun quitting(): Boolean {
+        if (Gamepad.isDown(Pad.GUIDE)) return true
+
+        if (!Gamepad.isDown(Pad.START) || !Gamepad.isDown(Pad.SELECT)) return false
+
+        return !Gamepad.isDown(Pad.A) && !Gamepad.isDown(Pad.B)
+    }
+
+    private fun adjustVolume(repeatAt: ULong): ULong {
+        val louder = Gamepad.isDown(Pad.RT)
+        val quieter = Gamepad.isDown(Pad.LT)
+
+        if (louder == quieter) return 0UL
+
+        val now = Time.uptimeMillis()
+        if (now < repeatAt) return repeatAt
+
+        Settings.setVolume(Settings.volume + if (louder) VOLUME_STEP else -VOLUME_STEP)
+        Audio.showVolume()
+
+        return now + if (repeatAt == 0UL) VOLUME_DELAY_MS else VOLUME_REPEAT_MS
     }
 
     private fun buttons(padded: Boolean): Int {
@@ -196,47 +233,6 @@ object Player {
         if (Input.isKeyDown(Keys.S) || (padded && Gamepad.isDown(Pad.R))) mask = mask or Button.R
 
         return mask
-    }
-
-    private fun report(
-        game: Game,
-        session: EmulatorSession,
-        started: ULong,
-        frames: Int,
-        emulateCycles: ULong,
-        audioCycles: ULong,
-        videoCycles: ULong,
-        idleCycles: ULong,
-    ): String? {
-        val elapsed = Time.uptimeMillis() - started
-        if (frames == 0) return "${game.name}: exited before drawing a frame"
-        if (elapsed == 0UL) return null
-
-        val fps = frames.toULong() * 1000UL / elapsed
-        val expected = elapsed * FRAMES_PER_100K_MILLIS / 100000UL
-        val speed = if (expected == 0UL) 0UL else frames.toULong() * 100UL / expected
-        val detail = session.describe()
-
-        val head = if (detail == null) {
-            "${game.name}: $fps fps, $speed% speed"
-        } else {
-            "${game.name}: $fps fps, $speed% speed ($detail)"
-        }
-
-        val counted = emulateCycles + audioCycles + videoCycles + idleCycles
-        if (counted == 0UL) return head
-
-        val perFrame = elapsed * 100UL / frames.toULong()
-
-        return "$head\n  cpu ${micros(emulateCycles, counted, perFrame)}" +
-            ", video ${micros(videoCycles, counted, perFrame)}" +
-            ", audio ${micros(audioCycles, counted, perFrame)}" +
-            ", idle ${micros(idleCycles, counted, perFrame)} per frame"
-    }
-
-    private fun micros(cycles: ULong, total: ULong, perFrameCentimillis: ULong): String {
-        val share = cycles * perFrameCentimillis / total
-        return "${share / 100UL}.${(share % 100UL).toString().padStart(2, '0')}ms"
     }
 
     private fun releaseQuitKey() {
@@ -268,8 +264,16 @@ object Player {
     }
 
     private const val MICROS_PER_MILLI = 1000UL
-    private const val FRAMES_PER_100K_MILLIS = 5973UL
 
     private const val SAVE_POLL_MS = 2000UL
     private const val MAX_SAVE_BYTES = 262144u
+
+    private const val VOLUME_STEP = 5
+    private const val VOLUME_DELAY_MS = 400UL
+    private const val VOLUME_REPEAT_MS = 120UL
+
+    private const val FPS_WINDOW_MS = 500UL
+    private const val FPS_SCALE = 2
+    private const val FPS_MARGIN = 16
+    private const val FPS_BACKGROUND: UInt = 0x00060A10u
 }
