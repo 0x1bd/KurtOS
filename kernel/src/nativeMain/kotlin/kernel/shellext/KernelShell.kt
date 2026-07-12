@@ -14,7 +14,10 @@ import kapi.Sys
 import kapi.Time
 import kernel.arch.Acpi
 import kernel.arch.Apic
+import kernel.audio.AudioService
+import kapi.Audio
 import kernel.drivers.I8042
+import kernel.drivers.Pci
 import kernel.drivers.Keyboard
 import kernel.drivers.KeyboardLayout
 import kernel.memory.PageAllocator
@@ -130,6 +133,48 @@ object KernelShell {
             Console.println("layout: ${Keyboard.layoutName}")
         }
 
+        registry.register("pci", "list pci devices") {
+            Pci.all().forEach { Console.println(it.describe()) }
+        }
+
+        registry.register("audio", "show the audio device") {
+            Console.println("device: ${Audio.status()}")
+            Console.println("volume: ${volumeText()}  (F5 mute, F6 quieter, F7 louder)")
+        }
+
+        registry.register("mute", "toggle audio mute") {
+            Audio.toggleMuted()
+            Console.println("volume: ${volumeText()}")
+        }
+
+        registry.register("hdainfo", "dump the audio codec widget graph") {
+            AudioService.describe().forEach { Console.println(it) }
+        }
+
+        registry.register("volume", "show or set the output volume") { args ->
+            val requested = args.getOrNull(0)
+            if (requested != null) {
+                val percent = requested.toIntOrNull()
+                if (percent == null) {
+                    Console.println("usage: volume <0-100>")
+                    return@register
+                }
+                Audio.setVolume(percent)
+            }
+            Console.println("volume: ${volumeText()}")
+        }
+
+        registry.register("beep", "play a test tone") { args ->
+            if (!Audio.available()) {
+                Console.println("audio: ${Audio.status()}")
+                return@register
+            }
+            val hertz = args.getOrNull(0)?.toIntOrNull() ?: 440
+            val millis = args.getOrNull(1)?.toIntOrNull() ?: 500
+            Console.println("playing ${hertz} Hz for ${millis} ms at ${Audio.volume()}%")
+            AudioService.tone(hertz, millis)
+        }
+
         registry.register("gc", "run a garbage collection") {
             Console.println("before: ${Sys.memoryReport()}")
             val start = Time.uptimeMillis()
@@ -146,6 +191,9 @@ object KernelShell {
             }
         }
     }
+
+    private fun volumeText(): String =
+        if (Audio.muted()) "${Audio.volume()}% (muted)" else "${Audio.volume()}%"
 
     private fun zero(): Int = (Arch.ticks() and 0UL).toInt()
 

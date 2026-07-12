@@ -72,6 +72,8 @@ object BootInfo {
 
     fun toVirtual(physical: ULong): ULong = physical + hhdmOffset
 
+    fun toPhysical(virtual: ULong): ULong = virtual - hhdmOffset
+
     val framebuffer: FramebufferInfo?
         get() {
             if (boot_fb_present() == 0u) return null

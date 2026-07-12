@@ -3,9 +3,11 @@ package kernel.drivers
 import hal.Arch
 import kapi.KeyEvent
 import kapi.Keys
+import kernel.audio.AudioService
 
 object Keyboard {
     private const val MAX_KEYCODE = 256
+    private const val VOLUME_STEP = 5
 
     private val down = BooleanArray(MAX_KEYCODE)
     private val pressed = BooleanArray(MAX_KEYCODE)
@@ -77,11 +79,22 @@ object Keyboard {
         }
 
         down[keycode] = !released
-        if (!released) pressed[keycode] = true
+        if (!released) {
+            pressed[keycode] = true
+            adjustVolume(keycode)
+        }
         events.addLast(KeyEvent(keycode.toUShort(), !released))
 
         if (!released) {
             layout.character(keycode, shift)?.let { characters.addLast(it) }
+        }
+    }
+
+    private fun adjustVolume(keycode: Int) {
+        when (keycode) {
+            Keys.F5.toInt() -> AudioService.toggleMuted()
+            Keys.F6.toInt() -> AudioService.adjustVolume(-VOLUME_STEP)
+            Keys.F7.toInt() -> AudioService.adjustVolume(VOLUME_STEP)
         }
     }
 

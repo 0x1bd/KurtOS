@@ -12,7 +12,9 @@ import mmio.cpu_enable_interrupts
 import mmio.cpu_halt
 import mmio.cpu_hang
 import mmio.cpu_rdtsc
+import mmio.cpu_invlpg
 import mmio.cpu_read_cr2
+import mmio.cpu_read_cr3
 import mmio.msr_read
 import mmio.msr_write
 
@@ -35,6 +37,10 @@ object Cpu {
     fun timestamp(): ULong = cpu_rdtsc()
 
     fun readCr2(): ULong = cpu_read_cr2()
+
+    fun readCr3(): ULong = cpu_read_cr3()
+
+    fun invalidatePage(address: ULong) = cpu_invlpg(address)
 
     fun readMsr(msr: UInt): ULong = msr_read(msr)
 

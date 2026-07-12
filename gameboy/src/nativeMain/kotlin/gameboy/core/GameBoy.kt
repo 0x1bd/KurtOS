@@ -8,7 +8,7 @@ class GameBoy(rom: ByteArray, monochromeShades: IntArray) {
     private val interrupts = Interrupts()
     private val ppu = PPU(interrupts, color)
     private val timer = Timer(interrupts)
-    private val apu = APU()
+    val apu = APU()
 
     val joypad = Joypad(interrupts)
 
@@ -39,6 +39,7 @@ class GameBoy(rom: ByteArray, monochromeShades: IntArray) {
 
             val dots = if (bus.doubleSpeed) cycles / 2 else cycles
             ppu.step(dots)
+            apu.step(dots)
 
             if (ppu.consumeHBlank()) bus.stepHBlank()
 

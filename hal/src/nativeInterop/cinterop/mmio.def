@@ -53,6 +53,16 @@ static inline uint64_t cpu_read_cr2(void) {
     return value;
 }
 
+static inline uint64_t cpu_read_cr3(void) {
+    uint64_t value;
+    __asm__ volatile("mov %%cr3, %0" : "=r"(value));
+    return value;
+}
+
+static inline void cpu_invlpg(uint64_t address) {
+    __asm__ volatile("invlpg (%0)" : : "r"(address) : "memory");
+}
+
 static inline uint64_t cpu_rdtsc(void) {
     uint32_t lo, hi;
     __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));

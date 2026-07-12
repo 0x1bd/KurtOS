@@ -67,8 +67,17 @@ interface SystemBackend {
 
 interface AudioBackend {
     fun status(): String
+    fun available(): Boolean
     fun sampleRate(): UInt
-    fun queue(samples: ShortArray, count: Int)
+    fun channels(): Int
+    fun volume(): Int
+    fun setVolume(percent: Int)
+    fun muted(): Boolean
+    fun toggleMuted()
+    fun open(): Boolean
+    fun close()
+    fun availableFrames(): Int
+    fun write(samples: ShortArray, frames: Int): Int
 }
 
 object Console {
@@ -133,8 +142,17 @@ object Audio {
     internal var backend: AudioBackend? = null
 
     fun status(): String = backend?.status() ?: "unavailable"
+    fun available(): Boolean = backend?.available() ?: false
     fun sampleRate(): UInt = backend?.sampleRate() ?: 0u
-    fun queue(samples: ShortArray, count: Int) = backend?.queue(samples, count) ?: Unit
+    fun channels(): Int = backend?.channels() ?: 0
+    fun volume(): Int = backend?.volume() ?: 0
+    fun setVolume(percent: Int) = backend?.setVolume(percent) ?: Unit
+    fun muted(): Boolean = backend?.muted() ?: false
+    fun toggleMuted() = backend?.toggleMuted() ?: Unit
+    fun open(): Boolean = backend?.open() ?: false
+    fun close() = backend?.close() ?: Unit
+    fun availableFrames(): Int = backend?.availableFrames() ?: 0
+    fun write(samples: ShortArray, frames: Int): Int = backend?.write(samples, frames) ?: 0
 }
 
 object KapiRuntime {

@@ -1,6 +1,7 @@
 package kernel
 
 import kapi.AudioBackend
+import kernel.audio.AudioService
 import hal.BootInfo
 import hal.Clock
 import hal.Cpu
@@ -72,12 +73,29 @@ object KernelFiles : FilesBackend {
 }
 
 object KernelAudio : AudioBackend {
-    override fun status(): String = "no audio device"
+    override fun status(): String = AudioService.status
 
-    override fun sampleRate(): UInt = 0u
+    override fun available(): Boolean = AudioService.available
 
-    override fun queue(samples: ShortArray, count: Int) {
-    }
+    override fun sampleRate(): UInt = AudioService.sampleRate.toUInt()
+
+    override fun channels(): Int = AudioService.channels
+
+    override fun volume(): Int = AudioService.volume()
+
+    override fun setVolume(percent: Int) = AudioService.setVolume(percent)
+
+    override fun muted(): Boolean = AudioService.muted()
+
+    override fun toggleMuted() = AudioService.toggleMuted()
+
+    override fun open(): Boolean = AudioService.open()
+
+    override fun close() = AudioService.close()
+
+    override fun availableFrames(): Int = AudioService.availableFrames()
+
+    override fun write(samples: ShortArray, frames: Int): Int = AudioService.write(samples, frames)
 }
 
 object KernelSystem : SystemBackend {

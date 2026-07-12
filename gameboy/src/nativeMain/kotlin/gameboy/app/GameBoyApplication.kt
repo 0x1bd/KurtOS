@@ -4,7 +4,9 @@ import gameboy.core.GameBoy
 import gameboy.core.Joypad
 import gameboy.core.PPU
 import kapi.Application
+import kapi.Audio
 import kapi.Console
+import kapi.Files
 import kapi.Graphics
 import kapi.Input
 import kapi.Keys
@@ -56,16 +58,16 @@ object GameBoyApplication : Application {
 
         val image = RomLibrary.load(rom)
         if (image == null) {
-            Console.println("gameboy: cannot read ${rom.path}")
-            waitForKey()
-            return null
+            return "cannot read ${rom.path} (${Files.status()})"
+        }
+
+        if (image.size < rom.size.toInt()) {
+            return "${rom.name}: read ${image.size} of ${rom.size} bytes"
         }
 
         val console = GameBoy(image, shades)
         if (!console.cartridge.supported) {
-            Console.println("gameboy: ${rom.name} is not a valid rom")
-            waitForKey()
-            return null
+            return "${rom.name}: not a valid rom (${image.size} bytes)"
         }
 
         val bitmap = surface.createBitmap(
@@ -74,9 +76,7 @@ object GameBoyApplication : Application {
             GameBoy.PALETTE_SIZE,
         )
         if (bitmap == null) {
-            Console.println("gameboy: cannot create a ${PPU.WIDTH}x${PPU.HEIGHT} bitmap")
-            waitForKey()
-            return null
+            return "cannot create a ${PPU.WIDTH}x${PPU.HEIGHT} bitmap"
         }
 
         var paletteVersion = -1
@@ -88,6 +88,8 @@ object GameBoyApplication : Application {
         surface.clear(0x00000000u)
         surface.presentAll()
 
+        val sound = Audio.open()
+
         Input.drain()
         while (Console.tryReadChar() != null) {
         }
@@ -98,7 +100,9 @@ object GameBoyApplication : Application {
 
         while (true) {
             Input.poll()
-            if (Input.isKeyDown(Keys.ESC) || Input.consumePress(Keys.ESC)) break
+
+            val quit = Input.consumePress(Keys.ESC)
+            if (quit || Input.isKeyDown(Keys.ESC)) break
 
             for (i in buttons.indices) {
                 console.joypad.setButton(buttons[i], Input.isKeyDown(keys[i]))
@@ -106,6 +110,11 @@ object GameBoyApplication : Application {
 
             console.runFrame()
             frames++
+
+            if (sound) {
+                Audio.write(console.apu.samples, console.apu.frames)
+            }
+            console.apu.drain()
 
             if (console.paletteVersion != paletteVersion) {
                 paletteVersion = console.paletteVersion
@@ -129,7 +138,9 @@ object GameBoyApplication : Application {
             }
         }
 
-        Input.drain()
+        if (sound) Audio.close()
+
+        releaseQuitKey()
         Console.clear()
 
         return report(rom, console, started, frames)
@@ -137,7 +148,8 @@ object GameBoyApplication : Application {
 
     private fun report(rom: Rom, console: GameBoy, started: ULong, frames: Int): String? {
         val elapsed = Time.uptimeMillis() - started
-        if (elapsed == 0UL || frames == 0) return null
+        if (frames == 0) return "${rom.name}: exited before drawing a frame"
+        if (elapsed == 0UL) return null
 
         val fps = frames.toULong() * 1000UL / elapsed
         val expected = elapsed * FRAMES_PER_100K_MILLIS / 100000UL
@@ -147,16 +159,19 @@ object GameBoyApplication : Application {
         return "${rom.name}: $fps fps, $speed% speed ($mode, ${console.cartridge.kindName})"
     }
 
+    private fun releaseQuitKey() {
+        while (Input.isKeyDown(Keys.ESC)) {
+            Input.poll()
+            Time.idle()
+        }
+        Input.drain()
+    }
+
     private fun scaleFor(surface: Surface): UInt {
         val horizontal = surface.width / PPU.WIDTH.toUInt()
         val vertical = surface.height / PPU.HEIGHT.toUInt()
         val scale = if (horizontal < vertical) horizontal else vertical
         return if (scale < 1u) 1u else scale
-    }
-
-    private fun waitForKey() {
-        Console.println("press enter to continue")
-        Console.readLine()
     }
 
     private const val MICROS_PER_MILLI = 1000UL

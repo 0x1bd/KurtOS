@@ -6,8 +6,11 @@ import kapi.Keys
 import kapi.Time
 
 object Menu {
+    private var selected = 0
+
     fun choose(roms: List<Rom>, status: String?): Rom? {
-        var selected = 0
+        if (selected >= roms.size) selected = 0
+        flush()
 
         while (true) {
             render(roms, selected, status)
@@ -42,6 +45,13 @@ object Menu {
         Console.println("           enter = start, backspace = select, esc = quit")
     }
 
+    private fun flush() {
+        Input.poll()
+        Input.drain()
+        while (Console.tryReadChar() != null) {
+        }
+    }
+
     private fun label(code: UShort): Char =
         Input.characterFor(code)?.uppercaseChar() ?: '?'
 
@@ -49,32 +59,36 @@ object Menu {
         while (true) {
             Input.poll()
 
-            while (true) {
-                val event = Input.nextEvent() ?: break
-                if (!event.pressed) continue
-
-                when (event.code) {
-                    Keys.UP, Keys.W -> return UP
-                    Keys.DOWN, Keys.S -> return DOWN
-                    Keys.ENTER, Keys.SPACE -> return SELECT
-                    Keys.ESC, Keys.Q -> return QUIT
-                }
-            }
+            val key = pressedKey()
+            if (key != NONE) return key
 
             val character = Console.tryReadChar()
             if (character != null) {
-                when (character.lowercaseChar()) {
-                    'w', 'k' -> return UP
-                    's', 'j' -> return DOWN
-                    '\n', '\r', ' ' -> return SELECT
-                    'q' -> return QUIT
+                val typed = when (character.lowercaseChar()) {
+                    'w', 'k' -> UP
+                    's', 'j' -> DOWN
+                    '\n', '\r', ' ' -> SELECT
+                    'q', ESCAPE -> QUIT
+                    else -> NONE
                 }
+
+                if (typed != NONE) return typed
             }
 
             Time.idle()
         }
     }
 
+    private fun pressedKey(): Int {
+        if (Input.consumePress(Keys.UP)) return UP
+        if (Input.consumePress(Keys.DOWN)) return DOWN
+        if (Input.consumePress(Keys.ESC)) return QUIT
+        return NONE
+    }
+
+    private const val ESCAPE = '\u001B'
+
+    private const val NONE = -1
     private const val UP = 0
     private const val DOWN = 1
     private const val SELECT = 2
