@@ -25,9 +25,6 @@ typedef struct {
     uint32_t fb_green_shift;
     uint32_t fb_blue_shift;
 
-    uint64_t module_address;
-    uint64_t module_size;
-
     uint64_t rsdp_address;
 
     uint64_t heap_start;

@@ -12,6 +12,16 @@ class Cartridge(val rom: ByteArray) {
 
     val supported: Boolean = rom.size >= 0xC0
 
+    var saveVersion = 0
+        private set
+
+    fun saveData(): ByteArray = sram.copyOf()
+
+    fun loadSaveData(data: ByteArray) {
+        val length = if (data.size < sram.size) data.size else sram.size
+        data.copyInto(sram, 0, 0, length)
+    }
+
     private var flashState = 0
     private var flashMode = FLASH_READ
     private var flashBank = 0
@@ -29,6 +39,8 @@ class Cartridge(val rom: ByteArray) {
 
     fun writeBackup(address: Int, value: Int) {
         val offset = address and 0xFFFF
+
+        saveVersion++
 
         when (flashState) {
             0 -> {

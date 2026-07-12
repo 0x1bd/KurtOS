@@ -39,6 +39,10 @@ interface EmulatorSession {
     fun runFrame()
     fun drainAudio()
     fun describe(): String?
+
+    fun saveData(): ByteArray? = null
+    fun loadSaveData(data: ByteArray) {}
+    fun saveVersion(): Int = 0
 }
 
 interface Emulator {

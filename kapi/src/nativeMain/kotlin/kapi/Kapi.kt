@@ -66,6 +66,9 @@ data class FileEntry(val name: String, val kind: FileKind, val size: ULong)
 interface FilesBackend {
     fun list(path: String): List<FileEntry>?
     fun read(path: String, maxBytes: UInt): ByteArray?
+    fun write(path: String, data: ByteArray): Boolean
+    fun mkdir(path: String): Boolean
+    fun writable(path: String): Boolean
     fun status(): String
 }
 
@@ -155,6 +158,9 @@ object Files {
 
     fun list(path: String): List<FileEntry>? = backend?.list(path)
     fun read(path: String, maxBytes: UInt = 4096u): ByteArray? = backend?.read(path, maxBytes)
+    fun write(path: String, data: ByteArray): Boolean = backend?.write(path, data) ?: false
+    fun mkdir(path: String): Boolean = backend?.mkdir(path) ?: false
+    fun writable(path: String): Boolean = backend?.writable(path) ?: false
     fun status(): String = backend?.status() ?: "unavailable"
 }
 

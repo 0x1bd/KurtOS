@@ -33,7 +33,7 @@ object Home {
             )
 
             val items = if (games.isEmpty()) {
-                listOf(MenuItem("NO GAMES INSTALLED", "ADD ROMS TO /ROMS", PixelIcons.QUESTION_BLOCK))
+                listOf(MenuItem("NO GAMES INSTALLED", "ADD ROMS TO ${GameLibrary.DIRECTORY.uppercase()}", PixelIcons.QUESTION_BLOCK))
             } else {
                 games.map { MenuItem(it.name.uppercase(), sublabel(it), iconFor(it.emulator)) }
             }

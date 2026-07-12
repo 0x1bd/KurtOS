@@ -1,6 +1,9 @@
 package hal
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.toLong
+import kotlinx.cinterop.usePinned
 import mmio.raw_blit_high
 import mmio.raw_blit_indexed
 import mmio.raw_copy
@@ -81,5 +84,19 @@ object RawMemory {
             result[i] = read8(address + i.toULong()).toByte()
         }
         return result
+    }
+
+    fun copyOut(address: ULong, target: ByteArray, offset: Int, length: Int) {
+        if (length <= 0) return
+        target.usePinned { pinned ->
+            raw_copy(pinned.addressOf(offset).toLong().toULong(), address, length.toULong())
+        }
+    }
+
+    fun copyIn(address: ULong, source: ByteArray, offset: Int, length: Int) {
+        if (length <= 0) return
+        source.usePinned { pinned ->
+            raw_copy(address, pinned.addressOf(offset).toLong().toULong(), length.toULong())
+        }
     }
 }

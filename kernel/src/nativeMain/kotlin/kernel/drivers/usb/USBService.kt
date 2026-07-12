@@ -146,7 +146,7 @@ object USBService {
                 continue
             }
 
-            if (device.input != null && !device.configure()) {
+            if ((device.input != null || device.storage) && !device.configure()) {
                 notes.add("port ${port.number}: configure failed for ${hex(device.vendorId)}:${hex(device.productId)}")
             }
 

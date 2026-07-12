@@ -11,5 +11,7 @@ object Emulators {
     )
 
     fun forFile(name: String): Emulator? =
-        all.firstOrNull { emulator -> emulator.extensions.any { name.endsWith(it) } }
+        all.firstOrNull { emulator ->
+            emulator.extensions.any { name.endsWith(it, ignoreCase = true) }
+        }
 }

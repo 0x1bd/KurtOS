@@ -28,6 +28,16 @@ object Player {
         val screen = screenFor(surface, session.video)
         if (screen == null) return "cannot create a ${session.video.width}x${session.video.height} buffer"
 
+        val saved = GameLibrary.loadSave(game, MAX_SAVE_BYTES)
+        if (saved != null) {
+            session.loadSaveData(saved)
+            Console.println("restored ${saved.size} byte save from ${GameLibrary.savePath(game)}")
+        }
+
+        var written = session.saveVersion()
+        var seen = written
+        var checked = Time.uptimeMillis()
+
         surface.clear(0x00000000u)
         surface.presentAll()
 
@@ -64,6 +74,17 @@ object Player {
 
             Input.drain()
 
+            val tick = Time.uptimeMillis()
+            if (tick - checked >= SAVE_POLL_MS) {
+                checked = tick
+
+                val version = session.saveVersion()
+                if (version != written && version == seen) {
+                    if (store(game, session)) written = version
+                }
+                seen = version
+            }
+
             next += game.emulator.frameMicros
             val now = Time.uptimeMillis() * MICROS_PER_MILLI
             if (now > next) {
@@ -75,10 +96,21 @@ object Player {
 
         if (sound) Audio.close()
 
+        var failed = false
+        if (session.saveVersion() != written) failed = !store(game, session)
+
         releaseQuitKey()
         Console.clear()
 
-        return report(game, session, started, frames)
+        val summary = report(game, session, started, frames)
+        if (!failed) return summary
+
+        return "${summary ?: game.name}: could not save to ${GameLibrary.savePath(game)}"
+    }
+
+    private fun store(game: Game, session: EmulatorSession): Boolean {
+        val data = session.saveData() ?: return true
+        return GameLibrary.storeSave(game, data)
     }
 
     private interface Screen {
@@ -193,4 +225,7 @@ object Player {
 
     private const val MICROS_PER_MILLI = 1000UL
     private const val FRAMES_PER_100K_MILLIS = 5973UL
+
+    private const val SAVE_POLL_MS = 2000UL
+    private const val MAX_SAVE_BYTES = 262144u
 }

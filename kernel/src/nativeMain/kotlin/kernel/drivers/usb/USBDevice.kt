@@ -16,6 +16,7 @@ class USBEndpoint(
     val number: Int get() = address and 0x0F
     val isInput: Boolean get() = address and 0x80 != 0
     val isInterrupt: Boolean get() = attributes and 0x03 == 0x03
+    val isBulk: Boolean get() = attributes and 0x03 == 0x02
     val dci: Int get() = number * 2 + if (isInput) 1 else 0
 }
 
@@ -49,6 +50,14 @@ class USBDevice(
     var output: USBEndpoint? = null
         private set
 
+    var bulkIn: USBEndpoint? = null
+        private set
+
+    var bulkOut: USBEndpoint? = null
+        private set
+
+    val storage: Boolean get() = bulkIn != null && bulkOut != null
+
     val interfaces = mutableListOf<String>()
     val endpoints = mutableListOf<USBEndpoint>()
 
@@ -75,6 +84,12 @@ class USBDevice(
     private var inputRing: XhciRing? = null
     private var outputRing: XhciRing? = null
     private var outputBuffer: Region? = null
+
+    private var bulkInRing: XhciRing? = null
+    private var bulkOutRing: XhciRing? = null
+    private var bulkBuffer: Region? = null
+    private var bulkVirtual: ULong = 0UL
+    private var bulkPhysical: ULong = 0UL
 
     private var maxPacket = 8
 
@@ -199,6 +214,8 @@ class USBDevice(
     }
 
     private fun select(settings: List<IntArray>) {
+        if (selectStorage(settings)) return
+
         var chosen = pick(settings) { it[1] == VENDOR_CLASS && it[2] == XINPUT_SUBCLASS }
             ?: pick(settings) { it[1] == HID_CLASS }
 
@@ -221,6 +238,28 @@ class USBDevice(
         interfaceProtocol = setting[3]
     }
 
+    private fun selectStorage(settings: List<IntArray>): Boolean {
+        for (setting in settings) {
+            if (setting[1] != STORAGE_CLASS) continue
+            if (setting[3] != BULK_ONLY_PROTOCOL) continue
+
+            val source = endpoints.firstOrNull { it.isBulk && it.isInput && it.owner == setting[0] } ?: continue
+            val sink = endpoints.firstOrNull { it.isBulk && !it.isInput && it.owner == setting[0] } ?: continue
+
+            bulkIn = source
+            bulkOut = sink
+
+            interfaceNumber = setting[0]
+            interfaceClass = setting[1]
+            interfaceSubclass = setting[2]
+            interfaceProtocol = setting[3]
+
+            return true
+        }
+
+        return false
+    }
+
     private fun pick(settings: List<IntArray>, match: (IntArray) -> Boolean): USBEndpoint? {
         for (setting in settings) {
             if (!match(setting)) continue
@@ -235,6 +274,8 @@ class USBDevice(
     }
 
     fun configure(): Boolean {
+        if (storage) return configureStorage()
+
         val endpoint = input ?: return fail("no interrupt in endpoint")
 
         val ring = XhciRing.allocate(RING_ENTRIES, link = true) ?: return fail("no memory for transfer ring")
@@ -294,6 +335,134 @@ class USBDevice(
     private fun fail(reason: String): Boolean {
         configureError = reason
         return false
+    }
+
+    private fun configureStorage(): Boolean {
+        val source = bulkIn ?: return fail("no bulk in endpoint")
+        val sink = bulkOut ?: return fail("no bulk out endpoint")
+
+        val sourceRing = XhciRing.allocate(RING_ENTRIES, link = true) ?: return fail("no memory for bulk in ring")
+        val sinkRing = XhciRing.allocate(RING_ENTRIES, link = true) ?: return fail("no memory for bulk out ring")
+
+        val dma = PageAllocator.allocatePages(BULK_PAGES) ?: return fail("no memory for bulk buffer")
+        dma.zero()
+
+        val physical = BootInfo.toPhysical(dma.address)
+        val aligned = (physical + BULK_ALIGN - 1UL) and (BULK_ALIGN - 1UL).inv()
+
+        bulkInRing = sourceRing
+        bulkOutRing = sinkRing
+        bulkBuffer = dma
+        bulkPhysical = aligned
+        bulkVirtual = dma.address + (aligned - physical)
+
+        val region = inputContext ?: return false
+        region.zero()
+
+        val add = 0x1u or (1u shl source.dci) or (1u shl sink.dci)
+        val last = if (source.dci > sink.dci) source.dci else sink.dci
+
+        writeInputControl(add)
+        writeSlotContext(last)
+        writeBulkEndpoint(source, sourceRing)
+        writeBulkEndpoint(sink, sinkRing)
+
+        val result = controller.submitCommand(
+            BootInfo.toPhysical(region.address),
+            0u,
+            ((Xhci.TRB_CONFIGURE_ENDPOINT shl 10).toUInt()) or (slot.toUInt() shl 24),
+        ) ?: return fail("configure endpoint timed out")
+
+        val code = completion(result)
+        if (code != SUCCESS) return fail("configure endpoint code $code")
+
+        if (control(0x00, REQUEST_SET_CONFIGURATION, configuration, 0, 0) == null) {
+            return fail("set configuration failed")
+        }
+
+        configured = true
+        return true
+    }
+
+    val bulkTransferBytes: Int get() = BULK_BUFFER_BYTES
+
+    fun bulkSend(source: ByteArray, offset: Int, length: Int): Int {
+        val endpoint = bulkOut ?: return -1
+        val ring = bulkOutRing ?: return -1
+        if (length <= 0 || length > BULK_BUFFER_BYTES) return -1
+
+        RawMemory.copyIn(bulkVirtual, source, offset, length)
+        return bulkTransfer(endpoint, ring, length)
+    }
+
+    fun bulkReceive(target: ByteArray, offset: Int, length: Int): Int {
+        val endpoint = bulkIn ?: return -1
+        val ring = bulkInRing ?: return -1
+        if (length <= 0 || length > BULK_BUFFER_BYTES) return -1
+
+        val moved = bulkTransfer(endpoint, ring, length)
+        if (moved > 0) RawMemory.copyOut(bulkVirtual, target, offset, moved)
+
+        return moved
+    }
+
+    private fun bulkTransfer(endpoint: USBEndpoint, ring: XhciRing, length: Int): Int {
+        val trb = ring.enqueue(
+            bulkPhysical,
+            length.toUInt(),
+            (TRB_NORMAL shl 10).toUInt() or INTERRUPT_ON_COMPLETION or INTERRUPT_ON_SHORT,
+        )
+
+        controller.ringDoorbell(slot, endpoint.dci)
+
+        val status = controller.waitForEvent(trb, Xhci.TRANSFER_EVENT)
+        if (status == null) {
+            lastCompletion = -1
+            return -1
+        }
+
+        val code = completion(status)
+        lastCompletion = code
+
+        if (code != SUCCESS && code != SHORT_PACKET) {
+            recover(endpoint, ring)
+            if (code == STALL) clearHalt(endpoint)
+            return -1
+        }
+
+        val remaining = (status and 0xFFFFFFu).toInt()
+        return length - remaining
+    }
+
+    fun clearHalt(endpoint: USBEndpoint): Boolean =
+        control(0x02, REQUEST_CLEAR_FEATURE, FEATURE_ENDPOINT_HALT, endpoint.address, 0) != null
+
+    fun resetStorage(): Boolean {
+        if (control(0x21, REQUEST_STORAGE_RESET, 0, interfaceNumber, 0) == null) return false
+
+        val source = bulkIn
+        val sink = bulkOut
+
+        val sourceRing = bulkInRing
+        val sinkRing = bulkOutRing
+
+        if (source != null && sourceRing != null) {
+            recover(source, sourceRing)
+            clearHalt(source)
+        }
+
+        if (sink != null && sinkRing != null) {
+            recover(sink, sinkRing)
+            clearHalt(sink)
+        }
+
+        return true
+    }
+
+    fun maxLun(): Int {
+        val result = control(0xA1, REQUEST_MAX_LUN, 0, interfaceNumber, 1) ?: return 0
+        if (result.isEmpty()) return 0
+        return result[0].toInt() and 0xFF
     }
 
     fun xinputStart(): ByteArray? = control(0xC1, REQUEST_XINPUT, 0x0100, 0, 20)
@@ -583,6 +752,21 @@ class USBDevice(
         )
     }
 
+    private fun writeBulkEndpoint(endpoint: USBEndpoint, ring: XhciRing) {
+        val region = inputContext ?: return
+        val context = region.address + (controller.contextBytes * (endpoint.dci + 1)).toULong()
+
+        val type = if (endpoint.isInput) ENDPOINT_BULK_IN else ENDPOINT_BULK_OUT
+
+        RawMemory.write32(context, 0u)
+        RawMemory.write32(
+            context + 4UL,
+            (3u shl 1) or (type.toUInt() shl 3) or (endpoint.maxPacket.toUInt() shl 16),
+        )
+        RawMemory.write64(context + 8UL, ring.physical or 1UL)
+        RawMemory.write32(context + 16UL, endpoint.maxPacket.toUInt())
+    }
+
     private fun intervalFor(endpoint: USBEndpoint): Int {
         if (speed >= SPEED_HIGH) {
             val value = endpoint.interval - 1
@@ -615,6 +799,7 @@ class USBDevice(
 
         private const val SUCCESS = 1
         private const val SHORT_PACKET = 13
+        private const val STALL = 6
 
         private const val TRB_NORMAL = 1
         private const val TRB_SETUP = 2
@@ -624,6 +809,8 @@ class USBDevice(
         private const val ENDPOINT_CONTROL = 4
         private const val ENDPOINT_INTERRUPT_OUT = 3
         private const val ENDPOINT_INTERRUPT_IN = 7
+        private const val ENDPOINT_BULK_OUT = 2
+        private const val ENDPOINT_BULK_IN = 6
 
         private const val IMMEDIATE_DATA = 0x40u
         private const val INTERRUPT_ON_COMPLETION = 0x20u
@@ -642,12 +829,23 @@ class USBDevice(
         private const val REQUEST_SET_IDLE = 0x0A
         private const val REQUEST_SET_REPORT = 0x09
         private const val REQUEST_XINPUT = 0x01
+        private const val REQUEST_CLEAR_FEATURE = 0x01
+        private const val REQUEST_STORAGE_RESET = 0xFF
+        private const val REQUEST_MAX_LUN = 0xFE
+
+        private const val FEATURE_ENDPOINT_HALT = 0x00
 
         private const val HID_BOOT_SUBCLASS = 0x01
 
         const val VENDOR_CLASS = 0xFF
         const val XINPUT_SUBCLASS = 0x5D
         const val HID_CLASS = 0x03
+        const val STORAGE_CLASS = 0x08
+        const val BULK_ONLY_PROTOCOL = 0x50
+
+        private const val BULK_BUFFER_BYTES = 65536
+        private const val BULK_PAGES = 32
+        private const val BULK_ALIGN = 65536UL
 
         private const val RING_ENTRIES = 64
         private const val REARM_MS = 250UL

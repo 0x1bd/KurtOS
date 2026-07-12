@@ -46,5 +46,11 @@ object GbaEmulator : Emulator {
         override fun drainAudio() = console.apu.drain()
 
         override fun describe(): String? = null
+
+        override fun saveData(): ByteArray = console.cartridge.saveData()
+
+        override fun loadSaveData(data: ByteArray) = console.cartridge.loadSaveData(data)
+
+        override fun saveVersion(): Int = console.cartridge.saveVersion
     }
 }

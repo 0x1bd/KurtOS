@@ -18,8 +18,7 @@ import kapi.Surface
 import kapi.SystemBackend
 import kapi.TimeBackend
 import kernel.drivers.Keyboard
-import kernel.fs.FlxEntryKind
-import kernel.fs.FlxService
+import kernel.fs.StorageService
 import kernel.graphics.GraphicsService
 import kernel.graphics.OffsetSurface
 import kernel.ui.HUD
@@ -72,24 +71,40 @@ object KernelTime : TimeBackend {
 
 object KernelFiles : FilesBackend {
     override fun list(path: String): List<FileEntry>? {
-        if (!FlxService.initialize()) return null
-        return FlxService.list(path)?.map {
+        val volume = StorageService.volume() ?: return null
+
+        return volume.list(path)?.map {
             FileEntry(
                 it.name,
-                if (it.kind == FlxEntryKind.Directory) FileKind.Directory else FileKind.File,
+                if (it.directory) FileKind.Directory else FileKind.File,
                 it.size,
             )
         }
     }
 
     override fun read(path: String, maxBytes: UInt): ByteArray? {
-        if (!FlxService.initialize()) return null
-        return FlxService.open(path)?.readAll(maxBytes)
+        val volume = StorageService.volume() ?: return null
+        return volume.read(path, maxBytes)
+    }
+
+    override fun write(path: String, data: ByteArray): Boolean {
+        val volume = StorageService.volume() ?: return false
+        return volume.write(path, data)
+    }
+
+    override fun mkdir(path: String): Boolean {
+        val volume = StorageService.volume() ?: return false
+        return volume.mkdir(path)
+    }
+
+    override fun writable(path: String): Boolean {
+        StorageService.initialize()
+        return StorageService.ready
     }
 
     override fun status(): String {
-        FlxService.initialize()
-        return FlxService.status()
+        StorageService.initialize()
+        return StorageService.status
     }
 }
 

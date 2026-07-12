@@ -187,8 +187,6 @@ typedef struct {
     uint32_t fb_red_shift;
     uint32_t fb_green_shift;
     uint32_t fb_blue_shift;
-    uint64_t module_address;
-    uint64_t module_size;
     uint64_t rsdp_address;
     uint64_t heap_start;
     uint64_t heap_end;
@@ -221,8 +219,6 @@ static inline uint32_t boot_fb_present(void) { return kurtos_boot_info.fb_presen
 static inline uint32_t boot_fb_red_shift(void) { return kurtos_boot_info.fb_red_shift; }
 static inline uint32_t boot_fb_green_shift(void) { return kurtos_boot_info.fb_green_shift; }
 static inline uint32_t boot_fb_blue_shift(void) { return kurtos_boot_info.fb_blue_shift; }
-static inline uint64_t boot_module_address(void) { return kurtos_boot_info.module_address; }
-static inline uint64_t boot_module_size(void) { return kurtos_boot_info.module_size; }
 static inline uint64_t boot_rsdp(void) { return kurtos_boot_info.rsdp_address; }
 static inline uint64_t boot_heap_start(void) { return kurtos_boot_info.heap_start; }
 static inline uint64_t boot_heap_end(void) { return kurtos_boot_info.heap_end; }

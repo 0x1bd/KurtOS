@@ -27,6 +27,14 @@ class Cartridge(private val rom: ByteArray) {
 
     private val ram = ByteArray(if (kind == MBC2) MBC2_RAM_BYTES else ramBanks * 0x2000)
 
+    val battery: Boolean = when (cartridgeType) {
+        0x03, 0x06, 0x09, 0x0F, 0x10, 0x13, 0x1B, 0x1E -> true
+        else -> false
+    }
+
+    var saveVersion = 0
+        private set
+
     val supported: Boolean = rom.size >= 0x8000
 
     val colorCapable: Boolean = byteAt(0x143) and 0x80 != 0
@@ -69,12 +77,26 @@ class Cartridge(private val rom: ByteArray) {
         if (kind == MBC2) {
             val offset = (address - 0xA000) and MBC2_RAM_MASK
             ram[offset] = (value and 0x0F).toByte()
+            saveVersion++
             return
         }
 
         val offset = currentRamBank() * 0x2000 + (address - 0xA000)
         if (offset < 0 || offset >= ram.size) return
         ram[offset] = value.toByte()
+        saveVersion++
+    }
+
+    fun saveData(): ByteArray? {
+        if (!battery || ram.isEmpty()) return null
+        return ram.copyOf()
+    }
+
+    fun loadSaveData(data: ByteArray) {
+        if (!battery || ram.isEmpty()) return
+
+        val length = if (data.size < ram.size) data.size else ram.size
+        data.copyInto(ram, 0, 0, length)
     }
 
     fun writeControl(address: Int, value: Int) {

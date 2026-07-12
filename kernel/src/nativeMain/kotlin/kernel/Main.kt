@@ -18,6 +18,7 @@ import kernel.drivers.usb.GamepadService
 import kernel.drivers.usb.USBService
 import kernel.console.SystemConsole
 import kernel.drivers.I8042
+import kernel.fs.StorageService
 import kernel.graphics.GraphicsService
 import kernel.memory.PageAllocator
 import kernel.shellext.KernelShell
@@ -60,6 +61,7 @@ fun main() {
 
     AudioService.initialize()
     GamepadService.initialize()
+    StorageService.initialize()
     USBService.armInterrupts(Idt.VECTOR_USB, Apic.localId())
 
     Gamepad.onConnect {

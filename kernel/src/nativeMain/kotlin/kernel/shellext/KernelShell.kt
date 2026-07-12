@@ -24,6 +24,7 @@ import kernel.drivers.usb.GamepadService
 import kernel.drivers.usb.USBService
 import kernel.drivers.Keyboard
 import kernel.drivers.KeyboardLayout
+import kernel.fs.StorageService
 import kernel.memory.PageAllocator
 import shell.CommandRegistry
 
@@ -99,10 +100,53 @@ object KernelShell {
             Console.println(printable(bytes))
         }
 
+        registry.register("storage", "show the writable volume; 'storage rescan' to re-attach") { args ->
+            if (args.getOrNull(0) == "rescan") {
+                StorageService.refresh()
+            }
+            StorageService.describe().forEach { Console.println(it) }
+        }
+
+        registry.register("write", "write text to a file on the writable volume") { args ->
+            val path = args.getOrNull(0)
+            if (path == null || args.size < 2) {
+                Console.println("usage: write <path> <text...>")
+                return@register
+            }
+
+            if (!Files.writable(path)) {
+                Console.println("$path is not writable (${Files.status()})")
+                return@register
+            }
+
+            val text = args.drop(1).joinToString(" ")
+            val bytes = ByteArray(text.length) { text[it].code.toByte() }
+
+            if (Files.write(path, bytes)) {
+                Console.println("wrote ${bytes.size} bytes to $path")
+            } else {
+                Console.println("write failed: $path")
+            }
+        }
+
+        registry.register("mkdir", "create a directory on the writable volume") { args ->
+            val path = args.getOrNull(0)
+            if (path == null) {
+                Console.println("usage: mkdir <path>")
+                return@register
+            }
+
+            if (Files.mkdir(path)) {
+                Console.println("created $path")
+            } else {
+                Console.println("mkdir failed: $path")
+            }
+        }
+
         registry.register("games", "list installed games") {
             val games = GameLibrary.scan()
             if (games.isEmpty()) {
-                Console.println("no games in /roms")
+                Console.println("no games in ${GameLibrary.DIRECTORY}")
                 return@register
             }
             games.forEach {

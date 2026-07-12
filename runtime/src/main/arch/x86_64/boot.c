@@ -44,11 +44,6 @@ static volatile struct limine_hhdm_request hhdm_request = {
 };
 
 __attribute__((used, section(".limine_requests")))
-static volatile struct limine_module_request module_request = {
-    .id = LIMINE_MODULE_REQUEST, .revision = 0,
-};
-
-__attribute__((used, section(".limine_requests")))
 static volatile struct limine_rsdp_request rsdp_request = {
     .id = LIMINE_RSDP_REQUEST, .revision = 0,
 };
@@ -166,15 +161,6 @@ static void collect_framebuffer(void) {
     kurtos_boot_info.fb_present = 1;
 }
 
-static void collect_module(void) {
-    struct limine_module_response *res = module_request.response;
-    if (res == 0 || res->module_count == 0) return;
-
-    struct limine_file *file = res->modules[0];
-    kurtos_boot_info.module_address = (uint64_t)file->address;
-    kurtos_boot_info.module_size = file->size;
-}
-
 #define TLS_ARENA_SIZE 65536
 static uint8_t tls_arena[TLS_ARENA_SIZE] __attribute__((aligned(64)));
 
@@ -262,7 +248,6 @@ void kmain_entry(void) {
 
     collect_memmap();
     collect_framebuffer();
-    collect_module();
 
     tls_init();
     heap_init(kurtos_boot_info.heap_start,

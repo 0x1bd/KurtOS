@@ -16,8 +16,6 @@ import mmio.boot_memmap_base
 import mmio.boot_memmap_count
 import mmio.boot_memmap_length
 import mmio.boot_memmap_type
-import mmio.boot_module_address
-import mmio.boot_module_size
 import mmio.boot_pages_end
 import mmio.boot_pages_start
 import mmio.boot_rsdp
@@ -65,10 +63,6 @@ object BootInfo {
     val pagesEnd: ULong get() = boot_pages_end()
 
     val rsdpAddress: ULong get() = boot_rsdp()
-
-    val moduleAddress: ULong get() = boot_module_address()
-
-    val moduleSize: ULong get() = boot_module_size()
 
     fun toVirtual(physical: ULong): ULong = physical + hhdmOffset
 

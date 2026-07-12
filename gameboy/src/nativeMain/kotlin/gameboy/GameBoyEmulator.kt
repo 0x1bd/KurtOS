@@ -53,5 +53,11 @@ object GameBoyEmulator : Emulator {
             val mode = if (console.color) "cgb" else "dmg"
             return "$mode, ${console.cartridge.kindName}"
         }
+
+        override fun saveData(): ByteArray? = console.cartridge.saveData()
+
+        override fun loadSaveData(data: ByteArray) = console.cartridge.loadSaveData(data)
+
+        override fun saveVersion(): Int = console.cartridge.saveVersion
     }
 }
