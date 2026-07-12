@@ -3,6 +3,9 @@ package gba
 import gba.core.GBA
 import gba.core.Keypad
 import gba.core.PPU
+import gba.core.RtcClock
+import gba.core.RtcTime
+import kapi.Time
 import kapi.emu.Button
 import kapi.emu.Emulator
 import kapi.emu.EmulatorSession
@@ -15,9 +18,63 @@ object GbaEmulator : Emulator {
     override val frameMicros = 16743UL
 
     override fun load(image: ByteArray): EmulatorSession? {
-        val console = GBA(image)
+        val console = GBA(image, SystemClock)
         if (!console.cartridge.supported) return null
         return Session(console)
+    }
+
+    private object SystemClock : RtcClock {
+        override fun now(): RtcTime {
+            val wall = Time.now()
+
+            if (wall != null) {
+                return RtcTime(wall.year, wall.month, wall.day, wall.hour, wall.minute, wall.second)
+            }
+
+            return fromUptime(Time.uptimeMillis() / 1000UL)
+        }
+
+        private fun fromUptime(seconds: ULong): RtcTime {
+            val total = seconds.toLong()
+            val days = total / 86400
+            val rest = total % 86400
+
+            var year = 2024
+            var remaining = days
+
+            while (true) {
+                val length = if (leap(year)) 366L else 365L
+                if (remaining < length) break
+                remaining -= length
+                year++
+            }
+
+            var month = 1
+            while (true) {
+                val length = monthLength(year, month).toLong()
+                if (remaining < length) break
+                remaining -= length
+                month++
+            }
+
+            return RtcTime(
+                year,
+                month,
+                (remaining + 1).toInt(),
+                (rest / 3600).toInt(),
+                ((rest % 3600) / 60).toInt(),
+                (rest % 60).toInt(),
+            )
+        }
+
+        private fun leap(year: Int): Boolean =
+            year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+
+        private fun monthLength(year: Int, month: Int): Int = when (month) {
+            1, 3, 5, 7, 8, 10, 12 -> 31
+            4, 6, 9, 11 -> 30
+            else -> if (leap(year)) 29 else 28
+        }
     }
 
     private class Session(private val console: GBA) : EmulatorSession {

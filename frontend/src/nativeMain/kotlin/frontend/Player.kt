@@ -51,6 +51,11 @@ object Player {
         var frames = 0
         var next = started * MICROS_PER_MILLI
 
+        var emulateCycles = 0UL
+        var audioCycles = 0UL
+        var videoCycles = 0UL
+        var idleCycles = 0UL
+
         while (true) {
             Input.poll()
 
@@ -62,15 +67,28 @@ object Player {
 
             session.setButtons(buttons(padded))
 
+            var mark = Time.timestamp()
+
             session.runFrame()
             frames++
+
+            var stamp = Time.timestamp()
+            emulateCycles += stamp - mark
+            mark = stamp
 
             if (sound) {
                 Audio.write(session.audioSamples, session.audioFrames)
             }
             session.drainAudio()
 
+            stamp = Time.timestamp()
+            audioCycles += stamp - mark
+            mark = stamp
+
             screen.present()
+
+            stamp = Time.timestamp()
+            videoCycles += stamp - mark
 
             Input.drain()
 
@@ -90,7 +108,9 @@ object Player {
             if (now > next) {
                 next = now
             } else {
+                val waiting = Time.timestamp()
                 while (Time.uptimeMillis() * MICROS_PER_MILLI < next) Time.idle()
+                idleCycles += Time.timestamp() - waiting
             }
         }
 
@@ -102,7 +122,7 @@ object Player {
         releaseQuitKey()
         Console.clear()
 
-        val summary = report(game, session, started, frames)
+        val summary = report(game, session, started, frames, emulateCycles, audioCycles, videoCycles, idleCycles)
         if (!failed) return summary
 
         return "${summary ?: game.name}: could not save to ${GameLibrary.savePath(game)}"
@@ -178,7 +198,16 @@ object Player {
         return mask
     }
 
-    private fun report(game: Game, session: EmulatorSession, started: ULong, frames: Int): String? {
+    private fun report(
+        game: Game,
+        session: EmulatorSession,
+        started: ULong,
+        frames: Int,
+        emulateCycles: ULong,
+        audioCycles: ULong,
+        videoCycles: ULong,
+        idleCycles: ULong,
+    ): String? {
         val elapsed = Time.uptimeMillis() - started
         if (frames == 0) return "${game.name}: exited before drawing a frame"
         if (elapsed == 0UL) return null
@@ -188,11 +217,26 @@ object Player {
         val speed = if (expected == 0UL) 0UL else frames.toULong() * 100UL / expected
         val detail = session.describe()
 
-        return if (detail == null) {
+        val head = if (detail == null) {
             "${game.name}: $fps fps, $speed% speed"
         } else {
             "${game.name}: $fps fps, $speed% speed ($detail)"
         }
+
+        val counted = emulateCycles + audioCycles + videoCycles + idleCycles
+        if (counted == 0UL) return head
+
+        val perFrame = elapsed * 100UL / frames.toULong()
+
+        return "$head\n  cpu ${micros(emulateCycles, counted, perFrame)}" +
+            ", video ${micros(videoCycles, counted, perFrame)}" +
+            ", audio ${micros(audioCycles, counted, perFrame)}" +
+            ", idle ${micros(idleCycles, counted, perFrame)} per frame"
+    }
+
+    private fun micros(cycles: ULong, total: ULong, perFrameCentimillis: ULong): String {
+        val share = cycles * perFrameCentimillis / total
+        return "${share / 100UL}.${(share % 100UL).toString().padStart(2, '0')}ms"
     }
 
     private fun releaseQuitKey() {

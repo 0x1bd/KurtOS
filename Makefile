@@ -4,7 +4,10 @@ ESP   = build/esp.img
 
 ESP_TYPE = c12a7328-f81f-11d2-ba4b-00a0c93ec93b
 
+ACCEL = $(shell test -w /dev/kvm && echo -enable-kvm -cpu host)
+
 QEMU_FLAGS = -M q35 \
+             $(ACCEL) \
              -m 512M \
              -drive if=none,id=stick,format=raw,file=$(IMAGE) \
              -device qemu-xhci,id=xhci \
@@ -13,6 +16,7 @@ QEMU_FLAGS = -M q35 \
              -no-reboot
 
 IDE_FLAGS = -M q35 \
+            $(ACCEL) \
             -m 512M \
             -drive file=$(IMAGE),format=raw \
             -serial stdio \

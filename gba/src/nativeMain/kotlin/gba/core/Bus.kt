@@ -12,6 +12,7 @@ class Bus(
     lateinit var dma: DMA
     lateinit var timers: Timers
     lateinit var apu: APU
+    lateinit var sio: Sio
 
     var haltRequested = false
     var waitControl = 0
@@ -31,8 +32,14 @@ class Bus(
         0xE, 0xF -> cartridge.readBackup(address)
         else -> {
             val offset = address and 0x1FFFFFF
-            if (offset < cartridge.rom.size) cartridge.rom[offset].toInt() and 0xFF
-            else ((offset shr 1) ushr ((address and 1) * 8)) and 0xFF
+            if (isGpio(offset)) {
+                val half = cartridge.gpio.read(offset and 1.inv())
+                if (address and 1 == 0) half and 0xFF else (half ushr 8) and 0xFF
+            } else if (offset < cartridge.rom.size) {
+                cartridge.rom[offset].toInt() and 0xFF
+            } else {
+                ((offset shr 1) ushr ((address and 1) * 8)) and 0xFF
+            }
         }
     }
 
@@ -50,10 +57,14 @@ class Bus(
         }
         else -> {
             val offset = address and 0x1FFFFFE
-            if (offset + 1 < cartridge.rom.size) ram16(cartridge.rom, offset)
+            if (isGpio(offset)) cartridge.gpio.read(offset)
+            else if (offset + 1 < cartridge.rom.size) ram16(cartridge.rom, offset)
             else (offset shr 1) and 0xFFFF
         }
     }
+
+    private fun isGpio(offset: Int): Boolean =
+        cartridge.gpio.present && cartridge.gpio.readable && (offset and 1.inv()) in 0xC4..0xC8
 
     fun read32(address: Int): Int {
         val aligned = address and 3.inv()
@@ -93,6 +104,10 @@ class Bus(
 
     fun write16(address: Int, value: Int) {
         when ((address ushr 24) and 0xF) {
+            0x8 -> {
+                val offset = address and 0x1FFFFFE
+                if (cartridge.gpio.present && offset in 0xC4..0xC8) cartridge.gpio.write(offset, value)
+            }
             0x2 -> ram16Write(ewram, address and 0x3FFFE, value)
             0x3 -> ram16Write(iwram, address and 0x7FFE, value)
             0x4 -> ioWrite16(address and 0x3FE, value and 0xFFFF)
@@ -137,8 +152,10 @@ class Bus(
         offset < 0xB0 -> apu.ioRead(offset)
         offset < 0xE0 -> dma.ioRead(offset)
         offset in 0x100..0x10E -> timers.ioRead(offset)
+        offset in 0x120..0x12A -> sio.ioRead(offset)
         offset == 0x130 -> keypad.state
         offset == 0x132 -> keypad.control
+        offset == 0x134 -> sio.ioRead(offset)
         offset == 0x200 -> interrupts.enabled
         offset == 0x202 -> interrupts.flags
         offset == 0x204 -> waitControl
@@ -153,7 +170,9 @@ class Bus(
             offset < 0xB0 -> apu.ioWrite(offset, value)
             offset < 0xE0 -> dma.ioWrite(offset, value)
             offset in 0x100..0x10E -> timers.ioWrite(offset, value)
+            offset in 0x120..0x12A -> sio.ioWrite(offset, value)
             offset == 0x132 -> keypad.control = value
+            offset == 0x134 -> sio.ioWrite(offset, value)
             offset == 0x200 -> interrupts.enabled = value and 0x3FFF
             offset == 0x202 -> interrupts.acknowledge(value)
             offset == 0x204 -> waitControl = value

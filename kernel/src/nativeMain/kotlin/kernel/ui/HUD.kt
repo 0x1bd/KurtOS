@@ -1,6 +1,7 @@
 package kernel.ui
 
 import hal.Clock
+import kapi.Time
 import kapi.ui.PixelFont
 import kernel.audio.AudioService
 import kernel.graphics.GraphicsService
@@ -43,7 +44,7 @@ object HUD {
 
         PixelFont.draw(target, x0, VALUE_Y, score(), COLOR_VALUE, SCALE, COLOR_SHADOW)
         PixelFont.draw(target, x1, VALUE_Y, " 1-1", COLOR_VALUE, SCALE, COLOR_SHADOW)
-        PixelFont.draw(target, x2, VALUE_Y, uptime(), COLOR_VALUE, SCALE, COLOR_SHADOW)
+        PixelFont.draw(target, x2, VALUE_Y, clock(x3 - x2 - COLUMN_GAP), COLOR_VALUE, SCALE, COLOR_SHADOW)
 
         drawVolume(target, x3)
     }
@@ -68,17 +69,35 @@ object HUD {
         return used.toString().padStart(6, '0')
     }
 
-    private fun uptime(): String {
-        val seconds = Clock.uptimeMillis() / 1000UL
-        val minutes = seconds / 60UL
-        val rest = (seconds % 60UL).toString().padStart(2, '0')
-        return "$minutes:$rest"
+    private fun clock(available: Int): String {
+        val now = Time.now() ?: return uptime()
+
+        val date = "${now.year}-${pad(now.month)}-${pad(now.day)}"
+        val time = "${pad(now.hour)}:${pad(now.minute)}"
+
+        val options = listOf(
+            "$date $time:${pad(now.second)}",
+            "$date $time",
+            "${pad(now.month)}-${pad(now.day)} $time",
+            "$time:${pad(now.second)}",
+            time,
+        )
+
+        return options.firstOrNull { PixelFont.textWidth(it, SCALE) <= available } ?: time
     }
+
+    private fun uptime(): String {
+        val seconds = (Clock.uptimeMillis() / 1000UL).toInt()
+        return "${pad(seconds / 3600)}:${pad((seconds / 60) % 60)}:${pad(seconds % 60)}"
+    }
+
+    private fun pad(value: Int): String = value.toString().padStart(2, '0')
 
     private const val SCALE = 2
     private const val LABEL_Y = 8
     private const val VALUE_Y = 28
     private const val REFRESH_MS = 500UL
+    private const val COLUMN_GAP = 16
 
     private const val CELLS = 10
     private const val CELL_W = 10

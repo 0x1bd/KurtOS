@@ -8,6 +8,7 @@ import kernel.audio.AudioService
 import hal.BootInfo
 import hal.Clock
 import hal.Cpu
+import kapi.DateTime
 import kapi.FileEntry
 import kapi.FileKind
 import kapi.FilesBackend
@@ -62,6 +63,10 @@ object KernelInput : InputBackend {
 
 object KernelTime : TimeBackend {
     override fun uptimeMillis(): ULong = Clock.uptimeMillis()
+
+    override fun now(): DateTime? = kernel.drivers.Rtc.now()
+
+    override fun timestamp(): ULong = Clock.timestamp()
 
     override fun idle() {
         Cpu.waitForInterrupt()

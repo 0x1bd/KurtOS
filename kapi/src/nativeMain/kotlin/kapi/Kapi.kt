@@ -54,9 +54,20 @@ interface InputBackend {
     fun status(): String
 }
 
+data class DateTime(
+    val year: Int,
+    val month: Int,
+    val day: Int,
+    val hour: Int,
+    val minute: Int,
+    val second: Int,
+)
+
 interface TimeBackend {
     fun uptimeMillis(): ULong
     fun idle()
+    fun now(): DateTime? = null
+    fun timestamp(): ULong = 0UL
 }
 
 enum class FileKind { File, Directory }
@@ -146,6 +157,10 @@ object Time {
     internal var backend: TimeBackend? = null
 
     fun uptimeMillis(): ULong = backend?.uptimeMillis() ?: 0UL
+
+    fun now(): DateTime? = backend?.now()
+
+    fun timestamp(): ULong = backend?.timestamp() ?: 0UL
 
     fun idle() {
         backend?.idle()

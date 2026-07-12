@@ -10,11 +10,8 @@ kotlin {
                     "-Xbinary=gc=stwms",
                     "-Xbinary=gcMarkSingleThreaded=true",
                     "-Xbinary=gcSchedulerType=manual",
-                    "-g",
                 )
-                if (buildType.name == "RELEASE") {
-                    freeCompilerArgs = freeCompilerArgs + "-opt"
-                }
+                freeCompilerArgs = freeCompilerArgs + if (buildType.name == "RELEASE") "-opt" else "-g"
             }
         }
     }

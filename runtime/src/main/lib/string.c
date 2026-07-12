@@ -2,11 +2,13 @@
 #include <stdint.h>
 
 void *memcpy(void *dst, const void *src, size_t n) {
-    uint8_t       *d = (uint8_t *)dst;
-    const uint8_t *s = (const uint8_t *)src;
+    void *d = dst;
+    const void *s = src;
 
-    for (size_t i = 0; i < n; i++)
-        d[i] = s[i];
+    __asm__ volatile("rep movsb"
+                     : "+D"(d), "+S"(s), "+c"(n)
+                     :
+                     : "memory");
 
     return dst;
 }
@@ -21,22 +23,22 @@ void *memmove(void *dst, const void *src, size_t n) {
     uintptr_t da = (uintptr_t)d;
     uintptr_t sa = (uintptr_t)s;
 
-    if (da < sa || da >= sa + n) {
-        for (size_t i = 0; i < n; i++)
-            d[i] = s[i];
-    } else {
-        for (size_t i = n; i > 0; i--)
-            d[i - 1] = s[i - 1];
-    }
+    if (da < sa || da >= sa + n)
+        return memcpy(dst, src, n);
+
+    for (size_t i = n; i > 0; i--)
+        d[i - 1] = s[i - 1];
 
     return dst;
 }
 
 void *memset(void *s, int c, size_t n) {
-    uint8_t *p = (uint8_t *)s;
+    void *p = s;
 
-    for (size_t i = 0; i < n; i++)
-        p[i] = (uint8_t)c;
+    __asm__ volatile("rep stosb"
+                     : "+D"(p), "+c"(n)
+                     : "a"((uint8_t)c)
+                     : "memory");
 
     return s;
 }

@@ -1,7 +1,7 @@
 package gba.core
 
-class GBA(rom: ByteArray) {
-    val cartridge = Cartridge(rom)
+class GBA(rom: ByteArray, clock: RtcClock? = null) {
+    val cartridge = Cartridge(rom, clock)
 
     private val interrupts = Interrupts()
     val keypad = Keypad()
@@ -9,6 +9,7 @@ class GBA(rom: ByteArray) {
     private val bus = Bus(cartridge, ppu, interrupts, keypad)
     private val dma = DMA(interrupts)
     private val timers = Timers(interrupts)
+    private val sio = Sio(interrupts)
     val apu = APU(interrupts)
     private val cpu = Arm7(bus, interrupts)
 
@@ -18,6 +19,7 @@ class GBA(rom: ByteArray) {
         bus.dma = dma
         bus.timers = timers
         bus.apu = apu
+        bus.sio = sio
         dma.bus = bus
         timers.apu = apu
         apu.dma = dma

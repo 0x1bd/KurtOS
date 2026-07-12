@@ -1,7 +1,9 @@
 package gba.core
 
-class Cartridge(val rom: ByteArray) {
+class Cartridge(val rom: ByteArray, clock: RtcClock? = null) {
     val sram = ByteArray(0x20000)
+
+    val gpio = Gpio(clock)
 
     val title: String = buildString {
         for (i in 0xA0 until 0xAC) {
@@ -11,6 +13,10 @@ class Cartridge(val rom: ByteArray) {
     }.trim()
 
     val supported: Boolean = rom.size >= 0xC0
+
+    init {
+        gpio.present = clock != null && Gpio.detect(rom)
+    }
 
     var saveVersion = 0
         private set
