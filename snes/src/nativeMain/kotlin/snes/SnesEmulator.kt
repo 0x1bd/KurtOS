@@ -10,7 +10,7 @@ object SnesEmulator : Emulator {
     override val id = "snes"
     override val system = "SNES"
     override val extensions = listOf(".sfc", ".smc")
-    override val frameMicros = SNES.FRAME_MICROS
+    override val frameMicros = SNES.NTSC_MICROS
 
     override fun load(image: ByteArray): EmulatorSession? {
         val console = SNES(image)
@@ -20,6 +20,8 @@ object SnesEmulator : Emulator {
 
     private class Session(private val console: SNES) : EmulatorSession {
         override val video = Video.HighColor(Ppu.WIDTH, Ppu.HEIGHT, console.frame)
+
+        override val frameMicros = console.frameMicros
 
         override val audioSamples get() = console.apu.samples
         override val audioFrames get() = console.apu.frames

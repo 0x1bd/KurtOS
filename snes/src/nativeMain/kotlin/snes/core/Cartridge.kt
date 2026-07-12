@@ -10,6 +10,7 @@ class Cartridge(image: ByteArray) {
     val fastRom: Boolean
     val title: String
     val chip: Int
+    val pal: Boolean
     val sram: ByteArray
 
     var coProcessor: CoProcessor? = null
@@ -40,6 +41,9 @@ class Cartridge(image: ByteArray) {
 
         val romType = if (supported) byte(header + ROM_TYPE) else 0
         chip = if (supported && romType and 0x0F in 3..5) ChipId.DSP1 else ChipId.NONE
+
+        val region = if (supported) byte(header + REGION) else 0
+        pal = region in PAL_REGIONS
 
         val sramCode = if (supported) byte(header + SRAM_SIZE) else 0
         val sramBytes = if (sramCode == 0 || sramCode > MAX_SRAM_CODE) 0 else 1024 shl sramCode
@@ -263,6 +267,8 @@ class Cartridge(image: ByteArray) {
         private const val ROM_TYPE = 0x16
         private const val ROM_SIZE = 0x17
         private const val SRAM_SIZE = 0x18
+        private const val REGION = 0x19
+        private val PAL_REGIONS = 0x02..0x0C
         private const val COMPLEMENT = 0x1C
         private const val CHECKSUM = 0x1E
         private const val RESET_VECTOR = 0x3C

@@ -36,6 +36,8 @@ interface EmulatorSession {
     val video: Video
     val audioSamples: ShortArray
     val audioFrames: Int
+    val frameMicros: ULong?
+        get() = null
 
     fun setButtons(buttons: Int)
     fun runFrame()

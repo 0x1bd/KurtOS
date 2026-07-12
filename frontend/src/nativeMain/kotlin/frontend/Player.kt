@@ -134,7 +134,7 @@ object Player {
                 seen = version
             }
 
-            next += game.emulator.frameMicros
+            next += session.frameMicros ?: game.emulator.frameMicros
             val now = Time.uptimeMillis() * MICROS_PER_MILLI
             if (now > next) {
                 next = now

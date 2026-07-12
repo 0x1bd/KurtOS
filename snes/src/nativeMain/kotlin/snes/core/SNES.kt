@@ -15,6 +15,10 @@ class SNES(image: ByteArray) {
 
     val frame get() = ppu.frame
 
+    val lines = if (cartridge.pal) PAL_LINES else NTSC_LINES
+
+    val frameMicros = if (cartridge.pal) PAL_MICROS else NTSC_MICROS
+
     var frameCount = 0
         private set
 
@@ -54,15 +58,8 @@ class SNES(image: ByteArray) {
         frameCount++
         ppu.startFrame()
 
-        var lastHdma = -1
-
-        for (line in 0 until LINES) {
+        for (line in 0 until lines) {
             startLine(line)
-
-            if (debugTrace && regs.hdmaEnabled != lastHdma) {
-                lastHdma = regs.hdmaEnabled
-                println("[trace] frame=$frameCount line=$line hdmaEnabled=0x${lastHdma.toString(16)}")
-            }
 
             if (line <= ppu.visibleLines) {
                 runTo(RENDER_POINT)
@@ -249,13 +246,15 @@ class SNES(image: ByteArray) {
     }
 
     companion object {
-        const val LINES = 262
+        const val NTSC_LINES = 262
+        const val PAL_LINES = 312
         const val CYCLES_PER_LINE = 1364
         const val DOT = 4
         const val RENDER_POINT = 1024
         const val HBLANK_DOT = 274
         const val IRQ_WINDOW = 4
-        const val FRAME_MICROS = 16639UL
+        const val NTSC_MICROS = 16639UL
+        const val PAL_MICROS = 19997UL
 
         private const val MAGIC = 0x534E4553
         private const val VERSION = 1
