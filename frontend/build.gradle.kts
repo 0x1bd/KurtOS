@@ -36,6 +36,7 @@ kotlin {
                 implementation(project(":gameboy"))
                 implementation(project(":gba"))
                 implementation(project(":snes"))
+                implementation(project(":n64"))
             }
         }
 

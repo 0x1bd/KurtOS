@@ -3,6 +3,7 @@ package frontend
 import gameboy.GameBoyEmulator
 import gba.GbaEmulator
 import kapi.emu.Emulator
+import n64.N64Emulator
 import snes.SnesEmulator
 
 object Emulators {
@@ -10,6 +11,7 @@ object Emulators {
         GameBoyEmulator,
         GbaEmulator,
         SnesEmulator,
+        N64Emulator,
     )
 
     fun forFile(name: String): Emulator? =

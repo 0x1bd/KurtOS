@@ -65,6 +65,7 @@ class HomePreviewTest {
         Game("TETRIS", "/roms/tetris.gb", 32768UL, Emulators.all.first { it.id == "gameboy" }),
         Game("POKEMON CRYSTAL", "/roms/crystal.gbc", 2097152UL, Emulators.all.first { it.id == "gameboy" }),
         Game("POKEMON EMERALD", "/roms/emerald.gba", 16777216UL, Emulators.all.first { it.id == "gba" }),
+        Game("SUPER MARIO 64", "/roms/sm64.z64", 8388608UL, Emulators.all.first { it.id == "n64" }),
     )
 
     @OptIn(ExperimentalForeignApi::class)
@@ -86,5 +87,9 @@ class HomePreviewTest {
         val gb = Canvas(1280u, 800u)
         Home.preview(gb, Home.PREVIEW_HOME, 1, games(), "12:00 PM", 40)
         dump(gb, "ui-home-gb")
+
+        val n64 = Canvas(1280u, 800u)
+        Home.preview(n64, Home.PREVIEW_HOME, 4, games(), "12:00 PM", 40)
+        dump(n64, "ui-home-n64")
     }
 }

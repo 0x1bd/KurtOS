@@ -34,6 +34,7 @@ object Home {
         Card("GB", 0x00E1EFD5u, 0x00A6C87Cu, 0x00BCD79Bu, ConsoleArt.GAME_BOY, ".gb"),
         Card("GBC", 0x00EEDCF6u, 0x00C39BDFu, 0x00D3B6E8u, ConsoleArt.GAME_BOY_COLOR, ".gbc"),
         Card("GBA", 0x00D6E8F7u, 0x00A7D0ECu, 0x00AAD0EAu, ConsoleArt.GAME_BOY_ADVANCE, ".gba"),
+        Card("N64", 0x00DCEFDCu, 0x0075B575u, 0x00A8D5A8u, ConsoleArt.N64, ".z64"),
     )
 
     private const val SCREEN_HOME = 0
@@ -198,8 +199,11 @@ object Home {
         return games.filter { it.path.endsWith(console.extension, ignoreCase = true) || alias(it, console) }
     }
 
-    private fun alias(game: Game, console: Card): Boolean =
-        console.extension == ".sfc" && game.path.endsWith(".smc", ignoreCase = true)
+    private fun alias(game: Game, console: Card): Boolean = when (console.extension) {
+        ".sfc" -> game.path.endsWith(".smc", ignoreCase = true)
+        ".z64" -> game.path.endsWith(".n64", ignoreCase = true) || game.path.endsWith(".v64", ignoreCase = true)
+        else -> false
+    }
 
     private fun clampSelection(games: List<Game>) {
         val count = shelf(games).size
@@ -391,9 +395,9 @@ object Home {
             leadScale,
         )
 
-        val cardWidth = width * 22 / 100
-        val cardHeight = space * 58 / 100
         val gap = width * 3 / 200
+        val cardWidth = minOf(width * 22 / 100, (width * 94 / 100 - (consoles.size - 1) * gap) / consoles.size)
+        val cardHeight = space * 58 / 100
         val total = consoles.size * cardWidth + (consoles.size - 1) * gap
         val startX = (width - total) / 2
         val cardY = top + space * 34 / 100

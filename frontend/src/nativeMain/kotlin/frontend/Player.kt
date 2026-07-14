@@ -125,11 +125,11 @@ object Player {
             }
             session.drainAudio()
 
-            screen.draw()
+            if (session.frameChanged) screen.draw()
 
             if (Settings.showFps) {
                 val tock = Time.uptimeMillis()
-                counted++
+                if (session.frameChanged) counted++
 
                 if (tock - measured >= FPS_WINDOW_MS) {
                     rate = (counted.toULong() * 1000UL / (tock - measured)).toInt()

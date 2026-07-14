@@ -38,6 +38,8 @@ interface EmulatorSession {
     val audioFrames: Int
     val frameMicros: ULong?
         get() = null
+    val frameChanged: Boolean
+        get() = true
 
     fun setButtons(buttons: Int)
     fun runFrame()

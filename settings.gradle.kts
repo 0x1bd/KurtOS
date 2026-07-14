@@ -10,4 +10,5 @@ include(
     "gameboy",
     "gba",
     "snes",
+    "n64",
 )

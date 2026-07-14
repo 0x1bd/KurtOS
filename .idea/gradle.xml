@@ -14,6 +14,7 @@
             <option value="$PROJECT_DIR$/hal" />
             <option value="$PROJECT_DIR$/kapi" />
             <option value="$PROJECT_DIR$/kernel" />
+            <option value="$PROJECT_DIR$/n64" />
             <option value="$PROJECT_DIR$/runtime" />
             <option value="$PROJECT_DIR$/shell" />
             <option value="$PROJECT_DIR$/snes" />
