@@ -26,6 +26,7 @@ class N64(image: ByteArray) {
     val rdram = IntArray(RDRAM_SIZE / 4)
     val hidden = ByteArray(RDRAM_SIZE / 2)
     val rdramRegs = Array(4) { IntArray(16) }
+    val jitPages = ByteArray(RDRAM_SIZE ushr JIT_PAGE_SHIFT)
 
     val mi = MI(this)
     val ri = Ri()
@@ -38,6 +39,7 @@ class N64(image: ByteArray) {
     val rsp = RSP(this)
     val rdp = Rdp(this)
     val cpu = CPU(this)
+    val jit = Jit.create(this)
 
     val clockRate = 93750000L
 
@@ -82,6 +84,7 @@ class N64(image: ByteArray) {
         rsp.reset()
         rdp.reset()
         cpu.reset()
+        jit?.flush()
 
         rdram[0x318 / 4] = RDRAM_SIZE
         rdram[0x3F0 / 4] = RDRAM_SIZE
@@ -278,6 +281,7 @@ class N64(image: ByteArray) {
             }
             val index = addr ushr 2
             rdram[index] = (rdram[index] and mask.inv()) or (value and mask)
+            if (jitPages[addr ushr JIT_PAGE_SHIFT].toInt() != 0) jit?.invalidatePage(addr ushr JIT_PAGE_SHIFT)
             return
         }
         writeSlow(addr, value, mask)
@@ -291,6 +295,7 @@ class N64(image: ByteArray) {
             rdram[at ushr 2] = value
             at += 4
         }
+        jit?.invalidateRange(addr, length)
         mi.regs[MI_INIT_MODE] = mi.regs[MI_INIT_MODE] and MI_INIT_MODE_BIT.inv()
         mi.initMode = false
     }
@@ -331,6 +336,8 @@ class N64(image: ByteArray) {
         val index = (addr and RDRAM_MASK) ushr 2
         val shift = 24 - ((addr and 3) shl 3)
         rdram[index] = (rdram[index] and (0xFF shl shift).inv()) or ((value and 0xFF) shl shift)
+        val page = (addr and RDRAM_MASK) ushr JIT_PAGE_SHIFT
+        if (jitPages[page].toInt() != 0) jit?.invalidatePage(page)
     }
 
     fun ramRead16(addr: Int): Int = (ramRead8(addr) shl 8) or ramRead8(addr + 1)
@@ -339,6 +346,8 @@ class N64(image: ByteArray) {
 
     fun ramWrite32(addr: Int, value: Int) {
         rdram[(addr and RDRAM_MASK) ushr 2] = value
+        val page = (addr and RDRAM_MASK) ushr JIT_PAGE_SHIFT
+        if (jitPages[page].toInt() != 0) jit?.invalidatePage(page)
     }
 
     fun describe(): String =

@@ -35,6 +35,7 @@ tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
         showStandardStreams = true
         events("passed", "failed")
     }
+    environment("KURTOS_JIT", "1")
     environment("KURTOS_TESTROMS", rootProject.file("third_party/testroms").absolutePath)
     environment("KURTOS_N64TESTS", rootProject.file("third_party/testroms/n64").absolutePath)
     environment(

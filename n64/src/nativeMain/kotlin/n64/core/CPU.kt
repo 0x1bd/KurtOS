@@ -84,9 +84,10 @@ class CPU(private val n64: N64) {
     var count = 0L
     private var cop2Latch = 0L
 
-    private var branchState = STATE_STEP
-    private var branchTarget = 0L
+    internal var branchState = STATE_STEP
+    internal var branchTarget = 0L
     private var fr = false
+    private val jitPages = n64.jitPages
 
     private val cop0WriteMask = LongArray(32)
 
@@ -103,13 +104,13 @@ class CPU(private val n64: N64) {
     private val tlbEnd = Array(2) { LongArray(32) }
     private val tlbPhys = Array(2) { LongArray(32) }
 
-    private val tlbLutR = IntArray(0x100000)
-    private val tlbLutW = IntArray(0x100000)
+    internal val tlbLutR = IntArray(0x100000)
+    internal val tlbLutW = IntArray(0x100000)
 
     private var exception = false
 
     var instructions = 0L
-        private set
+        internal set
 
     var debugProfile = false
     val debugSamples = HashMap<Int, Int>()
@@ -211,6 +212,9 @@ class CPU(private val n64: N64) {
         if (physical.toUInt() < RDRAM_SIZE.toUInt() && !n64.mi.initMode) {
             val index = physical ushr 2
             n64.rdram[index] = (n64.rdram[index] and mask.inv()) or (value and mask)
+            if (jitPages[physical ushr JIT_PAGE_SHIFT].toInt() != 0) {
+                n64.jit?.invalidatePage(physical ushr JIT_PAGE_SHIFT)
+            }
             return
         }
         n64.write32(physical, value, mask)
@@ -234,6 +238,11 @@ class CPU(private val n64: N64) {
     var frameDeadline = Long.MAX_VALUE
 
     fun run() {
+        val jit = n64.jit
+        if (jit != null) {
+            jit.run()
+            return
+        }
         while (!frameDone && count < frameDeadline) {
             step()
         }
