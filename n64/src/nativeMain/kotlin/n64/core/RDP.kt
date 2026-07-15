@@ -231,6 +231,10 @@ class Rdp(private val n64: N64) {
     private val spanRx = IntArray(SPANS)
     private val spanUnscrx = IntArray(SPANS)
     private val spanValid = BooleanArray(SPANS)
+    private val spanMinorX = IntArray(SPANS * 4)
+    private val spanMajorX = IntArray(SPANS * 4)
+    private val spanInvalY = IntArray(SPANS * 4)
+    private val cvgBuf = IntArray(4096)
     private val spanR = IntArray(SPANS)
     private val spanG = IntArray(SPANS)
     private val spanB = IntArray(SPANS)
@@ -1070,6 +1074,10 @@ class Rdp(private val n64: N64) {
                     if (curcross) invaly = 1
                     allinval = allinval and invaly
 
+                    spanMinorX[j * 4 + spix] = xlsc and 0x1FFF
+                    spanMajorX[j * 4 + spix] = xrsc and 0x1FFF
+                    spanInvalY[j * 4 + spix] = invaly
+
                     if (invaly == 0) {
                         val lx = (xlsc shr 3) and 0xFFF
                         val rx = (xrsc shr 3) and 0xFFF
@@ -1119,6 +1127,76 @@ class Rdp(private val n64: N64) {
         }
 
         renderSpans(yhlimit shr 2, yllimit shr 2, flip, tile, shade, texture, depth)
+    }
+
+    private fun rightcvghex(x: Int, fmask: Int): Int {
+        val covered = ((x and 7) + 1) shr 1
+        return (0xF0 ushr covered) and fmask
+    }
+
+    private fun leftcvghex(x: Int, fmask: Int): Int {
+        val covered = ((x and 7) + 1) shr 1
+        return (0xF ushr covered) and fmask
+    }
+
+    private fun popcount8(v: Int): Int {
+        var x = v and 0xFF
+        x -= (x shr 1) and 0x55
+        x = (x and 0x33) + ((x shr 2) and 0x33)
+        return (x + (x shr 4)) and 0xF
+    }
+
+    private fun computeCoverage(i: Int, flip: Boolean) {
+        val purgestart = if (flip) spanRx[i] else spanLx[i]
+        val purgeend = if (flip) spanLx[i] else spanRx[i]
+        if (purgestart < 0 || purgeend >= cvgBuf.size || purgeend - purgestart < 0) return
+
+        for (k in purgestart..purgeend) cvgBuf[k] = 0xFF
+
+        for (subrow in 0 until 4) {
+            val fmask = 0xA ushr (subrow and 1)
+            val maskshift = (subrow - 2) and 4
+            val fmaskshifted = fmask shl maskshift
+
+            if (spanInvalY[i * 4 + subrow] == 0) {
+                val minorcur = spanMinorX[i * 4 + subrow]
+                val majorcur = spanMajorX[i * 4 + subrow]
+                val minorcurint = minorcur shr 3
+                val majorcurint = majorcur shr 3
+
+                if (flip) {
+                    for (k in purgestart..minOf(majorcurint, purgeend)) cvgBuf[k] = cvgBuf[k] and fmaskshifted.inv()
+                    for (k in maxOf(minorcurint, purgestart)..purgeend) cvgBuf[k] = cvgBuf[k] and fmaskshifted.inv()
+                    if (minorcurint > majorcurint) {
+                        if (minorcurint in purgestart..purgeend) {
+                            cvgBuf[minorcurint] = cvgBuf[minorcurint] or (rightcvghex(minorcur, fmask) shl maskshift)
+                        }
+                        if (majorcurint in purgestart..purgeend) {
+                            cvgBuf[majorcurint] = cvgBuf[majorcurint] or (leftcvghex(majorcur, fmask) shl maskshift)
+                        }
+                    } else if (minorcurint == majorcurint && majorcurint in purgestart..purgeend) {
+                        val samecvg = rightcvghex(minorcur, fmask) and leftcvghex(majorcur, fmask)
+                        cvgBuf[majorcurint] = cvgBuf[majorcurint] or (samecvg shl maskshift)
+                    }
+                } else {
+                    for (k in purgestart..minOf(minorcurint, purgeend)) cvgBuf[k] = cvgBuf[k] and fmaskshifted.inv()
+                    for (k in maxOf(majorcurint, purgestart)..purgeend) cvgBuf[k] = cvgBuf[k] and fmaskshifted.inv()
+                    if (majorcurint > minorcurint) {
+                        if (minorcurint in purgestart..purgeend) {
+                            cvgBuf[minorcurint] = cvgBuf[minorcurint] or (leftcvghex(minorcur, fmask) shl maskshift)
+                        }
+                        if (majorcurint in purgestart..purgeend) {
+                            cvgBuf[majorcurint] = cvgBuf[majorcurint] or (rightcvghex(majorcur, fmask) shl maskshift)
+                        }
+                    } else if (minorcurint == majorcurint && majorcurint in purgestart..purgeend) {
+                        val samecvg = leftcvghex(minorcur, fmask) and rightcvghex(majorcur, fmask)
+                        cvgBuf[majorcurint] = cvgBuf[majorcurint] or (samecvg shl maskshift)
+                    }
+                }
+            } else {
+                for (k in purgestart..purgeend) cvgBuf[k] = cvgBuf[k] and fmaskshifted.inv()
+            }
+        }
     }
 
     private fun renderSpans(
@@ -1179,27 +1257,46 @@ class Rdp(private val n64: N64) {
                 z += dzinc * scdiff
             }
 
+            val ownerMode = forceBlend && !coverageTimesAlpha && !alphaCoverageSelect
+            val needCvg = coverageTimesAlpha || alphaCoverageSelect || ownerMode
+            if (needCvg) computeCoverage(i, flip)
+
             var x = xendsc
 
             for (pixel in 0..length) {
                 if (x >= scissorXh && x < scissorXl) {
-                    val shadeColor = if (shade) {
-                        pack(clamp255(r shr 16), clamp255(g shr 16), clamp255(b shr 16), clamp255(a shr 16))
-                    } else {
-                        0
+                    var draw = true
+                    var drawCvg = 8
+                    if (needCvg) {
+                        val mask = cvgBuf[x]
+                        val cvg = popcount8(mask)
+                        if (ownerMode) {
+                            draw = cvg > 4 || (cvg == 4 && (mask and 0x80) != 0)
+                            drawCvg = 8
+                        } else {
+                            draw = cvg != 0
+                            drawCvg = cvg
+                        }
                     }
+                    if (draw) {
+                        val shadeColor = if (shade) {
+                            pack(clamp255(r shr 16), clamp255(g shr 16), clamp255(b shr 16), clamp255(a shr 16))
+                        } else {
+                            0
+                        }
 
-                    val texel = if (texture) {
-                        val coords = divide(s, t, w)
-                        sample(tile, (coords ushr 32).toInt(), coords.toInt())
-                    } else {
-                        0
+                        val texel = if (texture) {
+                            val coords = divide(s, t, w)
+                            sample(tile, (coords ushr 32).toInt(), coords.toInt())
+                        } else {
+                            0
+                        }
+
+                        val pixelZ = zCorrect(if (zSourceSelect) primDepth shl 16 else z)
+
+                        val color = combine(texel, texel, shadeColor, (shadeColor ushr 24) and 0xFF, 0, 0)
+                        writePixel(x, i, color, pixelZ, depth, (shadeColor ushr 24) and 0xFF, drawCvg)
                     }
-
-                    val pixelZ = zCorrect(if (zSourceSelect) primDepth shl 16 else z)
-
-                    val color = combine(texel, texel, shadeColor, (shadeColor ushr 24) and 0xFF, 0, 0)
-                    writePixel(x, i, color, pixelZ, depth, (shadeColor ushr 24) and 0xFF)
                 }
 
                 r += drinc
@@ -1724,17 +1821,18 @@ class Rdp(private val n64: N64) {
         value and 0xFF,
     )
 
-    private fun writePixel(x: Int, y: Int, color: Int, z: Int, useDepth: Boolean, shadeAlpha: Int = 0) {
+    private fun writePixel(x: Int, y: Int, color: Int, z: Int, useDepth: Boolean, shadeAlpha: Int = 0, cvg: Int = 8) {
         pixels++
         workPixels++
+        if (cvg == 0) return
 
         var alpha = (color ushr 24) and 0xFF
         if (coverageTimesAlpha) {
-            val scaled = (alpha * 8 + 4) shr 3
+            val scaled = (alpha * cvg + 4) shr 3
             if (scaled shr 5 == 0) return
             if (alphaCoverageSelect) alpha = minOf(scaled, 0xFF)
         } else if (alphaCoverageSelect) {
-            alpha = 0xFF
+            alpha = if (cvg >= 8) 0xFF else cvg shl 5
         }
 
         if (alphaCompare) {
