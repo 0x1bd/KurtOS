@@ -4,27 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/dictionaries/project.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/gradle.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/gradle.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/kotlinc.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/runConfigurations/Run_KurtOS.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/runConfigurations/Run_KurtOS_GFX.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/gradle/wrapper/gradle-wrapper.properties" beforeDir="false" afterPath="$PROJECT_DIR$/gradle/wrapper/gradle-wrapper.properties" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/hal/src/nativeInterop/cinterop/mmio.def" beforeDir="false" afterPath="$PROJECT_DIR$/hal/src/nativeInterop/cinterop/mmio.def" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/hal/src/nativeMain/kotlin/hal/Arch.kt" beforeDir="false" afterPath="$PROJECT_DIR$/hal/src/nativeMain/kotlin/hal/Arch.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/hal/src/nativeMain/kotlin/hal/CPU.kt" beforeDir="false" afterPath="$PROJECT_DIR$/hal/src/nativeMain/kotlin/hal/CPU.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/Main.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/Main.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/audio/AudioService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/audio/AudioService.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/HDACodec.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/HDACodec.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/I8042.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/I8042.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/Keyboard.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/Keyboard.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/isr.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/isr.c" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/kurtos.h" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/kurtos.h" afterDir="false" />
+    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard">
+      <change beforePath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Player.kt" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Player.kt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -51,10 +32,10 @@
     &quot;accountId&quot;: &quot;922904b3-6829-47a5-bab3-6b75a599f984&quot;
   }
 }</component>
-  <component name="KmpPackageLockUpdaterState"><![CDATA[{
-  "jsModulesKotlinGradlePluginVersion": {},
-  "wasmModulesKotlinGradlePluginVersion": {}
-}]]></component>
+  <component name="KmpPackageLockUpdaterState">{
+  &quot;jsModulesKotlinGradlePluginVersion&quot;: {},
+  &quot;wasmModulesKotlinGradlePluginVersion&quot;: {}
+}</component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 3,
   &quot;fromUser&quot;: false
@@ -69,16 +50,19 @@
     "CidrDebugProfileConversion": "true",
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.cidr.known.project.marker": "true",
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.readMode.enableVisualFormatting": "true",
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "cidr.known.project.marker": "true",
     "codeWithMe.voiceChat.enabledByDefault": "false",
+    "git-widget-placeholder": "main",
     "kotlin-language-version-configured": "true",
     "node.js.detected.package.jshint": "true",
     "node.js.selected.package.jshint": "",
-    "nodejs_package_manager_path": "npm"
+    "nodejs_package_manager_path": "npm",
+    "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
   <component name="RunManager">
@@ -90,8 +74,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-jdk-30f59d01ecdd-63390994e64e-intellij.indexing.shared.core-IU-262.8665.176" />
-        <option value="bundled-js-predefined-d6986cc7102b-4abd2a77f808-JavaScript-IU-262.8665.176" />
+        <option value="bundled-jdk-30f59d01ecdd-37e91769500f-intellij.indexing.shared.core-IU-261.26222.65" />
+        <option value="bundled-js-predefined-d6986cc7102b-31caf2ab9e3c-JavaScript-IU-261.26222.65" />
       </set>
     </attachedChunks>
   </component>
@@ -102,11 +86,25 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1784110690091</updated>
+      <workItem from="1784118255606" duration="1847000" />
     </task>
+    <task id="LOCAL-00001" summary="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard">
+      <option name="closed" value="true" />
+      <created>1784118893624</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1784118893624</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

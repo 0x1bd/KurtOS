@@ -92,142 +92,351 @@ unsigned long strnlen(const char *s, unsigned long maxlen) {
     return i;
 }
 
-static void reverse_str(char *str, int len) {
-    int i = 0, j = len - 1;
-    while (i < j) {
-        char tmp = str[i];
-        str[i] = str[j];
-        str[j] = tmp;
-        i++; j--;
-    }
+extern int isnan(double x);
+extern int isinf(double x);
+extern double fabs(double x);
+extern double floor(double x);
+
+static const uint64_t POW10[] = {
+    1ULL, 10ULL, 100ULL, 1000ULL, 10000ULL, 100000ULL, 1000000ULL,
+    10000000ULL, 100000000ULL, 1000000000ULL, 10000000000ULL,
+    100000000000ULL, 1000000000000ULL, 10000000000000ULL,
+    100000000000000ULL, 1000000000000000ULL, 10000000000000000ULL,
+    100000000000000000ULL, 1000000000000000000ULL,
+};
+#define POW10_MAX 18
+#define FLOAT_PREC_MAX 200
+
+typedef struct {
+    char  *out;
+    size_t cap;
+    size_t len;
+    int    count;
+} sink_t;
+
+static void sink_putc(sink_t *s, char c) {
+    if (s->cap != 0 && s->len + 1 < s->cap) s->out[s->len++] = c;
+    s->count++;
 }
 
-static int itoa(int64_t num, char *str, int base, int is_signed) {
-    int i = 0;
-    int is_neg = 0;
-
-    if (num == 0) {
-        str[i++] = '0';
-        str[i] = '\0';
-        return 1;
-    }
-
-    if (is_signed && num < 0 && base == 10) {
-        is_neg = 1;
-        num = -num;
-    }
-
-    uint64_t unum = (uint64_t)num;
-    while (unum != 0) {
-        int rem = unum % base;
-        str[i++] = (rem > 9) ? (rem - 10) + 'a' : rem + '0';
-        unum = unum / base;
-    }
-
-    if (is_neg) str[i++] = '-';
-    str[i] = '\0';
-    reverse_str(str, i);
-    return i;
+static void sink_pad(sink_t *s, char c, int n) {
+    for (int i = 0; i < n; i++) sink_putc(s, c);
 }
 
-static int fmt_putc(char **out, size_t *avail, char c) {
-    if (*avail > 1) {
-        **out = c;
-        (*out)++;
-        (*avail)--;
-    }
-    return 1;
+static void sink_write(sink_t *s, const char *p, int n) {
+    for (int i = 0; i < n; i++) sink_putc(s, p[i]);
 }
 
-static int fmt_puts(char **out, size_t *avail, const char *s) {
-    int count = 0;
-    while (*s) {
-        fmt_putc(out, avail, *s++);
-        count++;
+static int u64_to_str(char *buf, uint64_t v, int base, int upper) {
+    const char *digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
+    char tmp[24];
+    int n = 0;
+    if (v == 0) tmp[n++] = '0';
+    while (v != 0) { tmp[n++] = digits[v % (unsigned)base]; v /= (unsigned)base; }
+    for (int i = 0; i < n; i++) buf[i] = tmp[n - 1 - i];
+    return n;
+}
+
+static void emit_field(sink_t *s, const char *sign, const char *prefix,
+                       int zeros, const char *body, int blen,
+                       int width, int left, int zero) {
+    int slen = 0; while (sign[slen]) slen++;
+    int plen = 0; while (prefix[plen]) plen++;
+    int total = slen + plen + zeros + blen;
+    int pad = width > total ? width - total : 0;
+
+    if (!left && !zero) sink_pad(s, ' ', pad);
+    sink_write(s, sign, slen);
+    sink_write(s, prefix, plen);
+    if (!left && zero) sink_pad(s, '0', pad);
+    sink_pad(s, '0', zeros);
+    sink_write(s, body, blen);
+    if (left) sink_pad(s, ' ', pad);
+}
+
+static int dbl_int_str(char *buf, double v) {
+    char tmp[340];
+    int n = 0;
+    if (v < 1.0) { buf[0] = '0'; return 1; }
+    while (v >= 1.0 && n < (int)sizeof(tmp)) {
+        double q = floor(v / 10.0);
+        int d = (int)(v - q * 10.0);
+        if (d < 0) d = 0;
+        if (d > 9) d = 9;
+        tmp[n++] = (char)('0' + d);
+        v = q;
     }
-    return count;
+    for (int i = 0; i < n; i++) buf[i] = tmp[n - 1 - i];
+    return n;
+}
+
+static int fmt_fixed(char *buf, double v, int prec, int alt) {
+    int n = 0;
+    double intpart = floor(v);
+    double frac = v - intpart;
+    int cap = prec > POW10_MAX ? POW10_MAX : prec;
+
+    uint64_t scaled = 0;
+    if (cap > 0) {
+        scaled = (uint64_t)(frac * (double)POW10[cap] + 0.5);
+        if (scaled >= POW10[cap]) { scaled -= POW10[cap]; intpart += 1.0; }
+    } else if (frac + 0.5 >= 1.0) {
+        intpart += 1.0;
+    }
+
+    n += dbl_int_str(buf + n, intpart);
+    if (prec > 0 || alt) buf[n++] = '.';
+    if (prec > 0) {
+        char fd[POW10_MAX];
+        uint64_t x = scaled;
+        for (int i = 0; i < cap; i++) { fd[cap - 1 - i] = (char)('0' + x % 10); x /= 10; }
+        for (int i = 0; i < cap; i++) buf[n++] = fd[i];
+        for (int i = cap; i < prec; i++) buf[n++] = '0';
+    }
+    return n;
+}
+
+static int fmt_exp(char *buf, double v, int prec, char e, int alt) {
+    int n = 0;
+    int exp = 0;
+    if (v != 0.0) {
+        while (v >= 10.0) { v /= 10.0; exp++; }
+        while (v < 1.0)   { v *= 10.0; exp--; }
+    }
+
+    int cap = prec > POW10_MAX ? POW10_MAX : prec;
+    uint64_t m = (uint64_t)(v * (double)POW10[cap] + 0.5);
+    if (m >= 10ULL * POW10[cap]) { m /= 10; exp++; }
+
+    char md[POW10_MAX + 2] = {0};
+    int mn = cap + 1;
+    uint64_t x = m;
+    for (int i = 0; i < mn; i++) { md[mn - 1 - i] = (char)('0' + x % 10); x /= 10; }
+
+    buf[n++] = md[0];
+    if (prec > 0 || alt) buf[n++] = '.';
+    for (int i = 1; i <= cap; i++) buf[n++] = md[i];
+    for (int i = cap; i < prec; i++) buf[n++] = '0';
+
+    buf[n++] = e;
+    if (exp < 0) { buf[n++] = '-'; exp = -exp; } else buf[n++] = '+';
+    char ed[8];
+    int en = 0;
+    if (exp == 0) ed[en++] = '0';
+    while (exp != 0) { ed[en++] = (char)('0' + exp % 10); exp /= 10; }
+    while (en < 2) ed[en++] = '0';
+    for (int i = 0; i < en; i++) buf[n++] = ed[en - 1 - i];
+    return n;
+}
+
+static int strip_trailing_zeros(char *buf, int n) {
+    int dot = -1;
+    for (int i = 0; i < n; i++) if (buf[i] == '.') { dot = i; break; }
+    if (dot < 0) return n;
+
+    int e = -1;
+    for (int i = dot; i < n; i++) if (buf[i] == 'e' || buf[i] == 'E') { e = i; break; }
+    int endfrac = (e < 0) ? n : e;
+
+    int last = endfrac;
+    while (last > dot + 1 && buf[last - 1] == '0') last--;
+    if (last == dot + 1) last--;
+
+    if (e < 0) return last;
+    int shift = endfrac - last;
+    for (int i = e; i < n; i++) buf[i - shift] = buf[i];
+    return n - shift;
+}
+
+static int fmt_general(char *buf, double v, int prec, int upper, int alt) {
+    if (prec == 0) prec = 1;
+
+    int exp = 0;
+    double t = v;
+    if (t != 0.0) {
+        while (t >= 10.0) { t /= 10.0; exp++; }
+        while (t < 1.0)   { t *= 10.0; exp--; }
+    }
+
+    int n;
+    if (exp < -4 || exp >= prec)
+        n = fmt_exp(buf, v, prec - 1, upper ? 'E' : 'e', alt);
+    else
+        n = fmt_fixed(buf, v, prec - 1 - exp, alt);
+
+    if (!alt) n = strip_trailing_zeros(buf, n);
+    return n;
+}
+
+static int dbl_negative(double v) {
+    union { double d; uint64_t u; } b;
+    b.d = v;
+    return (int)(b.u >> 63);
+}
+
+static void fmt_float(sink_t *s, double v, int prec, char conv,
+                      int width, int left, int zero,
+                      int plus, int space, int alt) {
+    int upper = (conv == 'F' || conv == 'E' || conv == 'G');
+    char lc = (char)(conv | 0x20);
+
+    int neg = dbl_negative(v);
+    v = fabs(v);
+    const char *sign = neg ? "-" : (plus ? "+" : (space ? " " : ""));
+
+    if (isnan(v)) { emit_field(s, sign, "", 0, upper ? "NAN" : "nan", 3, width, left, 0); return; }
+    if (isinf(v)) { emit_field(s, sign, "", 0, upper ? "INF" : "inf", 3, width, left, 0); return; }
+
+    if (prec < 0) prec = 6;
+    if (prec > FLOAT_PREC_MAX) prec = FLOAT_PREC_MAX;
+
+    char body[FLOAT_PREC_MAX + 360];
+    int n;
+    if (lc == 'f') n = fmt_fixed(body, v, prec, alt);
+    else if (lc == 'e') n = fmt_exp(body, v, prec, upper ? 'E' : 'e', alt);
+    else n = fmt_general(body, v, prec, upper, alt);
+
+    emit_field(s, sign, "", 0, body, n, width, left, zero);
 }
 
 int vsnprintf(char *str, size_t size, const char *format, va_list ap) {
-    if (size == 0) return 0;
-
-    char *out = str;
-    size_t avail = size;
-    int count = 0;
-    char buf[64];
+    sink_t s = { str, size, 0, 0 };
 
     while (*format) {
-        if (*format != '%') {
-            count += fmt_putc(&out, &avail, *format++);
+        if (*format != '%') { sink_putc(&s, *format++); continue; }
+        format++;
+
+        int left = 0, zero = 0, plus = 0, space = 0, alt = 0;
+        for (;;) {
+            char c = *format;
+            if (c == '-') left = 1;
+            else if (c == '0') zero = 1;
+            else if (c == '+') plus = 1;
+            else if (c == ' ') space = 1;
+            else if (c == '#') alt = 1;
+            else break;
+            format++;
+        }
+
+        int width = 0;
+        if (*format == '*') {
+            width = va_arg(ap, int);
+            format++;
+            if (width < 0) { left = 1; width = -width; }
+        } else {
+            while (*format >= '0' && *format <= '9') width = width * 10 + (*format++ - '0');
+        }
+
+        int prec = -1;
+        if (*format == '.') {
+            format++;
+            prec = 0;
+            if (*format == '*') {
+                prec = va_arg(ap, int);
+                format++;
+                if (prec < 0) prec = -1;
+            } else {
+                while (*format >= '0' && *format <= '9') prec = prec * 10 + (*format++ - '0');
+            }
+        }
+
+        int lenmod = 0;
+        if (*format == 'h') { format++; if (*format == 'h') { lenmod = -2; format++; } else lenmod = -1; }
+        else if (*format == 'l') { format++; if (*format == 'l') { lenmod = 2; format++; } else lenmod = 1; }
+        else if (*format == 'z' || *format == 't' || *format == 'j') { lenmod = 3; format++; }
+        else if (*format == 'L') { format++; }
+
+        char conv = *format;
+        if (!conv) break;
+        format++;
+
+        if (conv == '%') { sink_putc(&s, '%'); continue; }
+
+        if (conv == 'c') {
+            char body = (char)va_arg(ap, int);
+            emit_field(&s, "", "", 0, &body, 1, width, left, 0);
             continue;
         }
 
-        format++;
-        int is_long = 0;
-        if (*format == 'l') {
-            is_long = 1;
-            format++;
-            if (*format == 'l') { is_long = 2; format++; }
+        if (conv == 's') {
+            const char *arg = va_arg(ap, const char *);
+            if (!arg) arg = "(null)";
+            int blen = 0;
+            while (arg[blen] && (prec < 0 || blen < prec)) blen++;
+            emit_field(&s, "", "", 0, arg, blen, width, left, 0);
+            continue;
         }
 
-        switch (*format) {
-            case 'c': {
-                char c = (char)va_arg(ap, int);
-                count += fmt_putc(&out, &avail, c);
-                break;
+        if (conv == 'd' || conv == 'i' || conv == 'u' ||
+            conv == 'x' || conv == 'X' || conv == 'o' || conv == 'p') {
+            int base = 10, upper = 0, is_signed = (conv == 'd' || conv == 'i');
+            const char *prefix = "";
+            const char *sign = "";
+            uint64_t mag;
+
+            if (conv == 'x') base = 16;
+            else if (conv == 'X') { base = 16; upper = 1; }
+            else if (conv == 'o') base = 8;
+            else if (conv == 'p') { base = 16; }
+
+            if (conv == 'p') {
+                mag = (uint64_t)(uintptr_t)va_arg(ap, void *);
+            } else if (is_signed) {
+                long long v;
+                if (lenmod == 2) v = va_arg(ap, long long);
+                else if (lenmod == 1 || lenmod == 3) v = va_arg(ap, long);
+                else v = va_arg(ap, int);
+                if (lenmod == -1) v = (short)v;
+                else if (lenmod == -2) v = (signed char)v;
+                if (v < 0) { sign = "-"; mag = (uint64_t)(-(v + 1)) + 1ULL; }
+                else { mag = (uint64_t)v; sign = plus ? "+" : (space ? " " : ""); }
+            } else {
+                unsigned long long v;
+                if (lenmod == 2) v = va_arg(ap, unsigned long long);
+                else if (lenmod == 1) v = va_arg(ap, unsigned long);
+                else if (lenmod == 3) v = va_arg(ap, size_t);
+                else v = va_arg(ap, unsigned int);
+                if (lenmod == -1) v = (unsigned short)v;
+                else if (lenmod == -2) v = (unsigned char)v;
+                mag = (uint64_t)v;
             }
-            case 's': {
-                const char *s = va_arg(ap, const char *);
-                if (!s) s = "(null)";
-                count += fmt_puts(&out, &avail, s);
-                break;
+
+            char digits[26];
+            int dn = u64_to_str(digits, mag, base, upper);
+
+            if (alt && base == 16 && mag != 0) prefix = upper ? "0X" : "0x";
+            if (conv == 'p') prefix = "0x";
+
+            if (alt && base == 8 && digits[0] != '0') {
+                for (int i = dn; i > 0; i--) digits[i] = digits[i - 1];
+                digits[0] = '0';
+                dn++;
             }
-            case 'd':
-            case 'i': {
-                int64_t val = (is_long == 2) ? va_arg(ap, long long) :
-                              (is_long == 1) ? va_arg(ap, long) :
-                                               va_arg(ap, int);
-                itoa(val, buf, 10, 1);
-                count += fmt_puts(&out, &avail, buf);
-                break;
+
+            int zeros = 0;
+            if (prec >= 0) {
+                if (dn < prec) zeros = prec - dn;
+                if (prec == 0 && mag == 0) dn = 0;
             }
-            case 'u': {
-                uint64_t val = (is_long == 2) ? va_arg(ap, unsigned long long) :
-                               (is_long == 1) ? va_arg(ap, unsigned long) :
-                                                va_arg(ap, unsigned int);
-                itoa((int64_t)val, buf, 10, 0);
-                count += fmt_puts(&out, &avail, buf);
-                break;
-            }
-            case 'x':
-            case 'X':
-            case 'p': {
-                if (*format == 'p') {
-                    fmt_puts(&out, &avail, "0x");
-                    count += 2;
-                }
-                uint64_t val = (*format == 'p') ? (uint64_t)va_arg(ap, void *) :
-                               (is_long == 2)   ? va_arg(ap, unsigned long long) :
-                               (is_long == 1)   ? va_arg(ap, unsigned long) :
-                                                  va_arg(ap, unsigned int);
-                itoa((int64_t)val, buf, 16, 0);
-                count += fmt_puts(&out, &avail, buf);
-                break;
-            }
-            case '%': {
-                count += fmt_putc(&out, &avail, '%');
-                break;
-            }
-            default:
-                count += fmt_putc(&out, &avail, '%');
-                count += fmt_putc(&out, &avail, *format);
-                break;
+            int usezero = (zero && prec < 0 && !left) ? 1 : 0;
+
+            emit_field(&s, sign, prefix, zeros, digits, dn, width, left, usezero);
+            continue;
         }
-        format++;
+
+        if (conv == 'f' || conv == 'F' || conv == 'e' || conv == 'E' ||
+            conv == 'g' || conv == 'G') {
+            double v = va_arg(ap, double);
+            fmt_float(&s, v, prec, conv, width, left, zero, plus, space, alt);
+            continue;
+        }
+
+        sink_putc(&s, '%');
+        sink_putc(&s, conv);
     }
 
-    if (avail > 0) *out = '\0';
-    return count;
+    if (s.cap != 0) s.out[s.len] = '\0';
+    return s.count;
 }
 
 int snprintf(char *str, size_t size, const char *format, ...) {
@@ -236,6 +445,10 @@ int snprintf(char *str, size_t size, const char *format, ...) {
     int ret = vsnprintf(str, size, format, ap);
     va_end(ap);
     return ret;
+}
+
+int vsprintf(char *str, const char *format, va_list ap) {
+    return vsnprintf(str, 0x7FFFFFFF, format, ap);
 }
 
 int sprintf(char *str, const char *format, ...) {
@@ -310,14 +523,58 @@ unsigned long strtoul(const char *nptr, char **endptr, int base) {
 }
 
 double strtod(const char *nptr, char **endptr) {
-    long whole = strtol(nptr, endptr, 10);
-    return (double)whole;
+    const char *s = nptr;
+
+    while (isspace((unsigned char)*s)) s++;
+
+    int neg = 0;
+    if (*s == '+') s++;
+    else if (*s == '-') { neg = 1; s++; }
+
+    double result = 0.0;
+    int any = 0;
+
+    while (isdigit((unsigned char)*s)) {
+        result = result * 10.0 + (*s - '0');
+        s++;
+        any = 1;
+    }
+
+    if (*s == '.') {
+        s++;
+        double scale = 0.1;
+        while (isdigit((unsigned char)*s)) {
+            result += (*s - '0') * scale;
+            scale *= 0.1;
+            s++;
+            any = 1;
+        }
+    }
+
+    if (any && (*s == 'e' || *s == 'E')) {
+        const char *es = s + 1;
+        int esign = 0;
+        if (*es == '+') es++;
+        else if (*es == '-') { esign = 1; es++; }
+
+        if (isdigit((unsigned char)*es)) {
+            int exp = 0;
+            while (isdigit((unsigned char)*es)) { exp = exp * 10 + (*es - '0'); es++; }
+            double p = 1.0;
+            for (int i = 0; i < exp; i++) p *= 10.0;
+            if (esign) result /= p; else result *= p;
+            s = es;
+        }
+    }
+
+    if (endptr) *endptr = (char *)(any ? s : nptr);
+    return neg ? -result : result;
 }
 
 typedef unsigned int pthread_key_t;
 typedef int pthread_once_t;
 #define MAX_KEYS 32
-static void *tls_values[MAX_KEYS] = {0};
+static _Thread_local void *tls_values[MAX_KEYS];
 static int next_key = 0;
 
 int pthread_key_create(pthread_key_t *key, void (*destructor)(void *)) {

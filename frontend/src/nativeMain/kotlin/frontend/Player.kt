@@ -154,6 +154,8 @@ object Player {
                 seen = version
             }
 
+            if (frames % GC_INTERVAL_FRAMES == 0) Sys.collectGarbage()
+
             next += session.frameMicros ?: game.emulator.frameMicros
             val now = Time.uptimeMillis() * MICROS_PER_MILLI
             if (now > next) {
@@ -345,6 +347,8 @@ object Player {
     }
 
     private const val MICROS_PER_MILLI = 1000UL
+
+    private const val GC_INTERVAL_FRAMES = 60
 
     private const val SAVE_POLL_MS = 2000UL
     private const val MAX_SAVE_BYTES = 262144u

@@ -49,31 +49,6 @@ float rintf(float x) { return (float)rint(x); }
 float fmodf(float a, float b) { return (float)fmod(a, b); }
 float remainderf(float a, float b) { return (float)fmod(a, b); }
 
-#define UNSUPPORTED_D(name) double name(double x) { (void)x; return 0.0 / 0.0; }
-#define UNSUPPORTED_F(name) float name(float x) { (void)x; return 0.0f / 0.0f; }
-#define UNSUPPORTED_D2(name) double name(double a, double b) { (void)a; (void)b; return 0.0 / 0.0; }
-#define UNSUPPORTED_F2(name) float name(float a, float b) { (void)a; (void)b; return 0.0f / 0.0f; }
-
-UNSUPPORTED_D(sin) UNSUPPORTED_D(cos) UNSUPPORTED_D(tan)
-UNSUPPORTED_D(asin) UNSUPPORTED_D(acos) UNSUPPORTED_D(atan)
-UNSUPPORTED_D(sinh) UNSUPPORTED_D(cosh) UNSUPPORTED_D(tanh)
-UNSUPPORTED_D(asinh) UNSUPPORTED_D(acosh) UNSUPPORTED_D(atanh)
-UNSUPPORTED_D(exp) UNSUPPORTED_D(expm1) UNSUPPORTED_D(log)
-UNSUPPORTED_D(log10) UNSUPPORTED_D(log2) UNSUPPORTED_D(log1p)
-UNSUPPORTED_D(cbrt)
-UNSUPPORTED_D2(pow) UNSUPPORTED_D2(atan2) UNSUPPORTED_D2(hypot)
-UNSUPPORTED_D2(nextafter)
-
-UNSUPPORTED_F(sinf) UNSUPPORTED_F(cosf) UNSUPPORTED_F(tanf)
-UNSUPPORTED_F(asinf) UNSUPPORTED_F(acosf) UNSUPPORTED_F(atanf)
-UNSUPPORTED_F(sinhf) UNSUPPORTED_F(coshf) UNSUPPORTED_F(tanhf)
-UNSUPPORTED_F(asinhf) UNSUPPORTED_F(acoshf) UNSUPPORTED_F(atanhf)
-UNSUPPORTED_F(expf) UNSUPPORTED_F(expm1f) UNSUPPORTED_F(logf)
-UNSUPPORTED_F(log10f) UNSUPPORTED_F(log2f) UNSUPPORTED_F(log1pf)
-UNSUPPORTED_F(cbrtf)
-UNSUPPORTED_F2(powf) UNSUPPORTED_F2(atan2f) UNSUPPORTED_F2(hypotf)
-UNSUPPORTED_F2(nextafterf)
-
 double ldexp(double x, int e) {
     double r = x;
     while (e > 0) { r *= 2.0; e--; }
