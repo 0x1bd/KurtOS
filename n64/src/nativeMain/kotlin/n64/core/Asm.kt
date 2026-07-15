@@ -444,6 +444,16 @@ class Asm {
 
     fun movdquLoad(xmm: Int, base: Int, disp: Int) = sseMem(0xF3, false, 0x6F, xmm, base, disp)
     fun movdquStore(base: Int, disp: Int, xmm: Int) = sseMem(0xF3, false, 0x7F, xmm, base, disp)
+    fun movqLoad(xmm: Int, base: Int, disp: Int) = sseMem(0xF3, false, 0x7E, xmm, base, disp)
+    fun movqStore(base: Int, disp: Int, xmm: Int) = sseMem(0x66, false, 0xD6, xmm, base, disp)
+    fun movdLoad(xmm: Int, base: Int, disp: Int) = sseMem(0x66, false, 0x6E, xmm, base, disp)
+    fun movdStore(base: Int, disp: Int, xmm: Int) = sseMem(0x66, false, 0x7E, xmm, base, disp)
+
+    fun bswap(reg: Int) {
+        rex(0, 0, 0, reg)
+        byte(0x0F)
+        byte(0xC8 or (reg and 7))
+    }
     fun pshufbMem(xmm: Int, base: Int, disp: Int) = sseMem(0x66, true, 0x00, xmm, base, disp)
     fun pshufbRR(dst: Int, src: Int) = sse66RR38(0x00, dst, src)
 

@@ -20,8 +20,21 @@ const val CHAIN_CHUNK = 65536
 
 class RspBlock(val pc: Int, val length: Int, val entry: Long)
 
+private class RspUniverse {
+    val table = arrayOfNulls<RspBlock>(1024)
+}
+
 class RspDynarec(private val rsp: RSP, private val arena: CodeArena) {
-    private val table = arrayOfNulls<RspBlock>(1024)
+    private val universes = HashMap<Long, RspUniverse>()
+    private var current: RspUniverse? = null
+    private var currentHash = 0L
+    private var table = arrayOfNulls<RspBlock>(1024)
+    private var imemDirty = true
+
+    var universeCount = 0
+        private set
+    var universeSwitches = 0L
+        private set
 
     private val gprPin = rsp.gpr.pin()
     private val memPin = rsp.mem.pin()
@@ -91,12 +104,37 @@ class RspDynarec(private val rsp: RSP, private val arena: CodeArena) {
     }
 
     fun flush() {
-        table.fill(null)
+        universes.clear()
+        universeCount = 0
+        current = null
+        imemDirty = true
         arena.reset()
         linkSlots.clear()
         linkOrig.clear()
         installTrampoline()
         generation++
+    }
+
+    fun imemWritten() {
+        imemDirty = true
+        ctx[RSP_LIMIT / 8] = 0
+    }
+
+    private fun selectUniverse(): Boolean {
+        if (universes.size > 512) flush()
+        imemDirty = false
+        val hash = rsp.imemHash()
+        if (current != null && hash == currentHash) return false
+        val universe = universes.getOrPut(hash) {
+            universeCount++
+            RspUniverse()
+        }
+        currentHash = hash
+        if (universe === current) return false
+        current = universe
+        table = universe.table
+        universeSwitches++
+        return true
     }
 
     private fun readRel(slot: Long): Int {
@@ -183,6 +221,7 @@ class RspDynarec(private val rsp: RSP, private val arena: CodeArena) {
         var pendingLink = 0L
         var remaining = budget
         while (remaining > 0 && rsp.taskInFlight) {
+            if (imemDirty && selectUniverse()) pendingLink = 0
             if (rsp.branchState != STATE_STEP) {
                 pendingLink = 0
                 if (rsp.interpretStep()) return

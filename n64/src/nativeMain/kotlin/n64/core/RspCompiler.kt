@@ -171,8 +171,226 @@ class RspCompiler {
 
             18 -> if (!emitVector(op)) callout(op)
 
-            32, 33, 35, 36, 37, 39, 40, 41, 43, 50, 58 -> callout(op)
+            32 -> emitScalarLoad(op, rs, rt, imm, 1, true)
+            33 -> emitScalarLoad(op, rs, rt, imm, 2, true)
+            35, 39 -> emitScalarLoad(op, rs, rt, imm, 4, true)
+            36 -> emitScalarLoad(op, rs, rt, imm, 1, false)
+            37 -> emitScalarLoad(op, rs, rt, imm, 2, false)
+
+            40 -> emitScalarStore(op, rs, rt, imm, 1)
+            41 -> emitScalarStore(op, rs, rt, imm, 2)
+            43 -> emitScalarStore(op, rs, rt, imm, 4)
+
+            50 -> if (!emitVectorLoad(op, rs, rt)) callout(op)
+            58 -> if (!emitVectorStore(op, rs, rt)) callout(op)
         }
+    }
+
+    private fun signExtend7(offset: Int, shift: Int): Int {
+        val value = (((offset shl 1) and 0x80) or offset).toByte().toInt()
+        return value shl shift
+    }
+
+    private fun emitAddress(base: Int, disp: Int) {
+        loadG(RCX, base)
+        if (disp != 0) asm.aluRI(ALU_ADD, RCX, disp, 0)
+        asm.aluRI(ALU_AND, RCX, 0xFFF, 0)
+        asm.movRM(RDX, RBX, RSP_DMEM, 1)
+    }
+
+    private fun boundCheck(op: Int, size: Int): Pair<Int, Int> {
+        asm.aluRI(ALU_CMP, RCX, 0x1000 - size, 0)
+        val slow = asm.jcc(CC_A)
+        return Pair(slow, op)
+    }
+
+    private fun finishBound(guard: Pair<Int, Int>) {
+        val done = asm.jmp()
+        asm.patch(guard.first)
+        callout(guard.second)
+        asm.patch(done)
+    }
+
+    private fun emitScalarLoad(op: Int, base: Int, rt: Int, disp: Int, size: Int, signed: Boolean) {
+        emitAddress(base, disp)
+        when (size) {
+            1 -> {
+                if (signed) asm.movsx8RMIndexed(RAX, RDX, RCX) else asm.movzx8RMIndexed(RAX, RDX, RCX)
+                storeG(rt, RAX)
+            }
+
+            2 -> {
+                val guard = boundCheck(op, 2)
+                asm.movzx16RMIndexed(RAX, RDX, RCX)
+                asm.rol16I(RAX, 8)
+                if (signed) asm.movsx16RR(RAX, RAX)
+                storeG(rt, RAX)
+                finishBound(guard)
+            }
+
+            else -> {
+                val guard = boundCheck(op, 4)
+                asm.movRMIndexed(RAX, RDX, RCX, 1, 0, 0)
+                asm.bswap(RAX)
+                storeG(rt, RAX)
+                finishBound(guard)
+            }
+        }
+    }
+
+    private fun emitScalarStore(op: Int, base: Int, rt: Int, disp: Int, size: Int) {
+        emitAddress(base, disp)
+        when (size) {
+            1 -> {
+                loadG(RAX, rt)
+                asm.movMR8Indexed(RDX, RCX, RAX)
+            }
+
+            2 -> {
+                val guard = boundCheck(op, 2)
+                loadG(RAX, rt)
+                asm.rol16I(RAX, 8)
+                asm.movMR16Indexed(RDX, RCX, RAX)
+                finishBound(guard)
+            }
+
+            else -> {
+                val guard = boundCheck(op, 4)
+                loadG(RAX, rt)
+                asm.bswap(RAX)
+                asm.movMRIndexed(RDX, RCX, 1, 0, RAX, 0)
+                finishBound(guard)
+            }
+        }
+    }
+
+    private fun swapLanes(xmm: Int, tmp: Int) {
+        asm.movdqaRR(tmp, xmm)
+        asm.psllwI(xmm, 8)
+        asm.psrlwI(tmp, 8)
+        asm.por(xmm, tmp)
+    }
+
+    private fun emitVectorLoad(op: Int, base: Int, vt: Int): Boolean {
+        val kind = (op ushr 11) and 0x1F
+        val element = (op ushr 7) and 0xF
+        val offset = op and 0x7F
+
+        when (kind) {
+            1 -> {
+                if (element and 1 != 0 || element > 14) return false
+                emitAddress(base, signExtend7(offset, 1))
+                val guard = boundCheck(op, 2)
+                asm.movzx16RMIndexed(RAX, RDX, RCX)
+                asm.rol16I(RAX, 8)
+                asm.movMR(R13, vt * 32 + (element shr 1) * 4, RAX, 0)
+                finishBound(guard)
+            }
+
+            2 -> {
+                if (element and 1 != 0 || element > 12) return false
+                emitAddress(base, signExtend7(offset, 2))
+                val guard = boundCheck(op, 4)
+                asm.aluRR(ALU_ADD, RDX, RCX, 1)
+                asm.movdLoad(0, RDX, 0)
+                swapLanes(0, 2)
+                asm.pxor(3, 3)
+                asm.punpcklwd(0, 3)
+                asm.movqStore(R13, vt * 32 + (element shr 1) * 4, 0)
+                finishBound(guard)
+            }
+
+            3 -> {
+                if (element != 0 && element != 8) return false
+                emitAddress(base, signExtend7(offset, 3))
+                val guard = boundCheck(op, 8)
+                asm.aluRR(ALU_ADD, RDX, RCX, 1)
+                asm.movqLoad(0, RDX, 0)
+                swapLanes(0, 2)
+                asm.pxor(3, 3)
+                asm.punpcklwd(0, 3)
+                asm.movdquStore(R13, vt * 32 + (element shr 1) * 4, 0)
+                finishBound(guard)
+            }
+
+            4 -> {
+                if (element != 0) return false
+                emitAddress(base, signExtend7(offset, 4))
+                asm.testRI(RCX, 15)
+                val slow = asm.jcc(CC_NE)
+                asm.aluRR(ALU_ADD, RDX, RCX, 1)
+                asm.movdquLoad(0, RDX, 0)
+                swapLanes(0, 2)
+                storeVpr(vt, 0)
+                val done = asm.jmp()
+                asm.patch(slow)
+                callout(op)
+                asm.patch(done)
+            }
+
+            else -> return false
+        }
+        return true
+    }
+
+    private fun emitVectorStore(op: Int, base: Int, vt: Int): Boolean {
+        val kind = (op ushr 11) and 0x1F
+        val element = (op ushr 7) and 0xF
+        val offset = op and 0x7F
+
+        when (kind) {
+            1 -> {
+                if (element and 1 != 0 || element > 14) return false
+                emitAddress(base, signExtend7(offset, 1))
+                val guard = boundCheck(op, 2)
+                asm.movRM(RAX, R13, vt * 32 + (element shr 1) * 4, 0)
+                asm.rol16I(RAX, 8)
+                asm.movMR16Indexed(RDX, RCX, RAX)
+                finishBound(guard)
+            }
+
+            2 -> {
+                if (element and 1 != 0 || element > 12) return false
+                emitAddress(base, signExtend7(offset, 2))
+                val guard = boundCheck(op, 4)
+                asm.movqLoad(0, R13, vt * 32 + (element shr 1) * 4)
+                asm.packusdw(0, 0)
+                swapLanes(0, 2)
+                asm.aluRR(ALU_ADD, RDX, RCX, 1)
+                asm.movdStore(RDX, 0, 0)
+                finishBound(guard)
+            }
+
+            3 -> {
+                if (element != 0 && element != 8) return false
+                emitAddress(base, signExtend7(offset, 3))
+                val guard = boundCheck(op, 8)
+                asm.movdquLoad(0, R13, vt * 32 + (element shr 1) * 4)
+                asm.packusdw(0, 0)
+                swapLanes(0, 2)
+                asm.aluRR(ALU_ADD, RDX, RCX, 1)
+                asm.movqStore(RDX, 0, 0)
+                finishBound(guard)
+            }
+
+            4 -> {
+                if (element != 0) return false
+                emitAddress(base, signExtend7(offset, 4))
+                asm.testRI(RCX, 15)
+                val slow = asm.jcc(CC_NE)
+                loadVec(0, vt)
+                swapLanes(0, 2)
+                asm.aluRR(ALU_ADD, RDX, RCX, 1)
+                asm.movdquStore(RDX, 0, 0)
+                val done = asm.jmp()
+                asm.patch(slow)
+                callout(op)
+                asm.patch(done)
+            }
+
+            else -> return false
+        }
+        return true
     }
 
     private fun loadVec(dst: Int, reg: Int) {
@@ -443,9 +661,9 @@ class RspCompiler {
         asm.movdqaRR(7, 6)
         asm.pandn(7, 1)
         asm.pxor(7, 5)
-        asm.movdqaRR(2, 7)
-        asm.psubw(2, 5)
-        storeAccl(2)
+        asm.movdqaRR(4, 7)
+        asm.psubw(4, 5)
+        storeAccl(4)
         asm.pcmpeqw(3, 3)
         asm.psrlwI(3, 15)
         asm.movdqaRR(6, 7)

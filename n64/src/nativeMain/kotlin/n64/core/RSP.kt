@@ -154,7 +154,17 @@ class RSP(private val n64: N64, forceNoDynarec: Boolean = false) {
         if (at + 3 >= 0x1000) {
             syncImemWord(at)
             syncImemWord(at + 3)
+            dynarec?.imemWritten()
         }
+    }
+
+    internal fun imemHash(): Long {
+        var hash = -3750763034362895579L
+        for (word in imemWords) {
+            hash = hash xor word.toLong()
+            hash *= 1099511628211L
+        }
+        return hash
     }
 
     private fun syncImemWord(addr: Int) {
@@ -323,7 +333,20 @@ class RSP(private val n64: N64, forceNoDynarec: Boolean = false) {
 
     internal fun imemAt(at: Int): Int = imemWords[(at and 0xFFC) ushr 2]
 
+    val calloutHistogram = LongArray(64)
+    val calloutCop2 = LongArray(64)
+    val calloutMove = LongArray(32)
+    val calloutLwc2 = LongArray(32)
+    val calloutSwc2 = LongArray(32)
+
     internal fun dynExec(op: Int): Int {
+        val major = op ushr 26
+        calloutHistogram[major]++
+        if (major == 18) {
+            if ((op ushr 25) and 1 != 0) calloutCop2[op and 0x3F]++ else calloutMove[(op ushr 21) and 0x1F]++
+        }
+        if (major == 50) calloutLwc2[(op ushr 11) and 0x1F]++
+        if (major == 58) calloutSwc2[(op ushr 11) and 0x1F]++
         execute(op)
         gpr[0] = 0
         return if (broke || halted) 1 else 0
@@ -472,7 +495,6 @@ class RSP(private val n64: N64, forceNoDynarec: Boolean = false) {
         regs[SP_RD_LEN] = 0xFF8
         regs[SP_WR_LEN] = 0xFF8
 
-        if (!toRdram && bank == 0x1000) dynarec?.flush()
     }
 
     private fun fetch(at: Int): Int = imemWords[(at and 0xFFC) ushr 2]

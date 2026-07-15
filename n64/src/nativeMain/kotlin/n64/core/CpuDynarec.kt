@@ -54,8 +54,9 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
     private var trampoline: CodeFn? = null
     private var trampolineEnd = 0
     private var generation = 0
-    private val linkSlots = ArrayList<Long>()
-    private val linkOrig = ArrayList<Int>()
+    private val pageLinkSlots = Array(RDRAM_SIZE ushr CPU_PAGE_SHIFT) { ArrayList<Long>() }
+    private val pageLinkOrig = Array(RDRAM_SIZE ushr CPU_PAGE_SHIFT) { ArrayList<Int>() }
+    private var linkCount = 0
     private val nochain = platform.posix.getenv("KURTOS_JIT_NOCHAIN") != null
 
     var lookups = 0L
@@ -100,8 +101,9 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
         table.fill(null)
         for (list in pageBlocks) list.clear()
         pageFlags.fill(0)
-        linkSlots.clear()
-        linkOrig.clear()
+        for (list in pageLinkSlots) list.clear()
+        for (list in pageLinkOrig) list.clear()
+        linkCount = 0
         arena.reset()
         installTrampoline()
         generation++
@@ -121,16 +123,11 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
         p[3] = (rel ushr 24).toByte()
     }
 
-    private fun patchLink(slot: Long, target: Long) {
-        linkSlots.add(slot)
-        linkOrig.add(readRel(slot))
+    private fun patchLink(slot: Long, target: Long, targetPage: Int) {
+        pageLinkSlots[targetPage].add(slot)
+        pageLinkOrig[targetPage].add(readRel(slot))
+        linkCount++
         writeRel(slot, (target - (slot + 5)).toInt())
-    }
-
-    private fun resetLinks() {
-        for (i in linkSlots.indices) writeRel(linkSlots[i], linkOrig[i])
-        linkSlots.clear()
-        linkOrig.clear()
     }
 
     fun invalidatePage(page: Int) {
@@ -141,7 +138,14 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
         }
         list.clear()
         pageFlags[page] = 0
-        if (linkSlots.isNotEmpty()) resetLinks()
+        val slots = pageLinkSlots[page]
+        if (slots.isNotEmpty()) {
+            val origs = pageLinkOrig[page]
+            for (i in slots.indices) writeRel(slots[i], origs[i])
+            linkCount -= slots.size
+            slots.clear()
+            origs.clear()
+        }
         invalidations++
     }
 
@@ -202,7 +206,7 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
                 continue
             }
             if (pendingLink != 0L) {
-                if (gen == generation) patchLink(pendingLink, block.entry)
+                if (gen == generation) patchLink(pendingLink, block.entry, block.physStart ushr CPU_PAGE_SHIFT)
                 pendingLink = 0
             }
             ctx[CTX_COUNT / 8] = cpu.count
