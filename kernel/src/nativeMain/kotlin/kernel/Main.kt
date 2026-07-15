@@ -8,6 +8,7 @@ import hal.Serial
 import kapi.KapiRuntime
 import kernel.arch.Acpi
 import kernel.arch.Apic
+import kernel.arch.PerfMonitor
 import kernel.arch.Gdt
 import kernel.arch.Idt
 import kernel.arch.IoApic
@@ -89,6 +90,9 @@ private fun startInterrupts() {
 
     Acpi.initialize()
     Apic.initialize()
+
+    Cpu.requestMaxPerformance()
+    PerfMonitor.initialize()
 
     if (I8042.initialize()) {
         IoApic.route(IRQ_KEYBOARD, Idt.VECTOR_KEYBOARD, Apic.localId())

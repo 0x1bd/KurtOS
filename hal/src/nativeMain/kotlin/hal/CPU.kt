@@ -46,6 +46,35 @@ object Cpu {
 
     fun writeMsr(msr: UInt, value: ULong) = msr_write(msr, value)
 
+    private fun isAmd(): Boolean {
+        val v = cpuid(0u)
+        return v.ebx == 0x68747541u && v.ecx == 0x444D4163u && v.edx == 0x69746E65u
+    }
+
+    fun requestMaxPerformance() {
+        if (!isAmd()) return
+        val hwcr = readMsr(MSR_HWCR)
+        writeMsr(MSR_HWCR, hwcr and (1UL shl 25).inv())
+        writeMsr(MSR_PSTATE_CTL, 0UL)
+    }
+
+    fun hasEffectiveFrequency(): Boolean {
+        val highBasic = cpuid(0u).eax
+        if (highBasic >= 0x6u && (cpuid(0x6u).ecx and 1u) != 0u) return true
+        val highExt = cpuid(0x80000000u).eax
+        if (highExt >= 0x80000007u && (cpuid(0x80000007u).edx and (1u shl 10)) != 0u) return true
+        return false
+    }
+
+    fun activeCycles(): ULong = readMsr(MSR_APERF)
+
+    fun referenceCycles(): ULong = readMsr(MSR_MPERF)
+
+    private const val MSR_HWCR: UInt = 0xC0010015u
+    private const val MSR_PSTATE_CTL: UInt = 0xC0010062u
+    private const val MSR_APERF: UInt = 0xE8u
+    private const val MSR_MPERF: UInt = 0xE7u
+
     fun cpuid(leaf: UInt): CpuidResult = memScoped {
         val a = alloc<UIntVar>()
         val b = alloc<UIntVar>()

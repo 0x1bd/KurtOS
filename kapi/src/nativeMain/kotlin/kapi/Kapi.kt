@@ -66,6 +66,7 @@ data class DateTime(
 interface TimeBackend {
     fun uptimeMillis(): ULong
     fun idle()
+    fun cycles(): ULong = 0UL
     fun now(): DateTime? = null
     fun epochSeconds(): Long? = null
     fun zoneOffsetMinutes(): Int = 0
@@ -91,6 +92,8 @@ interface SystemBackend {
     fun memoryReport(): String
     fun collectGarbage()
     fun toast(title: String, subtitle: String?) {}
+    fun cpuMhz(): Int = 0
+    fun tscMhz(): Int = 0
 }
 
 enum class GamepadEvent { Connected, Disconnected }
@@ -178,6 +181,8 @@ object Time {
         backend?.idle()
         Gamepad.pump()
     }
+
+    fun cycles(): ULong = backend?.cycles() ?: 0UL
 }
 
 object Files {
@@ -198,6 +203,8 @@ object Sys {
     fun memoryReport(): String = backend?.memoryReport() ?: "unavailable"
     fun collectGarbage() = backend?.collectGarbage() ?: Unit
     fun toast(title: String, subtitle: String? = null) = backend?.toast(title, subtitle) ?: Unit
+    fun cpuMhz(): Int = backend?.cpuMhz() ?: 0
+    fun tscMhz(): Int = backend?.tscMhz() ?: 0
 }
 
 object Gamepad {

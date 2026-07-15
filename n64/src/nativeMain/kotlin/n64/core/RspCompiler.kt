@@ -21,6 +21,7 @@ const val RSP_VCOH = 136
 const val RSP_VCCL = 144
 const val RSP_VCCH = 152
 const val RSP_VCE = 160
+const val RSP_LIMIT = 168
 
 const val RSP_MAX_BLOCK = 64
 
@@ -58,6 +59,15 @@ class RspCompiler {
         exitJumps.clear()
         asm.reset()
 
+        asm.movRM(RAX, RBX, RSP_INSTRS, 1)
+        asm.aluRM(ALU_CMP, RAX, RBX, RSP_LIMIT, 1)
+        val runIt = asm.jcc(CC_L)
+        asm.movMI(RBX, RSP_LINKSRC, 0)
+        asm.movRI32(RAX, vbase and 0xFFC)
+        asm.movMR(RBX, RSP_PC, RAX, 1)
+        asm.movMI(RBX, RSP_STATE, STATE_STEP)
+        exitJumps.add(asm.jmp())
+        asm.patch(runIt)
         asm.aluMI(ALU_ADD, RBX, RSP_INSTRS, count, 1)
 
         val body = if (endsWithBranch) count - 2 else count
@@ -85,6 +95,12 @@ class RspCompiler {
     }
 
     private fun emitStaticExit(pc: Int) {
+        val jmpStart = asm.len
+        val slot = asm.jmp()
+        asm.patch(slot)
+        val leaDisp = asm.leaRip(RAX)
+        asm.patchTo(leaDisp, jmpStart)
+        asm.movMR(RBX, RSP_LINKSRC, RAX, 1)
         asm.movRI32(RAX, pc)
         asm.movMR(RBX, RSP_PC, RAX, 1)
         asm.movMI(RBX, RSP_STATE, STATE_STEP)

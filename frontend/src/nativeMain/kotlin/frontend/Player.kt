@@ -59,11 +59,27 @@ object Player {
         var counted = 0
         var rate = 0
 
+        var emuCycles = 0UL
+        var presentCycles = 0UL
+        var audioCycles = 0UL
+        var inputCycles = 0UL
+        var totalCycles = 0UL
+        var winFrames = 0
+        var mhz = 0
+        var emuMs = 0
+        var presentMs = 0
+        var audioMs = 0
+        var inputMs = 0
+        var otherMs = 0
+
         while (true) {
+            val iterStart = Time.cycles()
+            val inputStart = Time.cycles()
             Input.poll()
 
             val padded = Gamepad.available()
             if (padded) Gamepad.poll()
+            inputCycles += Time.cycles() - inputStart
 
             if (Input.consumePress(Keys.ESC) || Input.isKeyDown(Keys.ESC)) break
             if (padded && quitting()) break
@@ -116,32 +132,33 @@ object Player {
 
             session.setButtons(buttons(padded))
 
+            val emuStart = Time.cycles()
             session.runFrame()
+            emuCycles += Time.cycles() - emuStart
             frames++
+            winFrames++
 
+            val audioStart = Time.cycles()
             if (sound) {
                 Audio.write(session.audioSamples, session.audioFrames)
             }
             session.drainAudio()
+            audioCycles += Time.cycles() - audioStart
 
+            val presentStart = Time.cycles()
             if (session.frameChanged) screen.draw()
 
             if (Settings.showFps) {
-                val tock = Time.uptimeMillis()
                 if (session.frameChanged) counted++
-
-                if (tock - measured >= FPS_WINDOW_MS) {
-                    rate = (counted.toULong() * 1000UL / (tock - measured)).toInt()
-                    counted = 0
-                    measured = tock
-                }
-
-                drawRate(chrome, rate, fullscreen)
+                drawStats(chrome, rate, mhz, emuMs, presentMs, audioMs, inputMs, otherMs, fullscreen)
             }
 
             surface.present()
+            presentCycles += Time.cycles() - presentStart
 
+            val drainStart = Time.cycles()
             Input.drain()
+            inputCycles += Time.cycles() - drainStart
 
             val tick = Time.uptimeMillis()
             if (tick - checked >= SAVE_POLL_MS) {
@@ -155,6 +172,35 @@ object Player {
             }
 
             if (frames % GC_INTERVAL_FRAMES == 0) Sys.collectGarbage()
+
+            totalCycles += Time.cycles() - iterStart
+
+            if (Settings.showFps) {
+                val tock = Time.uptimeMillis()
+                if (tock - measured >= FPS_WINDOW_MS) {
+                    rate = (counted.toULong() * 1000UL / (tock - measured)).toInt()
+                    val perMs = Sys.tscMhz().toULong() * 1000UL
+                    if (perMs > 0UL && winFrames > 0) {
+                        val f = winFrames.toULong()
+                        emuMs = (emuCycles / f / perMs).toInt()
+                        presentMs = (presentCycles / f / perMs).toInt()
+                        audioMs = (audioCycles / f / perMs).toInt()
+                        inputMs = (inputCycles / f / perMs).toInt()
+                        val accounted = emuCycles + presentCycles + audioCycles + inputCycles
+                        val other = if (totalCycles > accounted) totalCycles - accounted else 0UL
+                        otherMs = (other / f / perMs).toInt()
+                    }
+                    mhz = Sys.cpuMhz()
+                    counted = 0
+                    measured = tock
+                    emuCycles = 0UL
+                    presentCycles = 0UL
+                    audioCycles = 0UL
+                    inputCycles = 0UL
+                    totalCycles = 0UL
+                    winFrames = 0
+                }
+            }
 
             next += session.frameMicros ?: game.emulator.frameMicros
             val now = Time.uptimeMillis() * MICROS_PER_MILLI
@@ -177,15 +223,41 @@ object Player {
         return "${game.name}: could not save to ${GameLibrary.savePath(game)}"
     }
 
-    private fun drawRate(canvas: Canvas, rate: Int, fullscreen: Boolean) {
-        val text = "$rate FPS"
-        val width = canvas.textWidth(text, FPS_SCALE)
+    private fun drawStats(
+        canvas: Canvas,
+        rate: Int,
+        mhz: Int,
+        emuMs: Int,
+        presentMs: Int,
+        audioMs: Int,
+        inputMs: Int,
+        otherMs: Int,
+        fullscreen: Boolean,
+    ) {
+        val lines = arrayOf(
+            "$rate FPS",
+            "$mhz MHZ",
+            "E$emuMs P$presentMs",
+            "A$audioMs I$inputMs O$otherMs",
+        )
 
+        var width = 0
+        for (line in lines) {
+            val w = canvas.textWidth(line, FPS_SCALE)
+            if (w > width) width = w
+        }
+
+        val lineHeight = canvas.glyphHeight * FPS_SCALE + 4
         val x = canvas.width - width - FPS_MARGIN * 2 - 12
         val y = if (fullscreen) FPS_MARGIN else Chrome.barHeight(canvas.height) + FPS_MARGIN
 
-        canvas.fill(x, y, width + 16, canvas.glyphHeight * FPS_SCALE + 12, Panels.BAR)
-        canvas.text(x + 8, y + 6, text, Panels.GREEN, FPS_SCALE)
+        canvas.fill(x, y, width + 16, lineHeight * lines.size + 8, Panels.BAR)
+
+        var textY = y + 6
+        for (line in lines) {
+            canvas.text(x + 8, textY, line, Panels.GREEN, FPS_SCALE)
+            textY += lineHeight
+        }
     }
 
     private fun store(game: Game, session: EmulatorSession): Boolean {

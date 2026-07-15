@@ -2,6 +2,7 @@
 
 package n64.core
 
+import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CFunction
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.LongVar
@@ -14,6 +15,8 @@ import kotlinx.cinterop.pin
 import kotlinx.cinterop.set
 import kotlinx.cinterop.toCPointer
 import kotlinx.cinterop.toLong
+
+const val CHAIN_CHUNK = 65536
 
 class RspBlock(val pc: Int, val length: Int, val entry: Long)
 
@@ -40,6 +43,11 @@ class RspDynarec(private val rsp: RSP, private val arena: CodeArena) {
     private val ops = IntArray(RSP_MAX_BLOCK + 2)
 
     private var trampoline: CPointer<CFunction<(CPointer<LongVar>?) -> Int>>? = null
+
+    private var generation = 0
+    private val linkSlots = ArrayList<Long>()
+    private val linkOrig = ArrayList<Int>()
+    private val nochain = platform.posix.getenv("KURTOS_RSP_NOCHAIN") != null
 
     init {
         ctx[RSP_GPR / 8] = gprPin.addressOf(0).toLong()
@@ -85,7 +93,30 @@ class RspDynarec(private val rsp: RSP, private val arena: CodeArena) {
     fun flush() {
         table.fill(null)
         arena.reset()
+        linkSlots.clear()
+        linkOrig.clear()
         installTrampoline()
+        generation++
+    }
+
+    private fun readRel(slot: Long): Int {
+        val p = (slot + 1).toCPointer<ByteVar>()!!
+        return (p[0].toInt() and 0xFF) or ((p[1].toInt() and 0xFF) shl 8) or
+            ((p[2].toInt() and 0xFF) shl 16) or ((p[3].toInt() and 0xFF) shl 24)
+    }
+
+    private fun writeRel(slot: Long, rel: Int) {
+        val p = (slot + 1).toCPointer<ByteVar>()!!
+        p[0] = rel.toByte()
+        p[1] = (rel ushr 8).toByte()
+        p[2] = (rel ushr 16).toByte()
+        p[3] = (rel ushr 24).toByte()
+    }
+
+    private fun patchLink(slot: Long, target: Long) {
+        linkSlots.add(slot)
+        linkOrig.add(readRel(slot))
+        writeRel(slot, (target - (slot + 5)).toInt())
     }
 
     private fun classify(op: Int): Int = when (op ushr 26) {
@@ -148,23 +179,34 @@ class RspDynarec(private val rsp: RSP, private val arena: CodeArena) {
     fun advance(budget: Int) {
         rspHostRef = rsp
         val ctx = this.ctx
+        val chaining = !nochain
+        var pendingLink = 0L
         var remaining = budget
         while (remaining > 0 && rsp.taskInFlight) {
             if (rsp.branchState != STATE_STEP) {
+                pendingLink = 0
                 if (rsp.interpretStep()) return
                 remaining--
                 continue
             }
             val pc = rsp.pc and 0xFFC
+            val gen = generation
             var block = table[pc ushr 2]
             if (block == null) block = compile(pc)
             if (block.entry == 0L) {
+                pendingLink = 0
                 if (rsp.interpretStep()) return
                 remaining--
                 continue
             }
+            if (pendingLink != 0L) {
+                if (gen == generation) patchLink(pendingLink, block.entry)
+                pendingLink = 0
+            }
             ctx[RSP_INSTRS / 8] = 0
+            ctx[RSP_LIMIT / 8] = if (remaining < CHAIN_CHUNK) remaining.toLong() else CHAIN_CHUNK.toLong()
             ctx[RSP_DISPATCH / 8] = block.entry
+            ctx[RSP_LINKSRC / 8] = 0
             rsp.gpr[0] = 0
             trampoline!!(ctx)
             val ran = ctx[RSP_INSTRS / 8].toInt()
@@ -172,6 +214,7 @@ class RspDynarec(private val rsp: RSP, private val arena: CodeArena) {
             rsp.branchState = ctx[RSP_STATE / 8].toInt()
             rsp.cycles += ran
             remaining -= ran
+            pendingLink = if (chaining) ctx[RSP_LINKSRC / 8] else 0L
             if (rsp.cycles > 20_000_000L) {
                 rsp.overrunFinish()
                 return

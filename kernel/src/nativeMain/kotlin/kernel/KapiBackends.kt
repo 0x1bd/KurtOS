@@ -80,6 +80,8 @@ object KernelTime : TimeBackend {
         Cpu.waitForInterrupt()
         UI.tick()
     }
+
+    override fun cycles(): ULong = Cpu.timestamp()
 }
 
 object KernelFiles : FilesBackend {
@@ -196,4 +198,8 @@ object KernelSystem : SystemBackend {
         val totalPages = kernel.memory.PageAllocator.totalPages
         return "heap ${usedMib}/${totalMib} MiB, pages ${totalPages - freePages}/${totalPages} used"
     }
+
+    override fun cpuMhz(): Int = kernel.arch.PerfMonitor.actualMhz()
+
+    override fun tscMhz(): Int = kernel.arch.PerfMonitor.nominalMhz
 }
