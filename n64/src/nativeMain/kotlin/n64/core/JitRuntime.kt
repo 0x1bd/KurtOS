@@ -60,12 +60,20 @@ internal var jitHostRef: N64? = null
 
 private fun jitHostN64(): N64 = jitHostRef!!
 
+private fun refreshLimit(n64: N64) {
+    val ctx = n64.jit!!.ctx
+    val deadline = n64.cpu.frameDeadline - 1
+    val next = n64.cpu.nextEventCount
+    ctx[CTX_LIMIT / 8] = if (deadline < next) deadline else next
+}
+
 private fun hostRead32(phys: Int): Int {
     val n64 = jitHostN64()
     val ctx = n64.jit!!.ctx
     n64.cpu.count = ctx[1]
     val value = n64.read32(phys)
     ctx[1] = n64.cpu.count
+    refreshLimit(n64)
     return value
 }
 
@@ -91,6 +99,7 @@ private fun hostWriteCommon(phys: Int, value: Int, mask: Int) {
     n64.write32(phys, value, mask)
     ctx[1] = n64.cpu.count
     ctx[6] = if (n64.mi.initMode) 1L else 0L
+    refreshLimit(n64)
 }
 
 private fun hostWrite32(phys: Int, value: Int) = hostWriteCommon(phys, value, -1)

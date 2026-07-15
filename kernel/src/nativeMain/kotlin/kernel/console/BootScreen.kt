@@ -39,7 +39,7 @@ object BootScreen {
     private const val TITLE_SCALE = 4
     private const val BODY_SCALE = 2
 
-    private const val AUTO_ADVANCE_MS = 4_500UL
+    private const val AUTO_ADVANCE_MS = 2_500UL
     private const val RENDER_INTERVAL_MS = 120UL
 
     fun show() {

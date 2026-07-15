@@ -9,11 +9,16 @@ const val CTX_TARGET = 40
 const val CTX_INITMODE = 48
 const val CTX_SCR1 = 56
 const val CTX_SCR2 = 64
+const val CTX_LIMIT = 72
 const val CTX_GPR = 80
 const val CTX_RDRAM = 88
 const val CTX_LUTR = 96
 const val CTX_LUTW = 104
 const val CTX_PAGES = 112
+const val CTX_DISPATCH = 120
+const val CTX_RETURN = 128
+const val CTX_LINKSRC = 136
+const val CTX_INSTRS = 144
 
 const val DELAY_NONE = 0
 const val DELAY_COND_IMM = 1
@@ -55,15 +60,8 @@ class JitCompiler(private val callbacks: JitCallbacks) {
     private var currentBail: JitBail? = null
     private var currentVaddr = 0
 
-    fun compile(vbase: Int, ops: IntArray, count: Int, endsWithBranch: Boolean): Int {
-        this.vbase = vbase
-        cycles = 0
-        flushed = 0
-        delayKind = DELAY_NONE
-        exitJumps.clear()
-        bails.clear()
+    fun buildTrampoline(): Int {
         asm.reset()
-
         asm.push(RBX)
         asm.push(R12)
         asm.push(R13)
@@ -74,6 +72,36 @@ class JitCompiler(private val callbacks: JitCallbacks) {
         asm.movRM(R13, RBX, CTX_RDRAM, 1)
         asm.movRM(R14, RBX, CTX_LUTR, 1)
         asm.movRM(R15, RBX, CTX_LUTW, 1)
+        asm.jmpMem(RBX, CTX_DISPATCH)
+        val ret = asm.len
+        asm.pop(R15)
+        asm.pop(R14)
+        asm.pop(R13)
+        asm.pop(R12)
+        asm.pop(RBX)
+        asm.ret()
+        return ret
+    }
+
+    fun compile(vbase: Int, ops: IntArray, count: Int, endsWithBranch: Boolean): Int {
+        this.vbase = vbase
+        cycles = 0
+        flushed = 0
+        delayKind = DELAY_NONE
+        exitJumps.clear()
+        bails.clear()
+        asm.reset()
+
+        asm.movRM(RAX, RBX, CTX_COUNT, 1)
+        asm.aluRM(ALU_CMP, RAX, RBX, CTX_LIMIT, 1)
+        val runIt = asm.jcc(CC_LE)
+        asm.movMI(RBX, CTX_LINKSRC, 0)
+        asm.movRI32sx(RAX, vbase)
+        asm.movMR(RBX, CTX_PC, RAX, 1)
+        asm.movRI32(RAX, 0)
+        exitJumps.add(asm.jmp())
+        asm.patch(runIt)
+        asm.aluMI(ALU_ADD, RBX, CTX_INSTRS, count, 1)
 
         val body = if (endsWithBranch) count - 2 else count
         var i = 0
@@ -125,12 +153,7 @@ class JitCompiler(private val callbacks: JitCallbacks) {
         }
 
         for (at in exitJumps) asm.patch(at)
-        asm.pop(R15)
-        asm.pop(R14)
-        asm.pop(R13)
-        asm.pop(R12)
-        asm.pop(RBX)
-        asm.ret()
+        asm.jmpMem(RBX, CTX_RETURN)
         return asm.len
     }
 
@@ -157,13 +180,22 @@ class JitCompiler(private val callbacks: JitCallbacks) {
     }
 
     private fun emitExit(pcImm: Int, pcReg: Int, cyclesVal: Int) {
+        if (cyclesVal != flushed) asm.aluMI(ALU_ADD, RBX, CTX_COUNT, cyclesVal - flushed, 1)
         if (pcReg >= 0) {
             asm.movMR(RBX, CTX_PC, pcReg, 1)
-        } else {
-            asm.movRI32sx(RAX, pcImm)
-            asm.movMR(RBX, CTX_PC, RAX, 1)
+            asm.movMI(RBX, CTX_LINKSRC, 0)
+            asm.movRI32(RAX, 0)
+            exitJumps.add(asm.jmp())
+            return
         }
-        if (cyclesVal != flushed) asm.aluMI(ALU_ADD, RBX, CTX_COUNT, cyclesVal - flushed, 1)
+        val jmpStart = asm.len
+        val slot = asm.jmp()
+        asm.patch(slot)
+        val leaDisp = asm.leaRip(RAX)
+        asm.patchTo(leaDisp, jmpStart)
+        asm.movMR(RBX, CTX_LINKSRC, RAX, 1)
+        asm.movRI32sx(RAX, pcImm)
+        asm.movMR(RBX, CTX_PC, RAX, 1)
         asm.movRI32(RAX, 0)
         exitJumps.add(asm.jmp())
     }
@@ -876,7 +908,6 @@ class JitCompiler(private val callbacks: JitCallbacks) {
         asm.movRR(RDX, RCX, 0)
         asm.aluRI(ALU_XOR, RDX, 2, 0)
         asm.movzx16RMIndexed(RAX, R13, RDX)
-        asm.rol16I(RAX, 8)
         val done = asm.jmp()
         asm.patch(mmio)
         calloutPrologue(false)
@@ -1001,11 +1032,9 @@ class JitCompiler(private val callbacks: JitCallbacks) {
     private fun emitSh(rs: Int, rt: Int, imm: Int) {
         val (m1, m2) = emitStoreCommon(rs, imm, 1)
         loadG(RAX, rt, 0)
-        asm.movRR(RDX, RAX, 0)
-        asm.rol16I(RDX, 8)
         asm.movRR(RSI, RCX, 0)
         asm.aluRI(ALU_XOR, RSI, 2, 0)
-        asm.movMR16Indexed(R13, RSI, RDX)
+        asm.movMR16Indexed(R13, RSI, RAX)
         emitInvalidateCheck(RCX)
         val end = asm.jmp()
         asm.patch(m1)

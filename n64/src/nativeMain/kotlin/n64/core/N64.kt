@@ -20,7 +20,7 @@ const val EVENT_SPDMA = 8
 const val EVENT_COMPARE = 9
 const val EVENT_COUNT = 10
 
-class N64(image: ByteArray) {
+class N64(image: ByteArray, forceNoJit: Boolean = false) {
     val rom = ROM(image)
 
     val rdram = IntArray(RDRAM_SIZE / 4)
@@ -39,7 +39,7 @@ class N64(image: ByteArray) {
     val rsp = RSP(this)
     val rdp = Rdp(this)
     val cpu = CPU(this)
-    val jit = Jit.create(this)
+    val jit = if (forceNoJit) null else Jit.create(this)
 
     val clockRate = 93750000L
 

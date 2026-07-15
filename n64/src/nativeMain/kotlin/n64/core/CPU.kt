@@ -318,8 +318,10 @@ class CPU(private val n64: N64) {
             debugSamples[key] = (debugSamples[key] ?: 0) + 1
         }
 
-        if (count > nextEventCount) n64.triggerEvent()
+        if (!suppressAutoEvents && count > nextEventCount) n64.triggerEvent()
     }
+
+    var suppressAutoEvents = false
 
     private fun inDelaySlot(): Boolean =
         branchState == STATE_DELAY_TAKEN || branchState == STATE_DELAY_NOT_TAKEN

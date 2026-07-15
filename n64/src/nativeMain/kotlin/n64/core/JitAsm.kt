@@ -369,6 +369,35 @@ class JitAsm {
         buf[at + 3] = (rel ushr 24).toByte()
     }
 
+    fun patchTo(at: Int, target: Int) {
+        val rel = target - (at + 4)
+        buf[at] = rel.toByte()
+        buf[at + 1] = (rel ushr 8).toByte()
+        buf[at + 2] = (rel ushr 16).toByte()
+        buf[at + 3] = (rel ushr 24).toByte()
+    }
+
+    fun leaRip(reg: Int): Int {
+        rex(1, reg, 0, 0)
+        byte(0x8D)
+        byte(0x05 or ((reg and 7) shl 3))
+        val at = len
+        int32(0)
+        return at
+    }
+
+    fun jmpMem(base: Int, disp: Int) {
+        rex(0, 0, 0, base)
+        byte(0xFF)
+        modrmMem(4, base, disp)
+    }
+
+    fun jmpReg(reg: Int) {
+        rex(0, 0, 0, reg)
+        byte(0xFF)
+        modrmReg(4, reg)
+    }
+
     fun callReg(reg: Int) {
         rex(0, 0, 0, reg)
         byte(0xFF)
