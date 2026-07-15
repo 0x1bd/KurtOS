@@ -797,6 +797,8 @@ class Rdp(private val n64: N64) {
             )
         }
 
+        val coordShift = if (cycleType == CYCLE_COPY) 0 else 5
+
         for (y in top..bottom) {
             for (x in left..right) {
                 val dx = x - x0
@@ -805,11 +807,11 @@ class Rdp(private val n64: N64) {
                 val texS: Int
                 val texT: Int
                 if (flip) {
-                    texS = s + dy * dsdx
-                    texT = t + dx * dtdy
+                    texS = s + ((dy * dsdx) shr coordShift)
+                    texT = t + ((dx * dtdy) shr coordShift)
                 } else {
-                    texS = s + dx * dsdx
-                    texT = t + dy * dtdy
+                    texS = s + ((dx * dsdx) shr coordShift)
+                    texT = t + ((dy * dtdy) shr coordShift)
                 }
 
                 if (cycleType == CYCLE_COPY) {
