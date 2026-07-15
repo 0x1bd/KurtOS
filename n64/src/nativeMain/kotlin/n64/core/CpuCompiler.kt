@@ -25,7 +25,7 @@ const val DELAY_COND_IMM = 1
 const val DELAY_ALWAYS_REG = 2
 const val DELAY_ALWAYS_IMM = 3
 
-class JitBail(
+class CpuBail(
     val vaddr: Int,
     val delta: Int,
     val kind: Int,
@@ -34,7 +34,7 @@ class JitBail(
     val patches = ArrayList<Int>()
 }
 
-class JitCallbacks(
+class CpuCallbacks(
     val read8: Long,
     val read16: Long,
     val read32: Long,
@@ -47,8 +47,8 @@ class JitCallbacks(
     val invalidate: Long,
 )
 
-class JitCompiler(private val callbacks: JitCallbacks) {
-    val asm = JitAsm()
+class CpuCompiler(private val callbacks: CpuCallbacks) {
+    val asm = Asm()
 
     private var vbase = 0
     private var cycles = 0
@@ -56,8 +56,8 @@ class JitCompiler(private val callbacks: JitCallbacks) {
     private var delayKind = DELAY_NONE
     private var delayTarget = 0
     private val exitJumps = ArrayList<Int>()
-    private val bails = ArrayList<JitBail>()
-    private var currentBail: JitBail? = null
+    private val bails = ArrayList<CpuBail>()
+    private var currentBail: CpuBail? = null
     private var currentVaddr = 0
 
     fun buildTrampoline(): Int {
@@ -165,7 +165,7 @@ class JitCompiler(private val callbacks: JitCallbacks) {
     private fun bailCc(cc: Int) {
         var bail = currentBail
         if (bail == null) {
-            bail = JitBail(currentVaddr, cycles - flushed, delayKind, delayTarget)
+            bail = CpuBail(currentVaddr, cycles - flushed, delayKind, delayTarget)
             bails.add(bail)
             currentBail = bail
         }
@@ -852,7 +852,7 @@ class JitCompiler(private val callbacks: JitCallbacks) {
     private fun emitInvalidateCheck(physReg: Int) {
         asm.movRM(RSI, RBX, CTX_PAGES, 1)
         asm.movRR(RDX, physReg, 0)
-        asm.shiftRI(SH_SHR, RDX, JIT_PAGE_SHIFT, 0)
+        asm.shiftRI(SH_SHR, RDX, CPU_PAGE_SHIFT, 0)
         asm.cmpMI8(RSI, RDX, 0)
         val skip = asm.jcc(CC_E)
         calloutPrologue(false)

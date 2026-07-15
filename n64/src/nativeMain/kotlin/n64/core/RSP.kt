@@ -16,7 +16,7 @@ const val SP_STATUS_DMA_FULL_BIT = 1 shl 3
 const val SP_STATUS_SSTEP = 1 shl 5
 const val SP_STATUS_INTR_BREAK = 1 shl 6
 
-class RSP(private val n64: N64) {
+class RSP(private val n64: N64, forceNoDynarec: Boolean = false) {
     val mem = ByteArray(0x2000)
     val regs = IntArray(8)
 
@@ -26,18 +26,18 @@ class RSP(private val n64: N64) {
     val gpr = IntArray(32)
     val vpr = IntArray(32 * 8)
 
-    private val accl = IntArray(8)
-    private val accm = IntArray(8)
-    private val acch = IntArray(8)
+    internal val accl = IntArray(8)
+    internal val accm = IntArray(8)
+    internal val acch = IntArray(8)
 
     private val sourceLane = IntArray(8)
     private val targetLane = IntArray(8)
 
-    private val vcol = IntArray(8)
-    private val vcoh = IntArray(8)
-    private val vccl = IntArray(8)
-    private val vcch = IntArray(8)
-    private val vce = IntArray(8)
+    internal val vcol = IntArray(8)
+    internal val vcoh = IntArray(8)
+    internal val vccl = IntArray(8)
+    internal val vcch = IntArray(8)
+    internal val vce = IntArray(8)
 
     private var divdp = false
     private var divin = 0
@@ -46,11 +46,11 @@ class RSP(private val n64: N64) {
     private val reciprocals = IntArray(512)
     private val inverseSquareRoots = IntArray(512)
 
-    private var branchState = STATE_STEP
-    private var branchTarget = 0
+    internal var branchState = STATE_STEP
+    internal var branchTarget = 0
     private var broke = false
     private var halted = false
-    private var cycles = 0L
+    internal var cycles = 0L
 
     var tasks = 0
         private set
@@ -66,6 +66,8 @@ class RSP(private val n64: N64) {
         private set
     val debugVector = IntArray(64)
     val debugUnknown = HashMap<Int, Int>()
+
+    val dynarec = if (forceNoDynarec) null else RspDynarec.create(this)
 
     val dmem: DmemView = DmemView(this)
 
@@ -128,6 +130,7 @@ class RSP(private val n64: N64) {
         divout = 0
         cycles = 0
         tasks = 0
+        dynarec?.flush()
     }
 
     fun readMem(addr: Int): Int {
@@ -247,7 +250,7 @@ class RSP(private val n64: N64) {
         }
     }
 
-    private var taskInFlight = false
+    internal var taskInFlight = false
 
     var debugOverlap = 0
         private set
@@ -287,6 +290,12 @@ class RSP(private val n64: N64) {
     fun advance(budget: Int) {
         if (!taskInFlight) return
 
+        val dyn = dynarec
+        if (dyn != null) {
+            dyn.advance(budget)
+            return
+        }
+
         var remaining = budget
         while (remaining > 0) {
             gpr[0] = 0
@@ -310,6 +319,38 @@ class RSP(private val n64: N64) {
                 return
             }
         }
+    }
+
+    internal fun imemAt(at: Int): Int = imemWords[(at and 0xFFC) ushr 2]
+
+    internal fun dynExec(op: Int): Int {
+        execute(op)
+        gpr[0] = 0
+        return if (broke || halted) 1 else 0
+    }
+
+    internal fun interpretStep(): Boolean {
+        gpr[0] = 0
+        execute(fetch(pc))
+        step()
+        cycles++
+        if (broke || halted) {
+            finish()
+            return true
+        }
+        if (cycles > 20_000_000L) {
+            overruns++
+            halted = true
+            finish()
+            return true
+        }
+        return false
+    }
+
+    internal fun overrunFinish() {
+        overruns++
+        halted = true
+        finish()
     }
 
     fun runToCompletion() {
@@ -430,6 +471,8 @@ class RSP(private val n64: N64) {
         regs[SP_DRAM_ADDR] = dramAddr
         regs[SP_RD_LEN] = 0xFF8
         regs[SP_WR_LEN] = 0xFF8
+
+        if (!toRdram && bank == 0x1000) dynarec?.flush()
     }
 
     private fun fetch(at: Int): Int = imemWords[(at and 0xFFC) ushr 2]

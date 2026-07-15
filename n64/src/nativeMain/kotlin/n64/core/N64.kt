@@ -20,13 +20,13 @@ const val EVENT_SPDMA = 8
 const val EVENT_COMPARE = 9
 const val EVENT_COUNT = 10
 
-class N64(image: ByteArray, forceNoJit: Boolean = false) {
+class N64(image: ByteArray, forceNoDynarec: Boolean = false, forceNoRspDynarec: Boolean = false) {
     val rom = ROM(image)
 
     val rdram = IntArray(RDRAM_SIZE / 4)
     val hidden = ByteArray(RDRAM_SIZE / 2)
     val rdramRegs = Array(4) { IntArray(16) }
-    val jitPages = ByteArray(RDRAM_SIZE ushr JIT_PAGE_SHIFT)
+    val codePages = ByteArray(RDRAM_SIZE ushr CPU_PAGE_SHIFT)
 
     val mi = MI(this)
     val ri = Ri()
@@ -36,10 +36,10 @@ class N64(image: ByteArray, forceNoJit: Boolean = false) {
     val si = Si(this)
     val pif = Pif(this)
     val cartridge = Cartridge(this)
-    val rsp = RSP(this)
+    val rsp = RSP(this, forceNoRspDynarec)
     val rdp = Rdp(this)
     val cpu = CPU(this)
-    val jit = if (forceNoJit) null else Jit.create(this)
+    val dynarec = if (forceNoDynarec) null else CpuDynarec.create(this)
 
     val clockRate = 93750000L
 
@@ -84,7 +84,7 @@ class N64(image: ByteArray, forceNoJit: Boolean = false) {
         rsp.reset()
         rdp.reset()
         cpu.reset()
-        jit?.flush()
+        dynarec?.flush()
 
         rdram[0x318 / 4] = RDRAM_SIZE
         rdram[0x3F0 / 4] = RDRAM_SIZE
@@ -281,7 +281,7 @@ class N64(image: ByteArray, forceNoJit: Boolean = false) {
             }
             val index = addr ushr 2
             rdram[index] = (rdram[index] and mask.inv()) or (value and mask)
-            if (jitPages[addr ushr JIT_PAGE_SHIFT].toInt() != 0) jit?.invalidatePage(addr ushr JIT_PAGE_SHIFT)
+            if (codePages[addr ushr CPU_PAGE_SHIFT].toInt() != 0) dynarec?.invalidatePage(addr ushr CPU_PAGE_SHIFT)
             return
         }
         writeSlow(addr, value, mask)
@@ -295,7 +295,7 @@ class N64(image: ByteArray, forceNoJit: Boolean = false) {
             rdram[at ushr 2] = value
             at += 4
         }
-        jit?.invalidateRange(addr, length)
+        dynarec?.invalidateRange(addr, length)
         mi.regs[MI_INIT_MODE] = mi.regs[MI_INIT_MODE] and MI_INIT_MODE_BIT.inv()
         mi.initMode = false
     }
@@ -336,8 +336,8 @@ class N64(image: ByteArray, forceNoJit: Boolean = false) {
         val index = (addr and RDRAM_MASK) ushr 2
         val shift = 24 - ((addr and 3) shl 3)
         rdram[index] = (rdram[index] and (0xFF shl shift).inv()) or ((value and 0xFF) shl shift)
-        val page = (addr and RDRAM_MASK) ushr JIT_PAGE_SHIFT
-        if (jitPages[page].toInt() != 0) jit?.invalidatePage(page)
+        val page = (addr and RDRAM_MASK) ushr CPU_PAGE_SHIFT
+        if (codePages[page].toInt() != 0) dynarec?.invalidatePage(page)
     }
 
     fun ramRead16(addr: Int): Int = (ramRead8(addr) shl 8) or ramRead8(addr + 1)
@@ -346,8 +346,8 @@ class N64(image: ByteArray, forceNoJit: Boolean = false) {
 
     fun ramWrite32(addr: Int, value: Int) {
         rdram[(addr and RDRAM_MASK) ushr 2] = value
-        val page = (addr and RDRAM_MASK) ushr JIT_PAGE_SHIFT
-        if (jitPages[page].toInt() != 0) jit?.invalidatePage(page)
+        val page = (addr and RDRAM_MASK) ushr CPU_PAGE_SHIFT
+        if (codePages[page].toInt() != 0) dynarec?.invalidatePage(page)
     }
 
     fun describe(): String =

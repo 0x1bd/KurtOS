@@ -1,9 +1,69 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "../arch/x86_64/kurtos.h"
+
 extern void *memcpy(void *dst, const void *src, size_t n);
 extern void *memset(void *s, int c, size_t n);
 extern void debug_print(const char *msg);
+
+#define PROT_EXEC_BIT 0x4
+
+#define PTE_PRESENT   0x1ULL
+#define PTE_PS        0x80ULL
+#define PTE_ADDR_MASK 0x000FFFFFFFFFF000ULL
+#define PTE_NX        (1ULL << 63)
+
+static inline uint64_t read_cr3(void) {
+    uint64_t v;
+    __asm__ volatile("mov %%cr3, %0" : "=r"(v));
+    return v;
+}
+
+static inline void invlpg(uint64_t va) {
+    __asm__ volatile("invlpg (%0)" : : "r"(va) : "memory");
+}
+
+static void make_executable(uint64_t addr, uint64_t len) {
+    uint64_t hhdm = kurtos_boot_info.hhdm_offset;
+    if (hhdm == 0 || len == 0) return;
+
+    uint64_t cr3 = read_cr3() & PTE_ADDR_MASK;
+    uint64_t va = addr & ~0xFFFULL;
+    uint64_t end = (addr + len + 0xFFFULL) & ~0xFFFULL;
+
+    while (va < end) {
+        uint64_t *pml4 = (uint64_t *)(cr3 + hhdm);
+        uint64_t e4 = pml4[(va >> 39) & 0x1FF];
+        if (!(e4 & PTE_PRESENT)) { va += 0x1000ULL; continue; }
+
+        uint64_t *pdpt = (uint64_t *)((e4 & PTE_ADDR_MASK) + hhdm);
+        uint64_t i3 = (va >> 30) & 0x1FF;
+        uint64_t e3 = pdpt[i3];
+        if (!(e3 & PTE_PRESENT)) { va += 0x1000ULL; continue; }
+        if (e3 & PTE_PS) {
+            if (e3 & PTE_NX) { pdpt[i3] = e3 & ~PTE_NX; invlpg(va); }
+            va = (va & ~0x3FFFFFFFULL) + 0x40000000ULL;
+            continue;
+        }
+
+        uint64_t *pd = (uint64_t *)((e3 & PTE_ADDR_MASK) + hhdm);
+        uint64_t i2 = (va >> 21) & 0x1FF;
+        uint64_t e2 = pd[i2];
+        if (!(e2 & PTE_PRESENT)) { va += 0x1000ULL; continue; }
+        if (e2 & PTE_PS) {
+            if (e2 & PTE_NX) { pd[i2] = e2 & ~PTE_NX; invlpg(va); }
+            va = (va & ~0x1FFFFFULL) + 0x200000ULL;
+            continue;
+        }
+
+        uint64_t *pt = (uint64_t *)((e2 & PTE_ADDR_MASK) + hhdm);
+        uint64_t i1 = (va >> 12) & 0x1FF;
+        uint64_t e1 = pt[i1];
+        if ((e1 & PTE_PRESENT) && (e1 & PTE_NX)) { pt[i1] = e1 & ~PTE_NX; invlpg(va); }
+        va += 0x1000ULL;
+    }
+}
 
 #define ALIGN_LOG2      4
 #define ALIGN_SIZE      ((uint64_t)1 << ALIGN_LOG2)
@@ -376,12 +436,13 @@ int posix_memalign(void **memptr, size_t alignment, size_t size) {
 }
 
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, long offset) {
-    (void)addr; (void)prot; (void)flags; (void)fd; (void)offset;
+    (void)addr; (void)flags; (void)fd; (void)offset;
 
     void *p = (void *)0;
     if (posix_memalign(&p, 4096, length) != 0) return (void *)-1;
 
     memset(p, 0, length);
+    if (prot & PROT_EXEC_BIT) make_executable((uint64_t)(uintptr_t)p, length);
     return p;
 }
 
@@ -392,6 +453,6 @@ int munmap(void *addr, size_t length) {
 }
 
 int mprotect(void *addr, size_t len, int prot) {
-    (void)addr; (void)len; (void)prot;
+    if (prot & PROT_EXEC_BIT) make_executable((uint64_t)(uintptr_t)addr, len);
     return 0;
 }

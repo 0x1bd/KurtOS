@@ -17,28 +17,28 @@ import kotlinx.cinterop.toCPointer
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.toLong
 
-const val JIT_PAGE_SHIFT = 12
-const val JIT_PAGE_SIZE = 1 shl JIT_PAGE_SHIFT
-const val JIT_MAX_BLOCK = 64
+const val CPU_PAGE_SHIFT = 12
+const val CPU_PAGE_SIZE = 1 shl CPU_PAGE_SHIFT
+const val CPU_MAX_BLOCK = 64
 
 const val CLS_OP = 0
 const val CLS_BRANCH = 1
 const val CLS_END = 2
 
-typealias JitFn = CPointer<CFunction<(CPointer<LongVar>?) -> Int>>
+typealias CodeFn = CPointer<CFunction<(CPointer<LongVar>?) -> Int>>
 
-class JitBlock(
+class CpuBlock(
     val physStart: Int,
     val vbase: Int,
     val length: Int,
     val entry: Long,
 )
 
-class Jit(private val n64: N64, private val arena: JitArena) {
+class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
     private val cpu = n64.cpu
-    private val table = arrayOfNulls<JitBlock>(RDRAM_SIZE ushr 2)
-    private val pageBlocks = Array(RDRAM_SIZE ushr JIT_PAGE_SHIFT) { ArrayList<JitBlock>() }
-    val pageFlags = n64.jitPages
+    private val table = arrayOfNulls<CpuBlock>(RDRAM_SIZE ushr 2)
+    private val pageBlocks = Array(RDRAM_SIZE ushr CPU_PAGE_SHIFT) { ArrayList<CpuBlock>() }
+    val pageFlags = n64.codePages
 
     private val gprPin = cpu.gpr.pin()
     private val rdramPin = n64.rdram.pin()
@@ -48,10 +48,10 @@ class Jit(private val n64: N64, private val arena: JitArena) {
 
     val ctx: CPointer<LongVar> = nativeHeap.allocArray(20)
 
-    private val compiler = JitCompiler(jitCallbacks())
-    private val ops = IntArray(JIT_MAX_BLOCK)
+    private val compiler = CpuCompiler(cpuCallbacks())
+    private val ops = IntArray(CPU_MAX_BLOCK)
 
-    private var trampoline: JitFn? = null
+    private var trampoline: CodeFn? = null
     private var trampolineEnd = 0
     private var generation = 0
     private val linkSlots = ArrayList<Long>()
@@ -147,8 +147,8 @@ class Jit(private val n64: N64, private val arena: JitArena) {
 
     fun invalidateRange(start: Int, length: Int) {
         if (length <= 0) return
-        var page = (start and RDRAM_MASK) ushr JIT_PAGE_SHIFT
-        val last = ((start and RDRAM_MASK) + length - 1) ushr JIT_PAGE_SHIFT
+        var page = (start and RDRAM_MASK) ushr CPU_PAGE_SHIFT
+        val last = ((start and RDRAM_MASK) + length - 1) ushr CPU_PAGE_SHIFT
         while (page <= last && page < pageFlags.size) {
             if (pageFlags[page].toInt() != 0) invalidatePage(page)
             page++
@@ -158,7 +158,7 @@ class Jit(private val n64: N64, private val arena: JitArena) {
     var onUnit: ((Long, Int, Boolean) -> Unit)? = null
 
     fun run() {
-        jitHostRef = n64
+        cpuHostRef = n64
         val cpu = this.cpu
         val ctx = this.ctx
         val hook = onUnit
@@ -250,13 +250,13 @@ class Jit(private val n64: N64, private val arena: JitArena) {
         return if (deadline < next) deadline else next
     }
 
-    private fun compile(vbase: Int, phys: Int): JitBlock {
+    private fun compile(vbase: Int, phys: Int): CpuBlock {
         compiles++
         var at = phys
         var n = 0
         var endsWithBranch = false
-        val pageEnd = (phys and (JIT_PAGE_SIZE - 1).inv()) + JIT_PAGE_SIZE
-        while (at + 4 <= pageEnd && n < JIT_MAX_BLOCK - 1) {
+        val pageEnd = (phys and (CPU_PAGE_SIZE - 1).inv()) + CPU_PAGE_SIZE
+        while (at + 4 <= pageEnd && n < CPU_MAX_BLOCK - 1) {
             val op = n64.rdram[at ushr 2]
             val cls = classify(op)
             if (cls == CLS_END) break
@@ -286,9 +286,9 @@ class Jit(private val n64: N64, private val arena: JitArena) {
             entry = code
         }
 
-        val block = JitBlock(phys, vbase, n, entry)
+        val block = CpuBlock(phys, vbase, n, entry)
         table[phys ushr 2] = block
-        val page = phys ushr JIT_PAGE_SHIFT
+        val page = phys ushr CPU_PAGE_SHIFT
         pageBlocks[page].add(block)
         pageFlags[page] = 1
         return block
@@ -345,12 +345,12 @@ class Jit(private val n64: N64, private val arena: JitArena) {
     }
 
     companion object {
-        fun create(n64: N64): Jit? {
+        fun create(n64: N64): CpuDynarec? {
             if (platform.posix.getenv("KURTOS_NOJIT") != null) return null
             if (platform.posix.getenv("KURTOS_BREAK") != null) return null
-            val arena = JitArena()
+            val arena = CodeArena()
             if (!arena.init()) return null
-            return Jit(n64, arena)
+            return CpuDynarec(n64, arena)
         }
     }
 }

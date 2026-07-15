@@ -42,7 +42,7 @@ const val SH_SHL = 4
 const val SH_SHR = 5
 const val SH_SAR = 7
 
-class JitAsm {
+class Asm {
     var buf = ByteArray(16384)
     var len = 0
 
@@ -415,4 +415,76 @@ class JitAsm {
     }
 
     fun ret() = byte(0xC3)
+
+    private fun sse66RR(op: Int, dst: Int, src: Int) {
+        byte(0x66)
+        rex(0, dst, 0, src)
+        byte(0x0F)
+        byte(op)
+        modrmReg(dst, src)
+    }
+
+    private fun sse66RR38(op: Int, dst: Int, src: Int) {
+        byte(0x66)
+        rex(0, dst, 0, src)
+        byte(0x0F)
+        byte(0x38)
+        byte(op)
+        modrmReg(dst, src)
+    }
+
+    private fun sseMem(prefix: Int, has38: Boolean, op: Int, xmm: Int, base: Int, disp: Int) {
+        if (prefix != 0) byte(prefix)
+        rex(0, xmm, 0, base)
+        byte(0x0F)
+        if (has38) byte(0x38)
+        byte(op)
+        modrmMem(xmm, base, disp)
+    }
+
+    fun movdquLoad(xmm: Int, base: Int, disp: Int) = sseMem(0xF3, false, 0x6F, xmm, base, disp)
+    fun movdquStore(base: Int, disp: Int, xmm: Int) = sseMem(0xF3, false, 0x7F, xmm, base, disp)
+    fun pshufbMem(xmm: Int, base: Int, disp: Int) = sseMem(0x66, true, 0x00, xmm, base, disp)
+    fun pshufbRR(dst: Int, src: Int) = sse66RR38(0x00, dst, src)
+
+    fun movdqaRR(dst: Int, src: Int) = sse66RR(0x6F, dst, src)
+    fun packusdw(dst: Int, src: Int) = sse66RR38(0x2B, dst, src)
+    fun packssdw(dst: Int, src: Int) = sse66RR(0x6B, dst, src)
+    fun punpcklwd(dst: Int, src: Int) = sse66RR(0x61, dst, src)
+    fun punpckhwd(dst: Int, src: Int) = sse66RR(0x69, dst, src)
+
+    fun pand(dst: Int, src: Int) = sse66RR(0xDB, dst, src)
+    fun pandn(dst: Int, src: Int) = sse66RR(0xDF, dst, src)
+    fun por(dst: Int, src: Int) = sse66RR(0xEB, dst, src)
+    fun pxor(dst: Int, src: Int) = sse66RR(0xEF, dst, src)
+    fun pcmpeqd(dst: Int, src: Int) = sse66RR(0x76, dst, src)
+
+    fun paddw(dst: Int, src: Int) = sse66RR(0xFD, dst, src)
+    fun psubw(dst: Int, src: Int) = sse66RR(0xF9, dst, src)
+    fun paddsw(dst: Int, src: Int) = sse66RR(0xED, dst, src)
+    fun psubsw(dst: Int, src: Int) = sse66RR(0xE9, dst, src)
+    fun paddusw(dst: Int, src: Int) = sse66RR(0xDD, dst, src)
+    fun psubusw(dst: Int, src: Int) = sse66RR(0xD9, dst, src)
+    fun pminsw(dst: Int, src: Int) = sse66RR(0xEA, dst, src)
+    fun pmaxsw(dst: Int, src: Int) = sse66RR(0xEE, dst, src)
+
+    fun pcmpeqw(dst: Int, src: Int) = sse66RR(0x75, dst, src)
+    fun pcmpgtw(dst: Int, src: Int) = sse66RR(0x65, dst, src)
+
+    fun pmullw(dst: Int, src: Int) = sse66RR(0xD5, dst, src)
+    fun pmulhw(dst: Int, src: Int) = sse66RR(0xE5, dst, src)
+    fun pmulhuw(dst: Int, src: Int) = sse66RR(0xE4, dst, src)
+
+    fun psllwI(xmm: Int, imm: Int) = pshiftI(6, xmm, imm)
+    fun psrlwI(xmm: Int, imm: Int) = pshiftI(2, xmm, imm)
+    fun psrawI(xmm: Int, imm: Int) = pshiftI(4, xmm, imm)
+
+    private fun pshiftI(ext: Int, xmm: Int, imm: Int) {
+        byte(0x66)
+        rex(0, 0, 0, xmm)
+        byte(0x0F)
+        byte(0x71)
+        modrmReg(ext, xmm)
+        byte(imm)
+    }
 }

@@ -2,16 +2,16 @@ package n64.core
 
 import kotlin.test.Test
 
-class JitDiffTest {
+class DynarecDiffTest {
     @Test
     fun diff() {
         if (environment("KURTOS_JITDIFF") == null) return
         val img = game() ?: return
 
         val jitConsole = N64(img)
-        val ref = N64(img, forceNoJit = true)
-        val jit = jitConsole.jit ?: run {
-            println("[jitdiff] no jit (set KURTOS_JIT=1)")
+        val ref = N64(img, forceNoDynarec = true)
+        val dynarec = jitConsole.dynarec ?: run {
+            println("[jitdiff] no dynarec (set KURTOS_JIT=1)")
             return
         }
 
@@ -23,7 +23,7 @@ class JitDiffTest {
         var stop = false
         val maxUnits = environment("KURTOS_JITDIFF_MAX")?.toLongOrNull() ?: 500_000_000L
 
-        jit.onUnit = hook@{ startPc, n, isBlock ->
+        dynarec.onUnit = hook@{ startPc, n, isBlock ->
             if (stop) return@hook
             var guard = 0
             if (isBlock) {
@@ -41,12 +41,12 @@ class JitDiffTest {
 
             if (badGpr || badHiLo || badPc) {
                 println("[jitdiff] MISMATCH unit=$unit startPc=${h(startPc)} n=$n block=$isBlock")
-                println("[jitdiff]   pc jit=${h(a.pc)} ref=${h(b.pc)} count jit=${a.count} ref=${b.count}")
+                println("[jitdiff]   pc dynarec=${h(a.pc)} ref=${h(b.pc)} count dynarec=${a.count} ref=${b.count}")
                 for (i in 0 until 32) {
-                    if (a.gpr[i] != b.gpr[i]) println("[jitdiff]   gpr[$i] jit=${h(a.gpr[i])} ref=${h(b.gpr[i])}")
+                    if (a.gpr[i] != b.gpr[i]) println("[jitdiff]   gpr[$i] dynarec=${h(a.gpr[i])} ref=${h(b.gpr[i])}")
                 }
-                if (a.hi != b.hi) println("[jitdiff]   hi jit=${h(a.hi)} ref=${h(b.hi)}")
-                if (a.lo != b.lo) println("[jitdiff]   lo jit=${h(a.lo)} ref=${h(b.lo)}")
+                if (a.hi != b.hi) println("[jitdiff]   hi dynarec=${h(a.hi)} ref=${h(b.hi)}")
+                if (a.lo != b.lo) println("[jitdiff]   lo dynarec=${h(a.lo)} ref=${h(b.lo)}")
                 dumpBlock(jitConsole, startPc, n)
                 stop = true
                 return@hook

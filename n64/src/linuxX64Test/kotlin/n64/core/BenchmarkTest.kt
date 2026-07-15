@@ -47,25 +47,25 @@ class BenchmarkTest {
 
         val warmup = environment("KURTOS_BENCH_WARMUP")?.toIntOrNull() ?: 300
         val frames = environment("KURTOS_BENCH_FRAMES")?.toIntOrNull() ?: 300
-        val l0 = console.jit?.lookups ?: 0
-        val c0 = console.jit?.compiles ?: 0
-        val i0 = console.jit?.invalidations ?: 0
-        val b0 = console.jit?.bails ?: 0
-        val bi0 = console.jit?.blockInstrs ?: 0
-        val si0 = console.jit?.stepInstrs ?: 0
+        val l0 = console.dynarec?.lookups ?: 0
+        val c0 = console.dynarec?.compiles ?: 0
+        val i0 = console.dynarec?.invalidations ?: 0
+        val b0 = console.dynarec?.bails ?: 0
+        val bi0 = console.dynarec?.blockInstrs ?: 0
+        val si0 = console.dynarec?.stepInstrs ?: 0
         val fps = measure(console, "title", warmup, frames)
-        console.jit?.let {
+        console.dynarec?.let {
             val bi = it.blockInstrs - bi0
             val si = it.stepInstrs - si0
             println(
-                "[bench] jit per frame: lookups=${(it.lookups - l0) / frames}" +
+                "[bench] dynarec per frame: lookups=${(it.lookups - l0) / frames}" +
                     " compiles=${(it.compiles - c0) / frames}" +
                     " invalidations=${(it.invalidations - i0) / frames}" +
                     " bails=${(it.bails - b0) / frames}",
             )
             println(
-                "[bench] jit coverage: blockInstrs=${bi / frames} stepInstrs=${si / frames}" +
-                    " jit%=${if (bi + si > 0) bi * 100 / (bi + si) else 0}",
+                "[bench] dynarec coverage: blockInstrs=${bi / frames} stepInstrs=${si / frames}" +
+                    " dynarec%=${if (bi + si > 0) bi * 100 / (bi + si) else 0}",
             )
         }
 

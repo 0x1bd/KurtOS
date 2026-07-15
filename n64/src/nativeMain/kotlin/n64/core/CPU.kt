@@ -87,7 +87,7 @@ class CPU(private val n64: N64) {
     internal var branchState = STATE_STEP
     internal var branchTarget = 0L
     private var fr = false
-    private val jitPages = n64.jitPages
+    private val codePages = n64.codePages
 
     private val cop0WriteMask = LongArray(32)
 
@@ -212,8 +212,8 @@ class CPU(private val n64: N64) {
         if (physical.toUInt() < RDRAM_SIZE.toUInt() && !n64.mi.initMode) {
             val index = physical ushr 2
             n64.rdram[index] = (n64.rdram[index] and mask.inv()) or (value and mask)
-            if (jitPages[physical ushr JIT_PAGE_SHIFT].toInt() != 0) {
-                n64.jit?.invalidatePage(physical ushr JIT_PAGE_SHIFT)
+            if (codePages[physical ushr CPU_PAGE_SHIFT].toInt() != 0) {
+                n64.dynarec?.invalidatePage(physical ushr CPU_PAGE_SHIFT)
             }
             return
         }
@@ -238,9 +238,9 @@ class CPU(private val n64: N64) {
     var frameDeadline = Long.MAX_VALUE
 
     fun run() {
-        val jit = n64.jit
-        if (jit != null) {
-            jit.run()
+        val dynarec = n64.dynarec
+        if (dynarec != null) {
+            dynarec.run()
             return
         }
         while (!frameDone && count < frameDeadline) {

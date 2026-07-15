@@ -4,9 +4,21 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="feat: Integrate JIT. Roughly 2x speedup on real hw">
-      <change beforePath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/GameDiagTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/GameDiagTest.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RDP.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RDP.kt" afterDir="false" />
+    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="fix: blending of tirangles">
+      <change afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CodeArena.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RspCompiler.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RspDynarec.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RspRuntime.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/BenchmarkTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/BenchmarkTest.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/JitDiffTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/DynarecDiffTest.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CPU.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CPU.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/Jit.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuDynarec.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/JitAsm.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/Asm.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/JitCompiler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuCompiler.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/JitRuntime.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuRuntime.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/N64.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/N64.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RSP.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RSP.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/runtime/src/main/memory/allocator.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/memory/allocator.c" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -87,7 +99,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1784110690091</updated>
-      <workItem from="1784118255606" duration="10890000" />
+      <workItem from="1784118255606" duration="18419000" />
     </task>
     <task id="LOCAL-00001" summary="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard">
       <option name="closed" value="true" />
@@ -113,7 +125,23 @@
       <option name="project" value="LOCAL" />
       <updated>1784129006012</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="fix: text rendering">
+      <option name="closed" value="true" />
+      <created>1784131349627</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1784131349627</updated>
+    </task>
+    <task id="LOCAL-00005" summary="fix: blending of tirangles">
+      <option name="closed" value="true" />
+      <created>1784133804819</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1784133804819</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -123,7 +151,9 @@
     <MESSAGE value="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard" />
     <MESSAGE value="some cleanup stuff" />
     <MESSAGE value="feat: Integrate JIT. Roughly 2x speedup on real hw" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: Integrate JIT. Roughly 2x speedup on real hw" />
+    <MESSAGE value="fix: text rendering" />
+    <MESSAGE value="fix: blending of tirangles" />
+    <option name="LAST_COMMIT_MESSAGE" value="fix: blending of tirangles" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
