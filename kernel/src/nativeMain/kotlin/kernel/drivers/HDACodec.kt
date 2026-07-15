@@ -33,6 +33,7 @@ class HdaCodec(private val controller: HDAController, private val address: Int) 
                 DEVICE_LINE_OUT -> 1
                 else -> 0
             }
+            if (score == 0) continue
             if (score <= bestScore) continue
 
             val path = trace(widget, 0) ?: continue

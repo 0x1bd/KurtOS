@@ -13,9 +13,8 @@ import kapi.Time
 import kapi.emu.Button
 import kapi.emu.EmulatorSession
 import kapi.emu.Video
+import kapi.ui.Canvas
 import kapi.ui.Panels
-import kapi.ui.PixelFont
-import kapi.ui.SurfaceSink
 
 object Player {
     fun play(surface: Surface, game: Game): String? {
@@ -33,7 +32,7 @@ object Player {
         if (saved != null) session.loadSaveData(saved)
 
         val title = game.name.uppercase()
-        val chrome = SurfaceSink(surface)
+        val chrome = Canvas(surface)
         var fullscreen = false
         var repaint = true
         var clock = ""
@@ -137,7 +136,7 @@ object Player {
                     measured = tock
                 }
 
-                drawRate(surface, chrome, rate, fullscreen)
+                drawRate(chrome, rate, fullscreen)
             }
 
             surface.present()
@@ -176,15 +175,15 @@ object Player {
         return "${game.name}: could not save to ${GameLibrary.savePath(game)}"
     }
 
-    private fun drawRate(surface: Surface, sink: SurfaceSink, rate: Int, fullscreen: Boolean) {
+    private fun drawRate(canvas: Canvas, rate: Int, fullscreen: Boolean) {
         val text = "$rate FPS"
-        val width = PixelFont.textWidth(text, FPS_SCALE)
+        val width = canvas.textWidth(text, FPS_SCALE)
 
-        val x = surface.width.toInt() - width - FPS_MARGIN * 2 - 12
-        val y = if (fullscreen) FPS_MARGIN else Chrome.barHeight(surface.height.toInt()) + FPS_MARGIN
+        val x = canvas.width - width - FPS_MARGIN * 2 - 12
+        val y = if (fullscreen) FPS_MARGIN else Chrome.barHeight(canvas.height) + FPS_MARGIN
 
-        sink.fill(x, y, width + 16, PixelFont.HEIGHT * FPS_SCALE + 12, Panels.BAR)
-        PixelFont.draw(sink, x + 8, y + 6, text, Panels.GREEN, FPS_SCALE)
+        canvas.fill(x, y, width + 16, canvas.glyphHeight * FPS_SCALE + 12, Panels.BAR)
+        canvas.text(x + 8, y + 6, text, Panels.GREEN, FPS_SCALE)
     }
 
     private fun store(game: Game, session: EmulatorSession): Boolean {

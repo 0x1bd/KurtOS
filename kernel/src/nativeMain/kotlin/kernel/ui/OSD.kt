@@ -1,8 +1,8 @@
 package kernel.ui
 
 import hal.Clock
+import kapi.ui.Canvas
 import kapi.ui.Panels
-import kapi.ui.PixelFont
 import kapi.ui.PixelIcons
 import kernel.audio.AudioService
 import kernel.graphics.Framebuffer
@@ -18,7 +18,7 @@ object OSD {
     private var phaseStart = 0UL
     private var holdMillis = TOAST_HOLD_MS
 
-    private var canvas: PixelCanvas? = null
+    private var panel: PixelCanvas? = null
 
     private var panelWidth = 0
     private var panelHeight = 0
@@ -119,7 +119,7 @@ object OSD {
         if (!drawn) return
         if (row < drawnY || row >= drawnY + drawnRows) return
 
-        val panel = canvas ?: return
+        val buffer = panel ?: return
         val panelRow = (drawnOffset + (row - drawnY).toInt()).toULong()
 
         fb.frontBlit(
@@ -127,8 +127,8 @@ object OSD {
             row,
             panelWidth.toUInt(),
             1u,
-            panel.address + panelRow * panel.stride,
-            panel.stride,
+            buffer.address + panelRow * buffer.stride,
+            buffer.stride,
         )
     }
 
@@ -179,59 +179,61 @@ object OSD {
 
     private fun ensure(): Framebuffer? {
         val fb = GraphicsService.framebuffer() ?: return null
-        if (canvas != null) return fb
+        if (panel != null) return fb
 
         val region = PageAllocator.allocateBytes((PANEL_MAX_W * PANEL_MAX_H * 4).toUInt()) ?: return null
-        canvas = PixelCanvas(fb, region.address, PANEL_MAX_W, PANEL_MAX_H)
+        panel = PixelCanvas(fb, region.address, PANEL_MAX_W, PANEL_MAX_H)
         return fb
     }
 
     private fun renderToast(icon: PixelIcons.Icon, title: String, subtitle: String?) {
-        val panel = canvas ?: return
+        val buffer = panel ?: return
+        val ui = Canvas(buffer, buffer.width, buffer.height)
 
         val textWidth = maxOf(
-            PixelFont.textWidth(title, SCALE),
-            if (subtitle != null) PixelFont.textWidth(subtitle, SCALE) else 0,
+            ui.textWidth(title, SCALE),
+            if (subtitle != null) ui.textWidth(subtitle, SCALE) else 0,
         )
         val textHeight = if (subtitle != null) 40 else 16
 
         panelWidth = minOf(PAD + ICON_BOX + GAP + textWidth + PAD, PANEL_MAX_W)
         panelHeight = PAD * 2 + maxOf(ICON_BOX, textHeight)
 
-        Panels.card(panel, 0, 0, panelWidth, panelHeight, Panels.CARD, Panels.ACCENT, BORDER)
+        ui.card(0, 0, panelWidth, panelHeight, Panels.CARD, Panels.ACCENT, BORDER)
 
         val iconY = (panelHeight - icon.height * SCALE) / 2
-        icon.draw(panel, PAD + (ICON_BOX - icon.width * SCALE) / 2, iconY, SCALE)
+        ui.icon(icon, PAD + (ICON_BOX - icon.width * SCALE) / 2, iconY, SCALE)
 
         val textX = PAD + ICON_BOX + GAP
         if (subtitle == null) {
-            PixelFont.draw(panel, textX, (panelHeight - 16) / 2, title, Panels.INK, SCALE)
+            ui.text(textX, (panelHeight - 16) / 2, title, Panels.INK, SCALE)
         } else {
             val top = (panelHeight - 40) / 2
-            PixelFont.draw(panel, textX, top, title, Panels.INK, SCALE)
-            PixelFont.draw(panel, textX, top + 24, subtitle, Panels.QUIET, SCALE)
+            ui.text(textX, top, title, Panels.INK, SCALE)
+            ui.text(textX, top + 24, subtitle, Panels.QUIET, SCALE)
         }
     }
 
     private fun renderVolume() {
-        val panel = canvas ?: return
+        val buffer = panel ?: return
+        val ui = Canvas(buffer, buffer.width, buffer.height)
 
         val cellsWidth = CELLS * CELL_W + (CELLS - 1) * CELL_GAP
         panelWidth = PAD + ICON_BOX + GAP + cellsWidth + PAD
         panelHeight = PAD * 2 + ICON_BOX
 
-        Panels.card(panel, 0, 0, panelWidth, panelHeight, Panels.CARD, Panels.ACCENT, BORDER)
+        ui.card(0, 0, panelWidth, panelHeight, Panels.CARD, Panels.ACCENT, BORDER)
 
         val muted = AudioService.muted()
         val icon = if (muted) PixelIcons.SPEAKER_MUTE else PixelIcons.SPEAKER
-        icon.draw(panel, PAD + (ICON_BOX - icon.width * SCALE) / 2, (panelHeight - icon.height * SCALE) / 2, SCALE)
+        ui.icon(icon, PAD + (ICON_BOX - icon.width * SCALE) / 2, (panelHeight - icon.height * SCALE) / 2, SCALE)
 
         val filled = if (muted) 0 else (AudioService.volume() + 9) / 10
         val cellY = (panelHeight - CELL_H) / 2
 
         for (i in 0 until CELLS) {
             val cellX = PAD + ICON_BOX + GAP + i * (CELL_W + CELL_GAP)
-            panel.fill(cellX, cellY, CELL_W, CELL_H, if (i < filled) Panels.GREEN else Panels.EDGE)
+            ui.fill(cellX, cellY, CELL_W, CELL_H, if (i < filled) Panels.GREEN else Panels.EDGE)
         }
     }
 

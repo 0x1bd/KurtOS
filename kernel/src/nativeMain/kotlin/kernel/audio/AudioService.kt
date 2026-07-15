@@ -26,21 +26,25 @@ object AudioService {
     fun initialize(): Boolean {
         if (controller != null) return true
 
-        val device = Pci.find(CLASS_MULTIMEDIA, SUBCLASS_HD_AUDIO)
-        if (device == null) {
+        val devices = Pci.findAll(CLASS_MULTIMEDIA, SUBCLASS_HD_AUDIO)
+        if (devices.isEmpty()) {
             status = "no hd audio controller"
             return false
         }
 
-        val hda = HDAController(device)
-        if (!hda.initialize()) {
-            status = hda.status
-            return false
+        var lastStatus = "no hd audio controller"
+        for (device in devices) {
+            val hda = HDAController(device)
+            if (hda.initialize()) {
+                controller = hda
+                status = hda.status
+                return true
+            }
+            lastStatus = hda.status
         }
 
-        controller = hda
-        status = hda.status
-        return true
+        status = lastStatus
+        return false
     }
 
     fun describe(): List<String> = controller?.describeCodecs() ?: listOf(status)

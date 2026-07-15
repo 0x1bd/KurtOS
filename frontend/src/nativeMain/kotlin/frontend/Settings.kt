@@ -17,6 +17,8 @@ object Settings {
         private set
     var showFps = false
         private set
+    var bootDiagnostics = true
+        private set
 
     private var dirty = false
 
@@ -74,6 +76,13 @@ object Settings {
         dirty = true
     }
 
+    fun setBootDiagnostics(value: Boolean) {
+        if (value == bootDiagnostics) return
+
+        bootDiagnostics = value
+        dirty = true
+    }
+
     fun setDaylightSaving(value: Boolean) {
         if (value == daylightSaving) return
 
@@ -116,6 +125,7 @@ object Settings {
                 "zone" -> zoneOffsetMinutes = (value.toIntOrNull() ?: zoneOffsetMinutes).coerceIn(MIN_OFFSET, MAX_OFFSET)
                 "dst" -> daylightSaving = value == "1"
                 "fps" -> showFps = value == "1"
+                "boot" -> bootDiagnostics = value != "0"
             }
         }
     }
@@ -126,6 +136,7 @@ object Settings {
         append("zone ").append(zoneOffsetMinutes).append('\n')
         append("dst ").append(if (daylightSaving) 1 else 0).append('\n')
         append("fps ").append(if (showFps) 1 else 0).append('\n')
+        append("boot ").append(if (bootDiagnostics) 1 else 0).append('\n')
     }
 
     private fun pad(value: Int): String = value.toString().padStart(2, '0')

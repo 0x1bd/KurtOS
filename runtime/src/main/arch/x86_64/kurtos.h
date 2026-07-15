@@ -48,6 +48,7 @@ void heap_init(uint64_t base, uint64_t size);
 
 int      kbd_ring_pop(void);
 uint64_t kbd_ring_overflows(void);
+uint64_t kbd_irq_count(void);
 
 void lgdt_load(void *ptr, uint16_t code_sel, uint16_t data_sel);
 void ltr_load(uint16_t sel);

@@ -11,11 +11,9 @@ import kapi.Pad
 import kapi.Surface
 import kapi.Sys
 import kapi.Time
+import kapi.ui.Canvas
 import kapi.ui.Panels
-import kapi.ui.PixelFont
 import kapi.ui.PixelIcons
-import kapi.ui.PixelSink
-import kapi.ui.SurfaceSink
 import shell.CommandRegistry
 import shell.Shell
 
@@ -47,8 +45,9 @@ object Home {
     private const val SETTING_ZONE = 2
     private const val SETTING_DST = 3
     private const val SETTING_FPS = 4
-    private const val SETTING_SYSTEM = 5
-    private const val SETTING_COUNT = 6
+    private const val SETTING_BOOT = 5
+    private const val SETTING_SYSTEM = 6
+    private const val SETTING_COUNT = 7
 
     private val HINTS = listOf(
         Chrome.Hint(HomeIcons.DPAD, null, Panels.BAR_TEXT, "NAVIGATE"),
@@ -77,7 +76,7 @@ object Home {
             }
 
             var games = GameLibrary.scan()
-            val sink = SurfaceSink(surface)
+            val canvas = Canvas(surface)
             flushInput()
 
             var painted = -1L
@@ -94,7 +93,7 @@ object Home {
                     clock = tick
                     painted = stripes
                     dirty = false
-                    render(surface, sink, games, clock, stripes.toInt())
+                    render(canvas, games, clock, stripes.toInt())
                 }
 
                 val action = read()
@@ -246,6 +245,7 @@ object Home {
             SETTING_ZONE -> Settings.setZoneOffset(Settings.zoneOffsetMinutes + delta * Settings.OFFSET_STEP)
             SETTING_DST -> Settings.setDaylightSaving(!Settings.daylightSaving)
             SETTING_FPS -> Settings.setShowFps(!Settings.showFps)
+            SETTING_BOOT -> Settings.setBootDiagnostics(!Settings.bootDiagnostics)
         }
     }
 
@@ -325,7 +325,7 @@ object Home {
         selected = 0
         scroll = 0
         setting = 0
-        render(surface, SurfaceSink(surface), games, clock, stripes)
+        render(Canvas(surface), games, clock, stripes)
     }
 
     internal const val PREVIEW_HOME = SCREEN_HOME
@@ -333,52 +333,51 @@ object Home {
     internal const val PREVIEW_SETTINGS = SCREEN_SETTINGS
     internal const val PREVIEW_SYSTEM = SCREEN_SYSTEM
 
-    private fun render(surface: Surface, sink: PixelSink, games: List<Game>, clock: String, stripes: Int) {
-        val width = surface.width.toInt()
-        val height = surface.height.toInt()
+    private fun render(canvas: Canvas, games: List<Game>, clock: String, stripes: Int) {
+        val width = canvas.width
+        val height = canvas.height
 
-        drawBackground(sink, width, height, stripes)
+        drawBackground(canvas, width, height, stripes)
 
         val barHeight = Chrome.barHeight(height)
-        Chrome.drawStatusBar(sink, width, barHeight, "KurtOS ${BuildInfo.VERSION}", clock)
-        Chrome.drawNavBar(sink, width, height, barHeight, HINTS)
+        Chrome.drawStatusBar(canvas, width, barHeight, "KurtOS ${BuildInfo.VERSION}", clock)
+        Chrome.drawNavBar(canvas, width, height, barHeight, HINTS)
 
         val top = barHeight
         val bottom = height - barHeight
 
         when (screen) {
-            SCREEN_HOME -> drawHome(sink, width, top, bottom, games)
-            SCREEN_LIBRARY -> drawLibrary(sink, width, top, bottom, games)
-            SCREEN_SETTINGS -> drawSettings(sink, width, top, bottom)
-            else -> drawSystem(sink, width, top, bottom)
+            SCREEN_HOME -> drawHome(canvas, width, top, bottom, games)
+            SCREEN_LIBRARY -> drawLibrary(canvas, width, top, bottom, games)
+            SCREEN_SETTINGS -> drawSettings(canvas, width, top, bottom)
+            else -> drawSystem(canvas, width, top, bottom)
         }
 
-        surface.present()
+        canvas.present()
     }
 
-    private fun drawBackground(sink: PixelSink, width: Int, height: Int, stripes: Int) {
-        sink.fill(0, 0, width, height, Panels.PAPER)
+    private fun drawBackground(canvas: Canvas, width: Int, height: Int, stripes: Int) {
+        canvas.fill(0, 0, width, height, Panels.PAPER)
 
         val period = STRIPE_WIDTH * 2
         val shift = stripes % period
         var x = shift - period
 
         while (x < width) {
-            sink.fill(x, 0, STRIPE_WIDTH, height, Panels.STRIPE)
+            canvas.fill(x, 0, STRIPE_WIDTH, height, Panels.STRIPE)
             x += period
         }
     }
 
-    private fun drawHome(sink: PixelSink, width: Int, top: Int, bottom: Int, games: List<Game>) {
+    private fun drawHome(canvas: Canvas, width: Int, top: Int, bottom: Int, games: List<Game>) {
         val space = bottom - top
 
         val titleScale = maxOf(2, space / 108)
         val leadScale = maxOf(1, space / 260)
 
         val title = "WELCOME!"
-        PixelFont.draw(
-            sink,
-            (width - PixelFont.textWidth(title, titleScale)) / 2,
+        canvas.text(
+            (width - canvas.textWidth(title, titleScale)) / 2,
             top + space / 12,
             title,
             Panels.INK,
@@ -386,10 +385,9 @@ object Home {
         )
 
         val lead = "Select a system to start playing."
-        PixelFont.draw(
-            sink,
-            (width - PixelFont.textWidth(lead, leadScale)) / 2,
-            top + space / 12 + PixelFont.HEIGHT * titleScale + space / 22,
+        canvas.text(
+            (width - canvas.textWidth(lead, leadScale)) / 2,
+            top + space / 12 + canvas.glyphHeight * titleScale + space / 22,
             lead,
             Panels.QUIET,
             leadScale,
@@ -404,13 +402,13 @@ object Home {
 
         for ((index, console) in consoles.withIndex()) {
             val x = startX + index * (cardWidth + gap)
-            drawCard(sink, x, cardY, cardWidth, cardHeight, console, index == card)
+            drawCard(canvas, x, cardY, cardWidth, cardHeight, console, index == card)
         }
 
     }
 
     private fun drawCard(
-        sink: PixelSink,
+        canvas: Canvas,
         x: Int,
         y: Int,
         width: Int,
@@ -431,65 +429,63 @@ object Home {
 
             for (row in 0 until markHeight) {
                 val inset = row * markWidth / (markHeight * 2)
-                sink.fill(markX + inset, markY + row, markWidth - inset * 2, 1, Panels.ACCENT)
+                canvas.fill(markX + inset, markY + row, markWidth - inset * 2, 1, Panels.ACCENT)
             }
         }
 
-        sink.fill(x, y, width, height, edge)
-        sink.fill(x + border, y + border, width - border * 2, height - border * 2, body)
+        canvas.fill(x, y, width, height, edge)
+        canvas.fill(x + border, y + border, width - border * 2, height - border * 2, body)
 
         val artArea = height - bandHeight - border
         val scale = maxOf(1, minOf((width - border * 6) / console.art.width, (artArea - border * 4) / console.art.height))
         val artX = x + (width - console.art.width * scale) / 2
         val artY = y + border + (artArea - console.art.height * scale) / 2
-        console.art.draw(sink, artX, artY, scale)
+        canvas.icon(console.art, artX, artY, scale)
 
         val bandY = y + height - bandHeight - border
-        sink.fill(x + border, bandY, width - border * 2, bandHeight, console.band)
+        canvas.fill(x + border, bandY, width - border * 2, bandHeight, console.band)
 
         val room = width - border * 4
-        val fit = room / (console.title.length * PixelFont.WIDTH)
+        val fit = room / (console.title.length * canvas.glyphWidth)
         val labelScale = maxOf(2, minOf(fit, bandHeight / 12))
 
-        PixelFont.draw(
-            sink,
-            x + (width - PixelFont.textWidth(console.title, labelScale)) / 2,
-            bandY + (bandHeight - PixelFont.HEIGHT * labelScale) / 2,
+        canvas.text(
+            x + (width - canvas.textWidth(console.title, labelScale)) / 2,
+            bandY + (bandHeight - canvas.glyphHeight * labelScale) / 2,
             console.title,
             Panels.INK,
             labelScale,
         )
     }
 
-    private fun drawPanel(sink: PixelSink, width: Int, top: Int, bottom: Int, title: String): Int {
+    private fun drawPanel(canvas: Canvas, width: Int, top: Int, bottom: Int, title: String): Int {
         val space = bottom - top
         val scale = maxOf(2, space / 200)
 
-        PixelFont.draw(sink, width * 6 / 100, top + space / 20, title, Panels.INK, scale)
+        canvas.text(width * 6 / 100, top + space / 20, title, Panels.INK, scale)
 
-        val y = top + space / 20 + PixelFont.HEIGHT * scale + space / 40
-        sink.fill(width * 6 / 100, y, width * 88 / 100, maxOf(2, space / 300), Panels.EDGE)
+        val y = top + space / 20 + canvas.glyphHeight * scale + space / 40
+        canvas.fill(width * 6 / 100, y, width * 88 / 100, maxOf(2, space / 300), Panels.EDGE)
 
         return y + space / 30
     }
 
-    private fun drawLibrary(sink: PixelSink, width: Int, top: Int, bottom: Int, games: List<Game>) {
+    private fun drawLibrary(canvas: Canvas, width: Int, top: Int, bottom: Int, games: List<Game>) {
         val console = consoles[card]
         val shelf = shelf(games)
         val space = bottom - top
 
-        var y = drawPanel(sink, width, top, bottom, console.title)
+        var y = drawPanel(canvas, width, top, bottom, console.title)
 
         val scale = maxOf(1, space / 260)
         val left = width * 6 / 100
         val listWidth = width * 88 / 100
 
         if (shelf.isEmpty()) {
-            PixelFont.draw(sink, left, y + space / 20, "NO GAMES FOUND", Panels.QUIET, scale + 1)
-            PixelFont.draw(
-                sink,
+            canvas.text(left, y + space / 20, "NO GAMES FOUND", Panels.QUIET, scale + 1)
+            canvas.text(
                 left,
-                y + space / 20 + PixelFont.HEIGHT * (scale + 1) + space / 40,
+                y + space / 20 + canvas.glyphHeight * (scale + 1) + space / 40,
                 "COPY ${console.extension.uppercase()} FILES TO ${GameLibrary.DIRECTORY.uppercase()}",
                 Panels.QUIET,
                 scale,
@@ -512,8 +508,8 @@ object Home {
             val active = index == selected
             val border = maxOf(2, rowHeight / 20)
 
-            sink.fill(left, rowY, listWidth, rowHeight, if (active) Panels.ACCENT else Panels.EDGE)
-            sink.fill(
+            canvas.fill(left, rowY, listWidth, rowHeight, if (active) Panels.ACCENT else Panels.EDGE)
+            canvas.fill(
                 left + border,
                 rowY + border,
                 listWidth - border * 2,
@@ -522,30 +518,28 @@ object Home {
             )
 
             val artScale = maxOf(1, (rowHeight - border * 4) / console.art.height)
-            console.art.draw(
-                sink,
+            canvas.icon(
+                console.art,
                 left + border * 3,
                 rowY + (rowHeight - console.art.height * artScale) / 2,
                 artScale,
             )
 
             val textX = left + border * 3 + console.art.width * artScale + width / 60
-            val room = (listWidth - (textX - left) - width / 10) / (PixelFont.WIDTH * scale)
+            val room = (listWidth - (textX - left) - width / 10) / (canvas.glyphWidth * scale)
 
-            PixelFont.draw(
-                sink,
+            canvas.text(
                 textX,
-                rowY + (rowHeight - PixelFont.HEIGHT * scale) / 2,
+                rowY + (rowHeight - canvas.glyphHeight * scale) / 2,
                 clip(game.name.uppercase(), room),
                 Panels.INK,
                 scale,
             )
 
             val size = "${game.size / 1024UL} KIB"
-            PixelFont.draw(
-                sink,
-                left + listWidth - border * 3 - PixelFont.textWidth(size, scale),
-                rowY + (rowHeight - PixelFont.HEIGHT * scale) / 2,
+            canvas.text(
+                left + listWidth - border * 3 - canvas.textWidth(size, scale),
+                rowY + (rowHeight - canvas.glyphHeight * scale) / 2,
                 size,
                 Panels.QUIET,
                 scale,
@@ -553,9 +547,9 @@ object Home {
         }
     }
 
-    private fun drawSettings(sink: PixelSink, width: Int, top: Int, bottom: Int) {
+    private fun drawSettings(canvas: Canvas, width: Int, top: Int, bottom: Int) {
         val space = bottom - top
-        var y = drawPanel(sink, width, top, bottom, "SETTINGS")
+        var y = drawPanel(canvas, width, top, bottom, "SETTINGS")
 
         val rows = listOf(
             Triple("VOLUME", "${Settings.volume}%", "HOW LOUD EMULATED SOUND PLAYS"),
@@ -567,6 +561,7 @@ object Home {
                 "ADDS AN HOUR BETWEEN LATE MARCH AND LATE OCTOBER",
             ),
             Triple("FPS OVERLAY", onOff(Settings.showFps), "SHOWS A LIVE FRAME RATE WHILE A GAME RUNS"),
+            Triple("BOOT DIAGNOSTICS", onOff(Settings.bootDiagnostics), "SHOW THE HARDWARE REPORT SCREEN AT STARTUP"),
             Triple("SYSTEM INFO", "OPEN", "DRIVER STATUS AND A WAY INTO THE SHELL"),
         )
 
@@ -581,8 +576,8 @@ object Home {
             val active = index == setting
             val border = maxOf(2, rowHeight / 22)
 
-            sink.fill(left, rowY, rowWidth, rowHeight, if (active) Panels.ACCENT else Panels.EDGE)
-            sink.fill(
+            canvas.fill(left, rowY, rowWidth, rowHeight, if (active) Panels.ACCENT else Panels.EDGE)
+            canvas.fill(
                 left + border,
                 rowY + border,
                 rowWidth - border * 2,
@@ -590,14 +585,13 @@ object Home {
                 if (active) 0x00FFFFFFu else Panels.CARD,
             )
 
-            PixelFont.draw(sink, left + border * 4, rowY + rowHeight / 5, row.first, Panels.INK, scale)
-            PixelFont.draw(sink, left + border * 4, rowY + rowHeight * 3 / 5, row.third, Panels.QUIET, maxOf(1, scale - 1))
+            canvas.text(left + border * 4, rowY + rowHeight / 5, row.first, Panels.INK, scale)
+            canvas.text(left + border * 4, rowY + rowHeight * 3 / 5, row.third, Panels.QUIET, maxOf(1, scale - 1))
 
             val value = row.second
-            PixelFont.draw(
-                sink,
-                left + rowWidth - border * 4 - PixelFont.textWidth(value, scale),
-                rowY + (rowHeight - PixelFont.HEIGHT * scale) / 2,
+            canvas.text(
+                left + rowWidth - border * 4 - canvas.textWidth(value, scale),
+                rowY + (rowHeight - canvas.glyphHeight * scale) / 2,
                 value,
                 Panels.INK,
                 scale,
@@ -605,8 +599,7 @@ object Home {
         }
 
         y += rows.size * (rowHeight + gap) + space / 30
-        PixelFont.draw(
-            sink,
+        canvas.text(
             left,
             y,
             "SAVED TO ${Settings.PATH.uppercase()}",
@@ -615,9 +608,9 @@ object Home {
         )
     }
 
-    private fun drawSystem(sink: PixelSink, width: Int, top: Int, bottom: Int) {
+    private fun drawSystem(canvas: Canvas, width: Int, top: Int, bottom: Int) {
         val space = bottom - top
-        var y = drawPanel(sink, width, top, bottom, "SYSTEM")
+        var y = drawPanel(canvas, width, top, bottom, "SYSTEM")
 
         val rows = listOf(
             "DISPLAY" to Graphics.status().uppercase(),
@@ -630,20 +623,19 @@ object Home {
         val scale = maxOf(1, space / 260)
         val left = width * 6 / 100
         val step = maxOf(24, space / 14)
-        val room = (width * 88 / 100 - width / 5) / (PixelFont.WIDTH * scale)
+        val room = (width * 88 / 100 - width / 5) / (canvas.glyphWidth * scale)
 
         for ((label, value) in rows) {
-            PixelFont.draw(sink, left, y, label, Panels.QUIET, scale)
-            PixelFont.draw(sink, left + width / 5, y, clip(value, room), Panels.INK, scale)
+            canvas.text(left, y, label, Panels.QUIET, scale)
+            canvas.text(left + width / 5, y, clip(value, room), Panels.INK, scale)
             y += step
         }
 
         y += step / 2
-        PixelIcons.TERMINAL.draw(sink, left, y, maxOf(1, scale))
-        PixelFont.draw(
-            sink,
+        canvas.icon(PixelIcons.TERMINAL, left, y, maxOf(1, scale))
+        canvas.text(
             left + PixelIcons.TERMINAL.width * maxOf(1, scale) + width / 60,
-            y + PixelFont.HEIGHT * scale / 4,
+            y + canvas.glyphHeight * scale / 4,
             "A  OPEN SHELL",
             Panels.INK,
             scale,

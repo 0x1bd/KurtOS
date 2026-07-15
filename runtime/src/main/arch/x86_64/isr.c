@@ -14,11 +14,16 @@ static volatile uint32_t ring_head;
 static volatile uint32_t ring_tail;
 static volatile uint8_t  ring_buf[RING_CAPACITY];
 static volatile uint64_t ring_dropped;
+static volatile uint64_t kbd_events;
 
 static volatile uint64_t usb_events;
 
 uint64_t usb_irq_count(void) {
     return usb_events;
+}
+
+uint64_t kbd_irq_count(void) {
+    return kbd_events;
 }
 
 int kbd_ring_pop(void) {
@@ -66,6 +71,7 @@ void isr_dispatch(uint64_t *frame) {
 
         case VECTOR_KEYBOARD: {
             uint8_t scancode = inb(0x60);
+            kbd_events++;
             uint32_t tail = ring_tail;
             uint32_t next = (tail + 1) & RING_MASK;
             if (next == ring_head) {

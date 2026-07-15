@@ -2,9 +2,9 @@ package kernel
 
 import frontend.CoreCommands
 import frontend.Home
+import frontend.Settings
 import hal.Cpu
 import hal.Serial
-import kapi.Console
 import kapi.KapiRuntime
 import kernel.arch.Acpi
 import kernel.arch.Apic
@@ -16,6 +16,7 @@ import kapi.Gamepad
 import kernel.audio.AudioService
 import kernel.drivers.usb.GamepadService
 import kernel.drivers.usb.USBService
+import kernel.console.BootScreen
 import kernel.console.SystemConsole
 import kernel.drivers.I8042
 import kernel.fs.StorageService
@@ -71,18 +72,12 @@ fun main() {
         OSD.notify(PixelIcons.GAMEPAD, "GAMEPAD DISCONNECTED", null, SystemSounds.Clip.Pipe)
     }
 
-    Console.println("KurtOS")
-    Console.println(KernelSystem.memoryReport())
-    Console.println("graphics: ${GraphicsService.status()}")
-    Console.println("keyboard: ${KernelInput.status()}")
-    Console.println("storage:  ${KernelFiles.status()}")
-    Console.println("audio:    ${AudioService.status}")
-    Console.println("gamepad:  ${GamepadService.status}")
-    Console.println("")
-
     val registry = CommandRegistry()
     CoreCommands.install(registry)
     KernelShell.install(registry)
+
+    Settings.load()
+    if (Settings.bootDiagnostics) BootScreen.show()
 
     OSD.notify(PixelIcons.MUSHROOM, "WELCOME TO KURTOS", "LET'S-A GO!", SystemSounds.Clip.Fanfare)
 

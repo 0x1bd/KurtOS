@@ -1,10 +1,9 @@
 package frontend
 
 import kapi.Time
+import kapi.ui.Canvas
 import kapi.ui.Panels
-import kapi.ui.PixelFont
 import kapi.ui.PixelIcons
-import kapi.ui.PixelSink
 
 object Chrome {
     class Hint(val icon: PixelIcons.Icon?, val glyph: String?, val color: UInt, val label: String)
@@ -28,22 +27,22 @@ object Chrome {
 
     private fun pad(value: Int): String = value.toString().padStart(2, '0')
 
-    fun drawStatusBar(sink: PixelSink, width: Int, barHeight: Int, title: String, clock: String) {
-        sink.fill(0, 0, width, barHeight, Panels.BAR)
+    fun drawStatusBar(canvas: Canvas, width: Int, barHeight: Int, title: String, clock: String) {
+        canvas.fill(0, 0, width, barHeight, Panels.BAR)
 
         val scale = maxOf(1, barHeight / 24)
         val pad = barHeight / 4
         val gap = pad / 2
-        val textY = (barHeight - PixelFont.HEIGHT * scale) / 2
+        val textY = (barHeight - canvas.glyphHeight * scale) / 2
 
         val logoScale = maxOf(1, (barHeight - pad * 2) / HomeIcons.LOGO.height)
-        HomeIcons.LOGO.draw(sink, pad, (barHeight - HomeIcons.LOGO.height * logoScale) / 2, logoScale)
+        canvas.icon(HomeIcons.LOGO, pad, (barHeight - HomeIcons.LOGO.height * logoScale) / 2, logoScale)
 
         val nameX = pad + HomeIcons.LOGO.width * logoScale + pad
-        PixelFont.draw(sink, nameX, textY, title, Panels.BAR_TEXT, scale)
+        canvas.text(nameX, textY, title, Panels.BAR_TEXT, scale)
 
-        val clockX = (width - PixelFont.textWidth(clock, scale)) / 2
-        PixelFont.draw(sink, clockX, textY, clock, Panels.BAR_TEXT, scale)
+        val clockX = (width - canvas.textWidth(clock, scale)) / 2
+        canvas.text(clockX, textY, clock, Panels.BAR_TEXT, scale)
 
         val percent = "${Settings.volume}%"
         val battery = "100%"
@@ -51,33 +50,33 @@ object Chrome {
         val batteryScale = maxOf(1, (barHeight - pad * 2) / HomeIcons.BATTERY.height)
         val batteryWidth = HomeIcons.BATTERY.width * batteryScale
         val batteryY = (barHeight - HomeIcons.BATTERY.height * batteryScale) / 2
-        val batteryX = width - pad - PixelFont.textWidth(battery, scale) - gap - batteryWidth
+        val batteryX = width - pad - canvas.textWidth(battery, scale) - gap - batteryWidth
 
-        HomeIcons.BATTERY.draw(sink, batteryX, batteryY, batteryScale)
-        sink.fill(
+        canvas.icon(HomeIcons.BATTERY, batteryX, batteryY, batteryScale)
+        canvas.fill(
             batteryX + batteryScale * 2,
             batteryY + batteryScale * 2,
             batteryScale * 9,
             batteryScale * 4,
             Panels.GREEN,
         )
-        PixelFont.draw(sink, batteryX + batteryWidth + gap, textY, battery, Panels.BAR_TEXT, scale)
+        canvas.text(batteryX + batteryWidth + gap, textY, battery, Panels.BAR_TEXT, scale)
 
         val speaker = if (Settings.muted) PixelIcons.SPEAKER_MUTE else PixelIcons.SPEAKER
         val speakerScale = maxOf(1, (barHeight - pad * 2) / speaker.height)
         val cell = maxOf(3, barHeight / 14)
         val meterWidth = METER_CELLS * (cell + cell / 2)
 
-        val volumeWidth = speaker.width * speakerScale + gap + meterWidth + gap + PixelFont.textWidth(percent, scale)
+        val volumeWidth = speaker.width * speakerScale + gap + meterWidth + gap + canvas.textWidth(percent, scale)
         val volumeX = batteryX - pad * 2 - volumeWidth
 
-        speaker.draw(sink, volumeX, (barHeight - speaker.height * speakerScale) / 2, speakerScale)
+        canvas.icon(speaker, volumeX, (barHeight - speaker.height * speakerScale) / 2, speakerScale)
 
         val meterX = volumeX + speaker.width * speakerScale + gap
         val filled = if (Settings.muted) 0 else (Settings.volume + 9) / 10
 
         for (i in 0 until METER_CELLS) {
-            sink.fill(
+            canvas.fill(
                 meterX + i * (cell + cell / 2),
                 (barHeight - cell * 2) / 2,
                 cell,
@@ -86,12 +85,12 @@ object Chrome {
             )
         }
 
-        PixelFont.draw(sink, meterX + meterWidth + gap, textY, percent, Panels.BAR_TEXT, scale)
+        canvas.text(meterX + meterWidth + gap, textY, percent, Panels.BAR_TEXT, scale)
     }
 
-    fun drawNavBar(sink: PixelSink, width: Int, height: Int, barHeight: Int, hints: List<Hint>) {
+    fun drawNavBar(canvas: Canvas, width: Int, height: Int, barHeight: Int, hints: List<Hint>) {
         val y = height - barHeight
-        sink.fill(0, y, width, barHeight, Panels.BAR)
+        canvas.fill(0, y, width, barHeight, Panels.BAR)
 
         if (hints.isEmpty()) return
 
@@ -108,20 +107,19 @@ object Chrome {
                 else -> glyphRadius * 2
             }
 
-            val content = markWidth + gap + PixelFont.textWidth(hint.label, scale)
+            val content = markWidth + gap + canvas.textWidth(hint.label, scale)
             val x = index * slot + (slot - content) / 2
             val centre = y + barHeight / 2
 
             if (hint.icon != null) {
-                hint.icon.draw(sink, x, centre - hint.icon.height * iconScale / 2, iconScale)
+                canvas.icon(hint.icon, x, centre - hint.icon.height * iconScale / 2, iconScale)
             } else if (hint.glyph != null) {
-                drawGlyphButton(sink, x + glyphRadius, centre, glyphRadius, hint.glyph, hint.color, scale)
+                drawGlyphButton(canvas, x + glyphRadius, centre, glyphRadius, hint.glyph, hint.color, scale)
             }
 
-            PixelFont.draw(
-                sink,
+            canvas.text(
                 x + markWidth + gap,
-                centre - PixelFont.HEIGHT * scale / 2,
+                centre - canvas.glyphHeight * scale / 2,
                 hint.label,
                 Panels.BAR_TEXT,
                 scale,
@@ -130,7 +128,7 @@ object Chrome {
     }
 
     private fun drawGlyphButton(
-        sink: PixelSink,
+        canvas: Canvas,
         cx: Int,
         cy: Int,
         radius: Int,
@@ -138,10 +136,9 @@ object Chrome {
         color: UInt,
         scale: Int,
     ) {
-        drawRing(sink, cx, cy, radius, color)
+        drawRing(canvas, cx, cy, radius, color)
 
-        PixelFont.draw(
-            sink,
+        canvas.text(
             cx - (GLYPH_INK * scale) / 2,
             cy - (GLYPH_INK * scale) / 2,
             glyph,
@@ -150,7 +147,7 @@ object Chrome {
         )
     }
 
-    private fun drawRing(sink: PixelSink, cx: Int, cy: Int, radius: Int, color: UInt) {
+    private fun drawRing(canvas: Canvas, cx: Int, cy: Int, radius: Int, color: UInt) {
         val thickness = maxOf(2, radius / 5)
         val inner = radius - thickness
 
@@ -159,10 +156,10 @@ object Chrome {
             val hollow = if (dy * dy < inner * inner) isqrt(inner * inner - dy * dy) else 0
 
             if (hollow == 0) {
-                sink.fill(cx - span, cy + dy, span * 2, 1, color)
+                canvas.fill(cx - span, cy + dy, span * 2, 1, color)
             } else {
-                sink.fill(cx - span, cy + dy, span - hollow, 1, color)
-                sink.fill(cx + hollow, cy + dy, span - hollow, 1, color)
+                canvas.fill(cx - span, cy + dy, span - hollow, 1, color)
+                canvas.fill(cx + hollow, cy + dy, span - hollow, 1, color)
             }
         }
     }

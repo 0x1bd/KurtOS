@@ -54,4 +54,26 @@ object Cpu {
         cpu_cpuid(leaf, a.ptr, b.ptr, c.ptr, d.ptr)
         CpuidResult(a.value, b.value, c.value, d.value)
     }
+
+    fun brand(): String {
+        val highest = cpuid(0x80000000u).eax
+        if (highest < 0x80000004u) return "unknown cpu"
+
+        val builder = StringBuilder()
+        for (leaf in 0x80000002u..0x80000004u) {
+            val result = cpuid(leaf)
+            appendRegister(builder, result.eax)
+            appendRegister(builder, result.ebx)
+            appendRegister(builder, result.ecx)
+            appendRegister(builder, result.edx)
+        }
+        return builder.toString().trim()
+    }
+
+    private fun appendRegister(builder: StringBuilder, value: UInt) {
+        for (shift in 0 until 4) {
+            val code = ((value shr (shift * 8)) and 0xFFu).toInt()
+            if (code in 0x20..0x7E) builder.append(code.toChar())
+        }
+    }
 }

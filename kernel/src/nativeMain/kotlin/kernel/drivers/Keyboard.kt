@@ -21,6 +21,9 @@ object Keyboard {
 
     private var layout = KeyboardLayout.DE
 
+    var received = 0
+        private set
+
     val layoutName: String get() = layout.name
 
     fun selectLayout(name: String): Boolean {
@@ -32,6 +35,11 @@ object Keyboard {
     fun poll() {
         while (true) {
             val raw = Arch.nextScancode()
+            if (raw < 0) break
+            handle(raw and 0xFF)
+        }
+        while (true) {
+            val raw = I8042.pollScancode()
             if (raw < 0) break
             handle(raw and 0xFF)
         }
@@ -63,6 +71,8 @@ object Keyboard {
     }
 
     private fun handle(scancode: Int) {
+        received++
+
         if (scancode == 0xE0) {
             extended = true
             return
