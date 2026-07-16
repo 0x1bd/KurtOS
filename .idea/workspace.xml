@@ -4,38 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="feat: Input rework. More player support.">
-      <change afterPath="$PROJECT_DIR$/assets/icons/battery.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/cartridge-gba.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/cartridge.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/coin.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/console-game-boy-advance.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/console-game-boy-color.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/console-game-boy.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/console-n64.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/console-snes.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/dpad.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/gamepad.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/gear.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/logo.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/menu.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/mushroom.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/question-block.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/speaker-mute.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/speaker.qoi" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/assets/icons/terminal.qoi" afterDir="false" />
+    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="feat: Use .qoi asset icons instead of hardcoded strings">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.gradle.kts" beforeDir="false" afterPath="$PROJECT_DIR$/build.gradle.kts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Chrome.kt" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Chrome.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/ConsoleArt.kt" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/ConsoleArt.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Home.kt" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Home.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/HomeIcons.kt" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/HomeIcons.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/ui/Canvas.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/ui/Canvas.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/ui/PixelIcons.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/ui/PixelIcons.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/KapiBackends.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/KapiBackends.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/fs/StorageService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/fs/StorageService.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/ui/OSD.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/ui/OSD.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/mkimage.sh" beforeDir="false" afterPath="$PROJECT_DIR$/tools/mkimage.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -118,7 +89,7 @@
       <option name="presentableId" value="Default" />
       <updated>1784110690091</updated>
       <workItem from="1784118255606" duration="18419000" />
-      <workItem from="1784208115593" duration="16676000" />
+      <workItem from="1784208115593" duration="17302000" />
     </task>
     <task id="LOCAL-00001" summary="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard">
       <option name="closed" value="true" />
@@ -200,7 +171,23 @@
       <option name="project" value="LOCAL" />
       <updated>1784235668934</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="feat: Use .qoi asset icons instead of hardcoded strings">
+      <option name="closed" value="true" />
+      <created>1784237679262</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1784237679262</updated>
+    </task>
+    <task id="LOCAL-00012" summary="feat: Use .qoi asset icons instead of hardcoded strings">
+      <option name="closed" value="true" />
+      <created>1784237710366</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1784237710366</updated>
+    </task>
+    <option name="localTasksCounter" value="13" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -217,7 +204,8 @@
     <MESSAGE value="chore: update console icons" />
     <MESSAGE value="fix: gc should use adaptive scheduler" />
     <MESSAGE value="feat: Input rework. More player support." />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: Input rework. More player support." />
+    <MESSAGE value="feat: Use .qoi asset icons instead of hardcoded strings" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: Use .qoi asset icons instead of hardcoded strings" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
