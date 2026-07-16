@@ -3,7 +3,7 @@ set -euo pipefail
 
 KERNEL="$1"
 LIMINE_DIR="$2"
-ROMS_DIR="$3"
+ASSETS_DIR="$3"
 OUT="$4"
 ESP_OUT="$5"
 
@@ -42,19 +42,19 @@ mcopy -i "$ESP_OUT" limine.conf ::/boot/limine/limine.conf
 mcopy -i "$ESP_OUT" "${LIMINE_DIR}/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
 mcopy -i "$ESP_OUT" "${LIMINE_DIR}/limine-bios.sys" ::/boot/limine/limine-bios.sys
 
+assets=0
+if [ -d "$ASSETS_DIR" ]; then
+    for entry in "$ASSETS_DIR"/*; do
+        [ -e "$entry" ] || continue
+        mcopy -s -i "$ESP_OUT" "$entry" ::/
+    done
+    assets=$(find "$ASSETS_DIR" -type f | wc -l)
+fi
+
 truncate -s $((DATA_SECTORS * SECTOR)) "$DATA"
 mformat -i "$DATA" -F -c 8 -v "$DATA_LABEL" ::
 mmd -i "$DATA" ::/roms
 mmd -i "$DATA" ::/saves
-
-roms=0
-if [ -d "$ROMS_DIR" ]; then
-    for rom in "$ROMS_DIR"/*; do
-        [ -f "$rom" ] || continue
-        mcopy -i "$DATA" "$rom" "::/roms/$(basename "$rom")"
-        roms=$((roms + 1))
-    done
-fi
 
 rm -f "$OUT"
 truncate -s $((IMAGE_SECTORS * SECTOR)) "$OUT"
@@ -69,4 +69,4 @@ dd if="$DATA" of="$OUT" bs=$SECTOR seek=$DATA_START conv=notrunc status=none
 
 "${LIMINE_DIR}/limine" bios-install "$OUT" >/dev/null
 
-echo "image: $OUT ($(stat -c%s "$OUT") bytes, ${roms} rom(s) on ${DATA_LABEL})"
+echo "image: $OUT ($(stat -c%s "$OUT") bytes, ${assets} asset file(s) on the esp)"

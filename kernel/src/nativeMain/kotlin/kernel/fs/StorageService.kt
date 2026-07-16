@@ -6,10 +6,14 @@ import kernel.drivers.usb.USBService
 
 object StorageService {
     const val LABEL = "KURTDATA"
+    const val SYSTEM_LABEL = "KURTOS"
+
+    private const val ESP_TYPE = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
 
     private var device: USBDevice? = null
     private var disk: MassStorage? = null
     private var volume: Fat32? = null
+    private var systemVolume: Fat32? = null
 
     private var attempted = false
 
@@ -32,6 +36,13 @@ object StorageService {
         return volume
     }
 
+    fun system(): Fat32? {
+        if (!attempted) initialize()
+        if (!live()) reattach()
+
+        return systemVolume
+    }
+
     fun refresh(): Boolean {
         reattach()
         return ready
@@ -41,6 +52,7 @@ object StorageService {
         device = null
         disk = null
         volume = null
+        systemVolume = null
 
         attach()
     }
@@ -94,6 +106,14 @@ object StorageService {
         disk = medium
         volume = mounted
 
+        val esp = partitions.firstOrNull { it.name == SYSTEM_LABEL }
+            ?: partitions.firstOrNull { it.type == ESP_TYPE }
+
+        if (esp != null) {
+            val systemMounted = Fat32(Partition(medium, esp.firstLba, esp.blocks))
+            if (systemMounted.mount()) systemVolume = systemMounted
+        }
+
         status = mounted.status
 
         return true
@@ -104,6 +124,7 @@ object StorageService {
 
         val medium = disk ?: return lines
         lines.add("device: ${medium.status}")
+        lines.add("system: ${systemVolume?.status ?: "not mounted"}")
 
         for (entry in Gpt.partitions(medium)) {
             val mib = entry.blocks * medium.blockSize.toULong() / (1024UL * 1024UL)

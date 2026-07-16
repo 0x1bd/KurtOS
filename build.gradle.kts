@@ -26,7 +26,7 @@ val kernelBinaryDir = "kurtos${imageBuildType}Static"
 val kernelLinkTask = ":kernel:linkKurtos${imageBuildType}StaticLinuxX64"
 val kernelStaticLib = project(":kernel").layout.buildDirectory.file("bin/linuxX64/$kernelBinaryDir/libkurtos.a")
 val runtimeObjectsDir = project(":runtime").layout.buildDirectory.dir("objects")
-val romsRoot = layout.projectDirectory.dir("assets/roms")
+val assetsRoot = layout.projectDirectory.dir("assets")
 val limineDir = layout.projectDirectory.dir("third_party/limine")
 val diskImage = layout.buildDirectory.file("kurtos.img")
 val espImage = layout.buildDirectory.file("esp.img")
@@ -111,7 +111,7 @@ val buildImage by tasks.registering(Exec::class) {
 
     inputs.file(layout.buildDirectory.file("kurtos.elf"))
     inputs.file(layout.projectDirectory.file("limine.conf"))
-    inputs.dir(romsRoot).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(assetsRoot).withPathSensitivity(PathSensitivity.RELATIVE)
     outputs.file(diskImage)
     outputs.file(espImage)
 
@@ -120,7 +120,7 @@ val buildImage by tasks.registering(Exec::class) {
         layout.projectDirectory.file("tools/mkimage.sh").asFile.absolutePath,
         layout.buildDirectory.file("kurtos.elf").get().asFile.absolutePath,
         limineDir.asFile.absolutePath,
-        romsRoot.asFile.absolutePath,
+        assetsRoot.asFile.absolutePath,
         diskImage.get().asFile.absolutePath,
         espImage.get().asFile.absolutePath,
     )

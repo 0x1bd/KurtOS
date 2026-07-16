@@ -88,34 +88,62 @@ object KernelTime : TimeBackend {
 }
 
 object KernelFiles : FilesBackend {
-    override fun list(path: String): List<FileEntry>? {
-        val volume = StorageService.volume() ?: return null
+    private const val SYSTEM_PREFIX = "/sys"
 
-        return volume.list(path)?.map {
+    private fun systemPath(path: String): String? {
+        if (path == SYSTEM_PREFIX) return "/"
+        if (path.startsWith("$SYSTEM_PREFIX/")) return path.substring(SYSTEM_PREFIX.length)
+        return null
+    }
+
+    override fun list(path: String): List<FileEntry>? {
+        val system = systemPath(path)
+
+        val listed = if (system != null) {
+            StorageService.system()?.list(system)
+        } else {
+            StorageService.volume()?.list(path)
+        } ?: return null
+
+        val entries = listed.map {
             FileEntry(
                 it.name,
                 if (it.directory) FileKind.Directory else FileKind.File,
                 it.size,
             )
         }
+
+        if (system == null && path == "/" && StorageService.system() != null) {
+            return entries + FileEntry("sys", FileKind.Directory, 0UL)
+        }
+
+        return entries
     }
 
     override fun read(path: String, maxBytes: UInt): ByteArray? {
-        val volume = StorageService.volume() ?: return null
-        return volume.read(path, maxBytes)
+        val system = systemPath(path)
+        if (system != null) return StorageService.system()?.read(system, maxBytes)
+
+        return StorageService.volume()?.read(path, maxBytes)
     }
 
     override fun write(path: String, data: ByteArray): Boolean {
+        if (systemPath(path) != null) return false
+
         val volume = StorageService.volume() ?: return false
         return volume.write(path, data)
     }
 
     override fun mkdir(path: String): Boolean {
+        if (systemPath(path) != null) return false
+
         val volume = StorageService.volume() ?: return false
         return volume.mkdir(path)
     }
 
     override fun writable(path: String): Boolean {
+        if (systemPath(path) != null) return false
+
         StorageService.initialize()
         return StorageService.ready
     }
