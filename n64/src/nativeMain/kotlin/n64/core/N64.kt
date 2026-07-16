@@ -365,7 +365,10 @@ class N64(image: ByteArray, forceNoDynarec: Boolean = false, forceNoRspDynarec: 
     fun describe(): String =
         "${rom.name} [${rom.gameCode}] cic=${rom.cicSeed} ${if (rom.pal) "PAL" else "NTSC"} save=${rom.save}"
 
-    fun setButtons(mask: Int) = pif.setButtons(mask)
+    fun setButtons(mask: Int) = pif.setButtons(0, mask)
 
-    fun setStick(x: Int, y: Int) = pif.setStick(x, y)
+    fun setStick(x: Int, y: Int) = pif.setStick(0, x, y)
+
+    fun setInput(player: Int, mask: Int, x: Int, y: Int, connected: Boolean) =
+        pif.setInput(player, mask, x, y, connected)
 }

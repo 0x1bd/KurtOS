@@ -146,7 +146,7 @@ object Player {
                 }
             }
 
-            session.setButtons(buttons(padded))
+            sendInput(session, game, padded)
 
             val emuStart = Time.cycles()
             session.runFrame()
@@ -430,22 +430,68 @@ object Player {
         return now + if (repeatAt == 0UL) VOLUME_DELAY_MS else VOLUME_REPEAT_MS
     }
 
+    private fun sendInput(session: EmulatorSession, game: Game, padded: Boolean) {
+        session.setInput(
+            0,
+            buttons(padded),
+            if (padded) Gamepad.axis(0, Pad.AXIS_LX) else 0,
+            if (padded) Gamepad.axis(0, Pad.AXIS_LY) else 0,
+            if (padded) Gamepad.axis(0, Pad.AXIS_RX) else 0,
+            if (padded) Gamepad.axis(0, Pad.AXIS_RY) else 0,
+        )
+
+        val players = game.emulator.players
+        if (players <= 1) return
+
+        for (player in 1 until players) {
+            session.setInput(
+                player,
+                padButtons(player),
+                Gamepad.axis(player, Pad.AXIS_LX),
+                Gamepad.axis(player, Pad.AXIS_LY),
+                Gamepad.axis(player, Pad.AXIS_RX),
+                Gamepad.axis(player, Pad.AXIS_RY),
+                Gamepad.connected(player),
+            )
+        }
+    }
+
+    private fun padButtons(player: Int): Int {
+        var mask = 0
+
+        if (Gamepad.isDown(player, Pad.A)) mask = mask or Button.A
+        if (Gamepad.isDown(player, Pad.B)) mask = mask or Button.B
+        if (Gamepad.isDown(player, Pad.SELECT)) mask = mask or Button.SELECT
+        if (Gamepad.isDown(player, Pad.START)) mask = mask or Button.START
+        if (Gamepad.isDown(player, Pad.RIGHT)) mask = mask or Button.RIGHT
+        if (Gamepad.isDown(player, Pad.LEFT)) mask = mask or Button.LEFT
+        if (Gamepad.isDown(player, Pad.UP)) mask = mask or Button.UP
+        if (Gamepad.isDown(player, Pad.DOWN)) mask = mask or Button.DOWN
+        if (Gamepad.isDown(player, Pad.L)) mask = mask or Button.L
+        if (Gamepad.isDown(player, Pad.R)) mask = mask or Button.R
+        if (Gamepad.isDown(player, Pad.X)) mask = mask or Button.X
+        if (Gamepad.isDown(player, Pad.Y)) mask = mask or Button.Y
+
+        return mask
+    }
+
     private fun buttons(padded: Boolean): Int {
         var mask = 0
 
-        if (Input.isKeyDown(Keys.Z) || (padded && Gamepad.isDown(Pad.A))) mask = mask or Button.A
-        if (Input.isKeyDown(Keys.X) || (padded && Gamepad.isDown(Pad.B))) mask = mask or Button.B
-        if (Input.isKeyDown(Keys.BACKSPACE) || (padded && Gamepad.isDown(Pad.SELECT))) mask = mask or Button.SELECT
-        if (Input.isKeyDown(Keys.ENTER) || (padded && Gamepad.isDown(Pad.START))) mask = mask or Button.START
-        if (Input.isKeyDown(Keys.RIGHT) || (padded && Gamepad.isDown(Pad.RIGHT))) mask = mask or Button.RIGHT
-        if (Input.isKeyDown(Keys.LEFT) || (padded && Gamepad.isDown(Pad.LEFT))) mask = mask or Button.LEFT
-        if (Input.isKeyDown(Keys.UP) || (padded && Gamepad.isDown(Pad.UP))) mask = mask or Button.UP
-        if (Input.isKeyDown(Keys.DOWN) || (padded && Gamepad.isDown(Pad.DOWN))) mask = mask or Button.DOWN
-        if (Input.isKeyDown(Keys.A) || (padded && Gamepad.isDown(Pad.L))) mask = mask or Button.L
-        if (Input.isKeyDown(Keys.S) || (padded && Gamepad.isDown(Pad.R))) mask = mask or Button.R
-        if (Input.isKeyDown(Keys.D) || (padded && Gamepad.isDown(Pad.X))) mask = mask or Button.X
-        if (Input.isKeyDown(Keys.C) || (padded && Gamepad.isDown(Pad.Y))) mask = mask or Button.Y
+        if (Input.isKeyDown(Keys.Z)) mask = mask or Button.A
+        if (Input.isKeyDown(Keys.X)) mask = mask or Button.B
+        if (Input.isKeyDown(Keys.BACKSPACE)) mask = mask or Button.SELECT
+        if (Input.isKeyDown(Keys.ENTER)) mask = mask or Button.START
+        if (Input.isKeyDown(Keys.RIGHT)) mask = mask or Button.RIGHT
+        if (Input.isKeyDown(Keys.LEFT)) mask = mask or Button.LEFT
+        if (Input.isKeyDown(Keys.UP)) mask = mask or Button.UP
+        if (Input.isKeyDown(Keys.DOWN)) mask = mask or Button.DOWN
+        if (Input.isKeyDown(Keys.A)) mask = mask or Button.L
+        if (Input.isKeyDown(Keys.S)) mask = mask or Button.R
+        if (Input.isKeyDown(Keys.D)) mask = mask or Button.X
+        if (Input.isKeyDown(Keys.C)) mask = mask or Button.Y
 
+        if (padded) mask = mask or padButtons(0)
         if (padded && combo()) mask = mask and (Button.SELECT or Button.L or Button.R).inv()
 
         return mask

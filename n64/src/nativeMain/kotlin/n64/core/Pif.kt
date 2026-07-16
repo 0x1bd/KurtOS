@@ -3,9 +3,10 @@ package n64.core
 class Pif(private val n64: N64) {
     val ram = ByteArray(64)
 
-    private var buttons = 0
-    private var stickX = 0
-    private var stickY = 0
+    private val buttons = IntArray(CHANNELS)
+    private val stickX = IntArray(CHANNELS)
+    private val stickY = IntArray(CHANNELS)
+    private var present = 1
 
     val eeprom = ByteArray(2048)
     var eepromDirty = 0
@@ -13,9 +14,10 @@ class Pif(private val n64: N64) {
 
     fun reset() {
         ram.fill(0)
-        buttons = 0
-        stickX = 0
-        stickY = 0
+        buttons.fill(0)
+        stickX.fill(0)
+        stickY.fill(0)
+        present = 1
 
         val romType = 0
         val s7 = 0
@@ -24,13 +26,21 @@ class Pif(private val n64: N64) {
         writeRamWord(0x24, word)
     }
 
-    fun setButtons(mask: Int) {
-        buttons = mask
+    fun setButtons(channel: Int, mask: Int) {
+        if (channel < 0 || channel >= CHANNELS) return
+        buttons[channel] = mask
     }
 
-    fun setStick(x: Int, y: Int) {
-        stickX = x.coerceIn(-80, 80)
-        stickY = y.coerceIn(-80, 80)
+    fun setStick(channel: Int, x: Int, y: Int) {
+        if (channel < 0 || channel >= CHANNELS) return
+        stickX[channel] = x.coerceIn(-80, 80)
+        stickY[channel] = y.coerceIn(-80, 80)
+    }
+
+    fun setInput(channel: Int, mask: Int, x: Int, y: Int, connected: Boolean) {
+        setButtons(channel, mask)
+        setStick(channel, x, y)
+        if (connected) present = present or (1 shl channel)
     }
 
     fun readRamWord(at: Int): Int =
@@ -133,12 +143,12 @@ class Pif(private val n64: N64) {
         val command = ram[txAt].toInt() and 0xFF
         if (command < 8) debugCommands[command]++
 
-        if (channel in 0..3) {
-            if (channel != 0) {
+        if (channel in 0 until CHANNELS) {
+            if (present and (1 shl channel) == 0) {
                 ram[txAt - 1] = ((ram[txAt - 1].toInt() and 0x3F) or 0x80).toByte()
                 return false
             }
-            return controller(command, rxAt, rx)
+            return controller(channel, command, rxAt, rx)
         }
 
         if (channel == 4) return eeprom(command, txAt, tx, rxAt, rx)
@@ -146,7 +156,11 @@ class Pif(private val n64: N64) {
         return false
     }
 
-    private fun controller(command: Int, rxAt: Int, rx: Int): Boolean {
+    private companion object {
+        const val CHANNELS = 4
+    }
+
+    private fun controller(channel: Int, command: Int, rxAt: Int, rx: Int): Boolean {
         when (command) {
             0x00, 0xFF -> {
                 if (rx < 3) return false
@@ -158,10 +172,10 @@ class Pif(private val n64: N64) {
 
             0x01 -> {
                 if (rx < 4) return false
-                ram[rxAt] = (buttons ushr 8).toByte()
-                ram[rxAt + 1] = buttons.toByte()
-                ram[rxAt + 2] = stickX.toByte()
-                ram[rxAt + 3] = stickY.toByte()
+                ram[rxAt] = (buttons[channel] ushr 8).toByte()
+                ram[rxAt + 1] = buttons[channel].toByte()
+                ram[rxAt + 2] = stickX[channel].toByte()
+                ram[rxAt + 3] = stickY[channel].toByte()
                 return true
             }
 

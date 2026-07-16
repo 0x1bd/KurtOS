@@ -1,7 +1,6 @@
 package kernel.drivers.usb
 
 import hal.BootInfo
-import hal.Clock
 import hal.RawMemory
 import kernel.memory.PageAllocator
 import kernel.memory.Region
@@ -467,6 +466,46 @@ class USBDevice(
 
     fun xinputStart(): ByteArray? = control(0xC1, REQUEST_XINPUT, 0x0100, 0, 20)
 
+    fun hidReportDescriptor(): ByteArray? {
+        if (interfaceClass != HID_CLASS) return null
+
+        val length = siblings.firstOrNull { it[0] == interfaceNumber }?.get(4) ?: 0
+        if (length <= 0) return null
+
+        return control(0x81, REQUEST_GET_DESCRIPTOR, DESCRIPTOR_HID_REPORT shl 8, interfaceNumber, length)
+    }
+
+    fun release() {
+        controlRing?.release()
+        inputRing?.release()
+        outputRing?.release()
+        bulkInRing?.release()
+        bulkOutRing?.release()
+
+        controlRing = null
+        inputRing = null
+        outputRing = null
+        bulkInRing = null
+        bulkOutRing = null
+
+        inputContext?.let { PageAllocator.free(it) }
+        deviceContext?.let { PageAllocator.free(it) }
+        buffer?.let { PageAllocator.free(it) }
+        inputBuffer?.let { PageAllocator.free(it) }
+        outputBuffer?.let { PageAllocator.free(it) }
+        bulkBuffer?.let { PageAllocator.free(it) }
+
+        inputContext = null
+        deviceContext = null
+        buffer = null
+        inputBuffer = null
+        outputBuffer = null
+        bulkBuffer = null
+
+        pending = 0UL
+        configured = false
+    }
+
     fun initSiblings() {
         for (setting in siblings) {
             val number = setting[0]
@@ -484,7 +523,6 @@ class USBDevice(
     }
 
     private var pending: ULong = 0UL
-    private var armedAt: ULong = 0UL
 
     fun rearm() {
         pending = 0UL
@@ -518,21 +556,13 @@ class USBDevice(
         val ring = inputRing ?: return false
         val data = inputBuffer ?: return false
 
-        if (pending != 0UL) {
-            if (Clock.uptimeMillis() - armedAt < REARM_MS) {
-                controller.ringDoorbell(slot, endpoint.dci)
-                return true
-            }
-
-            pending = 0UL
-        }
+        if (pending != 0UL) return true
 
         pending = ring.enqueue(
             BootInfo.toPhysical(data.address),
             endpoint.maxPacket.toUInt(),
             (TRB_NORMAL shl 10).toUInt() or INTERRUPT_ON_COMPLETION or INTERRUPT_ON_SHORT,
         )
-        armedAt = Clock.uptimeMillis()
 
         controller.ringDoorbell(slot, endpoint.dci)
         return true
@@ -848,6 +878,5 @@ class USBDevice(
         private const val BULK_ALIGN = 65536UL
 
         private const val RING_ENTRIES = 64
-        private const val REARM_MS = 250UL
     }
 }

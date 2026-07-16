@@ -101,11 +101,14 @@ enum class GamepadEvent { Connected, Disconnected }
 
 interface GamepadBackend {
     fun available(): Boolean
+    fun count(): Int
     fun status(): String
     fun refresh()
     fun pump(): GamepadEvent?
     fun poll()
-    fun isDown(button: Int): Boolean
+    fun isDown(player: Int, button: Int): Boolean
+    fun axis(player: Int, axis: Int): Int
+    fun connected(player: Int): Boolean
 }
 
 interface AudioBackend {
@@ -216,9 +219,14 @@ object Gamepad {
     private val disconnectListeners = mutableListOf<() -> Unit>()
 
     fun available(): Boolean = backend?.available() ?: false
+    fun count(): Int = backend?.count() ?: 0
     fun status(): String = backend?.status() ?: "unavailable"
     fun refresh() = backend?.refresh() ?: Unit
-    fun isDown(button: Int): Boolean = backend?.isDown(button) ?: false
+    fun isDown(button: Int): Boolean = isDown(0, button)
+    fun isDown(player: Int, button: Int): Boolean = backend?.isDown(player, button) ?: false
+    fun axis(axis: Int): Int = axis(0, axis)
+    fun axis(player: Int, axis: Int): Int = backend?.axis(player, axis) ?: 0
+    fun connected(player: Int): Boolean = backend?.connected(player) ?: false
 
     fun poll() {
         pump()

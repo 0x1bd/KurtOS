@@ -22,6 +22,7 @@ import kapi.Audio
 import kernel.drivers.Pci
 import kernel.drivers.usb.GamepadService
 import kernel.drivers.usb.USBService
+import kernel.drivers.usb.UsbLock
 import kernel.drivers.Keyboard
 import kernel.drivers.KeyboardLayout
 import kernel.fs.StorageService
@@ -222,11 +223,11 @@ object KernelShell {
 
             val index = argument?.toIntOrNull()
             if (index != null) {
-                USBService.detail(index).forEach { Console.println(it) }
+                UsbLock.withLock { USBService.detail(index) }.forEach { Console.println(it) }
                 return@register
             }
 
-            USBService.describe().forEach { Console.println(it) }
+            UsbLock.withLock { USBService.describe() }.forEach { Console.println(it) }
             Console.println("irq: ${USBService.interruptStatus()}")
             Console.println("gamepad: ${GamepadService.summary()}")
         }
@@ -238,11 +239,13 @@ object KernelShell {
 
             if (!GamepadService.available) return@register
 
-            Console.println(GamepadService.descriptor())
+            for (player in 0 until GamepadService.count) {
+                Console.println("p${player + 1}: ${GamepadService.descriptor(player)}")
+            }
             Console.println("press buttons; esc to stop")
             Input.drain()
 
-            val previous = BooleanArray(Pad.COUNT)
+            val previous = Array(GamepadService.count) { BooleanArray(Pad.COUNT) }
 
             while (true) {
                 Input.poll()
@@ -250,14 +253,16 @@ object KernelShell {
 
                 GamepadService.poll()
 
-                var changed = false
-                for (button in 0 until Pad.COUNT) {
-                    val down = GamepadService.isDown(button)
-                    if (down != previous[button]) changed = true
-                    previous[button] = down
-                }
+                for (player in previous.indices) {
+                    var changed = false
+                    for (button in 0 until Pad.COUNT) {
+                        val down = GamepadService.isDown(player, button)
+                        if (down != previous[player][button]) changed = true
+                        previous[player][button] = down
+                    }
 
-                if (changed) Console.println("  -> " + padState(previous))
+                    if (changed) Console.println("  p${player + 1} -> " + padState(previous[player]))
+                }
                 Time.idle()
             }
         }
@@ -278,7 +283,7 @@ object KernelShell {
             var lastCode = 0
 
             while (Time.uptimeMillis() < deadline) {
-                val length = USBService.report(index, buffer)
+                val length = UsbLock.withLock { USBService.report(index, buffer) }
 
                 if (length <= 0) {
                     failures++

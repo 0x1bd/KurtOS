@@ -4,12 +4,33 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="chore: update console icons">
+    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="fix: gc should use adaptive scheduler">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Home.kt" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Home.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/roms/kurtos-test.gb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/roms/kurtos-test.sfc" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/roms/legend_of_zelda_links_awakening_dx.gbc" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/roms/mario_kart_super_circuit.gba" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/roms/super_mario_bros_deluxe.gbc" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/roms/super_mario_land.gb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/roms/tetris.gb" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Player.kt" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Player.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/build.gradle.kts" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/build.gradle.kts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/WorkerPool.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/WorkerPool.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/Kapi.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/Kapi.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/Pad.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/Pad.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/emu/Emulator.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/emu/Emulator.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/KapiBackends.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/KapiBackends.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/Main.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/Main.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/console/BootScreen.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/console/BootScreen.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/Gamepad.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/Gamepad.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/GamepadService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/GamepadService.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/MassStorage.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/MassStorage.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/USBDevice.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/USBDevice.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/USBService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/USBService.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/Xhci.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/Xhci.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/XhciRing.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/usb/XhciRing.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/shellext/KernelShell.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/shellext/KernelShell.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/N64Emulator.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/N64Emulator.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/N64.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/N64.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/Pif.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/Pif.kt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -91,7 +112,7 @@
       <option name="presentableId" value="Default" />
       <updated>1784110690091</updated>
       <workItem from="1784118255606" duration="18419000" />
-      <workItem from="1784208115593" duration="11862000" />
+      <workItem from="1784208115593" duration="14713000" />
     </task>
     <task id="LOCAL-00001" summary="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard">
       <option name="closed" value="true" />
@@ -157,7 +178,15 @@
       <option name="project" value="LOCAL" />
       <updated>1784223633639</updated>
     </task>
-    <option name="localTasksCounter" value="9" />
+    <task id="LOCAL-00009" summary="fix: gc should use adaptive scheduler">
+      <option name="closed" value="true" />
+      <created>1784232908176</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1784232908176</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -172,7 +201,8 @@
     <MESSAGE value="feat: smp + multithreading" />
     <MESSAGE value="fix: multithread freeze fix&#10;TODO: GC dont work no more" />
     <MESSAGE value="chore: update console icons" />
-    <option name="LAST_COMMIT_MESSAGE" value="chore: update console icons" />
+    <MESSAGE value="fix: gc should use adaptive scheduler" />
+    <option name="LAST_COMMIT_MESSAGE" value="fix: gc should use adaptive scheduler" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

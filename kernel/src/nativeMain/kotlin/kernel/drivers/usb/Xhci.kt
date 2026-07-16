@@ -25,6 +25,8 @@ class Xhci(private val device: PciDevice) {
     var contextBytes = 32
         private set
 
+    val portCount: Int get() = ports
+
     private var contextArray: Region? = null
     private var scratchpad: Region? = null
 
@@ -390,6 +392,17 @@ class Xhci(private val device: PciDevice) {
         RawMemory.write32(doorbells + (slot * 4).toULong(), target.toUInt())
     }
 
+    fun disableSlot(slot: Int): Boolean {
+        val result = submitCommand(
+            0UL,
+            0u,
+            (TRB_DISABLE_SLOT shl 10).toUInt() or (slot.toUInt() shl 24),
+        ) ?: return false
+
+        RawMemory.write64(contextArrayAddress() + (slot * 8).toULong(), 0UL)
+        return ((result shr 24) and 0xFFu).toInt() == 1
+    }
+
     fun submitCommand(parameter: ULong, status: UInt, control: UInt): UInt? {
         val ring = commands ?: return null
 
@@ -511,6 +524,7 @@ class Xhci(private val device: PciDevice) {
         const val TRANSFER_EVENT = 32
 
         const val TRB_ENABLE_SLOT = 9
+        const val TRB_DISABLE_SLOT = 10
         const val TRB_ADDRESS_DEVICE = 11
         const val TRB_CONFIGURE_ENDPOINT = 12
         const val TRB_RESET_ENDPOINT = 14

@@ -26,4 +26,15 @@ object Pad {
     const val R3 = 20
 
     const val COUNT = 21
+
+    const val AXIS_LX = 0
+    const val AXIS_LY = 1
+    const val AXIS_RX = 2
+    const val AXIS_RY = 3
+    const val AXIS_LT = 4
+    const val AXIS_RT = 5
+
+    const val AXES = 6
+
+    const val MAX_PLAYERS = 4
 }

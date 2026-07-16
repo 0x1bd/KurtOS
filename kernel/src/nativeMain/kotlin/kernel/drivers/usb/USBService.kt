@@ -70,24 +70,59 @@ object USBService {
 
         notes.clear()
 
+        for (device in devices.toList()) detach(device)
+
         for (xhci in controllers) {
             xhci.powerPorts()
             discard(xhci)
 
-            for (port in xhci.scanPorts()) {
-                if (!xhci.connectChanged(port.number)) continue
-
-                devices.removeAll { it.controller === xhci && it.port == port.number }
-                xhci.clearPortChanges(port.number)
-            }
+            for (port in 1..xhci.portCount) xhci.clearPortChanges(port)
         }
-
-        devices.retainAll { it.controller.portStatus(it.port) and CONNECTED != 0u }
 
         for (xhci in controllers) enumerate(xhci)
 
         status = "${controllers.size} xhci controller(s), ${devices.size} device(s)"
         return true
+    }
+
+    fun handleChanges(): Boolean {
+        if (controllers.isEmpty()) return false
+
+        var found = false
+
+        for (xhci in controllers) {
+            for (port in 1..xhci.portCount) {
+                if (!xhci.connectChanged(port)) continue
+
+                found = true
+                xhci.clearPortChanges(port)
+
+                for (device in devices.toList()) {
+                    if (device.controller === xhci && device.port == port) detach(device)
+                }
+            }
+        }
+
+        for (device in devices.toList()) {
+            if (!connected(device)) {
+                detach(device)
+                found = true
+            }
+        }
+
+        if (!found) return false
+
+        for (xhci in controllers) enumerate(xhci)
+
+        status = "${controllers.size} xhci controller(s), ${devices.size} device(s)"
+        return true
+    }
+
+    private fun detach(device: USBDevice) {
+        devices.remove(device)
+        device.controller.disableSlot(device.slot)
+        device.release()
+        discard(device.controller)
     }
 
     private fun discard(xhci: Xhci) {
@@ -221,12 +256,16 @@ object USBService {
 
     fun changed(): Boolean {
         for (xhci in controllers) {
-            for (port in xhci.scanPorts()) {
-                if (xhci.connectChanged(port.number)) return true
+            for (port in 1..xhci.portCount) {
+                if (xhci.connectChanged(port)) return true
             }
         }
 
-        return devices.any { !connected(it) }
+        for (i in devices.indices) {
+            if (!connected(devices[i])) return true
+        }
+
+        return false
     }
 
     fun configurationOf(index: Int): ByteArray = devices.getOrNull(index)?.configBytes ?: ByteArray(0)

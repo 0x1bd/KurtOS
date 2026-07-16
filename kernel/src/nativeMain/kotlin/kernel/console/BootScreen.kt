@@ -173,8 +173,8 @@ object BootScreen {
             }
             if (event != null) deadline = now + AUTO_ADVANCE_MS
 
-            val a = GamepadService.isDown(Pad.A)
-            val start = GamepadService.isDown(Pad.START)
+            val a = GamepadService.isDown(0, Pad.A)
+            val start = GamepadService.isDown(0, Pad.START)
             if ((a && !previousA) || (start && !previousStart)) return
             previousA = a
             previousStart = start

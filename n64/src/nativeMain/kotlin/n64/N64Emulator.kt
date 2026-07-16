@@ -12,6 +12,7 @@ object N64Emulator : Emulator {
     override val system = "Nintendo 64"
     override val extensions = listOf(".z64", ".n64", ".v64")
     override val frameMicros = 16667uL
+    override val players = 4
 
     override fun load(image: ByteArray): EmulatorSession? {
         val console = N64(image)
@@ -31,7 +32,44 @@ object N64Emulator : Emulator {
         private var swapped = true
         override val frameChanged get() = swapped
 
-        override fun setButtons(buttons: Int) = console.setButtons(translate(buttons))
+        override fun setButtons(buttons: Int) = setInput(0, buttons, 0, 0)
+
+        override fun setInput(
+            player: Int,
+            buttons: Int,
+            stickX: Int,
+            stickY: Int,
+            rightX: Int,
+            rightY: Int,
+            connected: Boolean,
+        ) {
+            if (player < 0 || player >= 4) return
+
+            var value = translate(buttons)
+
+            if (rightX > C_THRESHOLD) value = value or N64_C_RIGHT
+            if (rightX < -C_THRESHOLD) value = value or N64_C_LEFT
+            if (rightY > C_THRESHOLD) value = value or N64_C_UP
+            if (rightY < -C_THRESHOLD) value = value or N64_C_DOWN
+
+            var x = if (stickX > -STICK_DEADZONE && stickX < STICK_DEADZONE) 0 else stickX * 80 / 32767
+            var y = if (stickY > -STICK_DEADZONE && stickY < STICK_DEADZONE) 0 else stickY * 80 / 32767
+
+            if (x == 0 && y == 0) {
+                x = when {
+                    buttons and kapi.emu.Button.LEFT != 0 -> -80
+                    buttons and kapi.emu.Button.RIGHT != 0 -> 80
+                    else -> 0
+                }
+                y = when {
+                    buttons and kapi.emu.Button.UP != 0 -> 80
+                    buttons and kapi.emu.Button.DOWN != 0 -> -80
+                    else -> 0
+                }
+            }
+
+            console.setInput(player, value, x, y, connected)
+        }
 
         override fun runFrame() {
             console.runFrame()
@@ -65,21 +103,12 @@ object N64Emulator : Emulator {
             if (buttons and kapi.emu.Button.X != 0) value = value or N64_C_DOWN
             if (buttons and kapi.emu.Button.Y != 0) value = value or N64_C_LEFT
 
-            val stickX = when {
-                buttons and kapi.emu.Button.LEFT != 0 -> -80
-                buttons and kapi.emu.Button.RIGHT != 0 -> 80
-                else -> 0
-            }
-            val stickY = when {
-                buttons and kapi.emu.Button.UP != 0 -> 80
-                buttons and kapi.emu.Button.DOWN != 0 -> -80
-                else -> 0
-            }
-            console.setStick(stickX, stickY)
-
             return value
         }
     }
+
+    private const val C_THRESHOLD = 16384
+    private const val STICK_DEADZONE = 4096
 
     private const val N64_A = 0x8000
     private const val N64_B = 0x4000

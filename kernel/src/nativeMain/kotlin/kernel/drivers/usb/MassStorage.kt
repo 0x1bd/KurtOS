@@ -26,53 +26,53 @@ class MassStorage(private val device: USBDevice) : BlockDevice {
 
     private val maxBlocks: Int get() = device.bulkTransferBytes / blockSize
 
-    fun initialize(): Boolean {
+    fun initialize(): Boolean = UsbLock.withLock {
         if (!device.configured) {
             status = "not configured (${device.configureError})"
-            return false
+            return@withLock false
         }
 
         device.maxLun()
 
         if (!inquiry()) {
             status = "inquiry failed"
-            return false
+            return@withLock false
         }
 
         if (!awaitReady()) {
             status = "unit not ready"
-            return false
+            return@withLock false
         }
 
         if (!readCapacity()) {
             status = "read capacity failed"
-            return false
+            return@withLock false
         }
 
         val mib = blockCount * blockSize.toULong() / (1024UL * 1024UL)
         status = "$vendor $product, $blockCount x $blockSize bytes ($mib MiB)"
 
-        return true
+        true
     }
 
     override fun read(lba: ULong, blocks: Int, into: ByteArray, offset: Int): Boolean =
-        transfer(lba, blocks, into, offset, READ_10)
+        UsbLock.withLock { transfer(lba, blocks, into, offset, READ_10) }
 
     override fun write(lba: ULong, blocks: Int, from: ByteArray, offset: Int): Boolean =
-        transfer(lba, blocks, from, offset, WRITE_10)
+        UsbLock.withLock { transfer(lba, blocks, from, offset, WRITE_10) }
 
-    override fun flush(): Boolean {
-        if (!cacheable) return true
+    override fun flush(): Boolean = UsbLock.withLock {
+        if (!cacheable) return@withLock true
 
         val command = ByteArray(10)
         command[0] = SYNCHRONIZE_CACHE.toByte()
 
-        if (transact(command, false, null, 0, 0) == GOOD) return true
+        if (transact(command, false, null, 0, 0) == GOOD) return@withLock true
 
         requestSense()
         cacheable = false
 
-        return true
+        true
     }
 
     private fun transfer(lba: ULong, blocks: Int, data: ByteArray, offset: Int, opcode: Int): Boolean {

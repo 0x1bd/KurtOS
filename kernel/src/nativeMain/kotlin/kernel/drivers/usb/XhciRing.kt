@@ -51,6 +51,8 @@ class XhciRing(private val region: Region, private val entries: Int, private val
 
     fun dequeuePointer(): ULong = physical + (index * TRB_BYTES).toULong()
 
+    fun release() = PageAllocator.free(region)
+
     companion object {
         const val TRB_BYTES = 16
         const val TRB_LINK = 6

@@ -129,6 +129,8 @@ object KernelFiles : FilesBackend {
 object KernelGamepad : GamepadBackend {
     override fun available(): Boolean = GamepadService.available
 
+    override fun count(): Int = GamepadService.count
+
     override fun status(): String = GamepadService.status
 
     override fun refresh() {
@@ -139,7 +141,11 @@ object KernelGamepad : GamepadBackend {
 
     override fun poll() = GamepadService.poll()
 
-    override fun isDown(button: Int): Boolean = GamepadService.isDown(button)
+    override fun isDown(player: Int, button: Int): Boolean = GamepadService.isDown(player, button)
+
+    override fun axis(player: Int, axis: Int): Int = GamepadService.axis(player, axis)
+
+    override fun connected(player: Int): Boolean = GamepadService.connected(player)
 }
 
 object KernelAudio : AudioBackend {

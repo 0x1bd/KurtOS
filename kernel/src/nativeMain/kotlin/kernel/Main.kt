@@ -65,6 +65,7 @@ fun main() {
     GamepadService.initialize()
     StorageService.initialize()
     USBService.armInterrupts(Idt.VECTOR_USB, Apic.localId())
+    InputService.start()
 
     Gamepad.onConnect {
         val label = GamepadService.status.substringBefore(" (")

@@ -42,6 +42,19 @@ interface EmulatorSession {
         get() = true
 
     fun setButtons(buttons: Int)
+
+    fun setInput(
+        player: Int,
+        buttons: Int,
+        stickX: Int,
+        stickY: Int,
+        rightX: Int = 0,
+        rightY: Int = 0,
+        connected: Boolean = true,
+    ) {
+        if (player == 0) setButtons(buttons)
+    }
+
     fun runFrame()
     fun drainAudio()
     fun describe(): String?
@@ -59,6 +72,8 @@ interface Emulator {
     val system: String
     val extensions: List<String>
     val frameMicros: ULong
+    val players: Int
+        get() = 1
 
     fun load(image: ByteArray): EmulatorSession?
 }
