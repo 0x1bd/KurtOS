@@ -23,6 +23,10 @@ object Keyboard {
 
     var received = 0
         private set
+    var fromRing = 0L
+        private set
+    var fromPoll = 0L
+        private set
 
     val layoutName: String get() = layout.name
 
@@ -36,11 +40,7 @@ object Keyboard {
         while (true) {
             val raw = Arch.nextScancode()
             if (raw < 0) break
-            handle(raw and 0xFF)
-        }
-        while (true) {
-            val raw = I8042.pollScancode()
-            if (raw < 0) break
+            fromRing++
             handle(raw and 0xFF)
         }
     }

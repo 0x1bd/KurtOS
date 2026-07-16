@@ -89,13 +89,15 @@ private fun startInterrupts() {
     Pic.disable()
 
     Acpi.initialize()
-    Apic.initialize()
 
     Cpu.requestMaxPerformance()
+
+    Apic.initialize()
     PerfMonitor.initialize()
 
     if (I8042.initialize()) {
         IoApic.route(IRQ_KEYBOARD, Idt.VECTOR_KEYBOARD, Apic.localId())
+        hal.Arch.enableKeyboardPoll()
     }
 
     Cpu.enableInterrupts()

@@ -52,6 +52,7 @@ interface InputBackend {
     fun characterFor(code: UShort): Char?
     fun drain()
     fun status(): String
+    fun diagnostics(): String = ""
 }
 
 data class DateTime(
@@ -154,6 +155,7 @@ object Input {
     fun nextEvent(): KeyEvent? = backend?.nextEvent()
     fun characterFor(code: UShort): Char? = backend?.characterFor(code)
     fun status(): String = backend?.status() ?: "unavailable"
+    fun diagnostics(): String = backend?.diagnostics() ?: ""
 
     fun drain() {
         backend?.drain()

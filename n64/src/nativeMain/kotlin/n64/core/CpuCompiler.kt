@@ -19,6 +19,8 @@ const val CTX_DISPATCH = 120
 const val CTX_RETURN = 128
 const val CTX_LINKSRC = 136
 const val CTX_INSTRS = 144
+const val CTX_JRTAB = 152
+const val CTX_EXEC = 160
 
 const val DELAY_NONE = 0
 const val DELAY_COND_IMM = 1
@@ -56,6 +58,7 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
     private var delayKind = DELAY_NONE
     private var delayTarget = 0
     private val exitJumps = ArrayList<Int>()
+    private val calloutExits = ArrayList<Int>()
     private val bails = ArrayList<CpuBail>()
     private var currentBail: CpuBail? = null
     private var currentVaddr = 0
@@ -83,12 +86,15 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
         return ret
     }
 
+    var dispatch = false
+
     fun compile(vbase: Int, ops: IntArray, count: Int, endsWithBranch: Boolean): Int {
         this.vbase = vbase
         cycles = 0
         flushed = 0
         delayKind = DELAY_NONE
         exitJumps.clear()
+        calloutExits.clear()
         bails.clear()
         asm.reset()
 
@@ -152,9 +158,25 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
             exitJumps.add(asm.jmp())
         }
 
+        if (calloutExits.isNotEmpty()) {
+            for (at in calloutExits) asm.patch(at)
+            asm.movRI32(RAX, 0)
+            exitJumps.add(asm.jmp())
+        }
+
         for (at in exitJumps) asm.patch(at)
         asm.jmpMem(RBX, CTX_RETURN)
         return asm.len
+    }
+
+    private fun callout(op: Int) {
+        flush()
+        asm.movRI32(RDI, op)
+        asm.movRI32(RSI, currentVaddr)
+        asm.movRM(RAX, RBX, CTX_EXEC, 1)
+        asm.callReg(RAX)
+        asm.testRR(RAX, RAX, 0)
+        calloutExits.add(asm.jcc(CC_NE))
     }
 
     private fun beginOp(i: Int) {
@@ -184,6 +206,28 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
         if (pcReg >= 0) {
             asm.movMR(RBX, CTX_PC, pcReg, 1)
             asm.movMI(RBX, CTX_LINKSRC, 0)
+            if (dispatch) {
+                asm.movsxdRR(RAX, pcReg)
+                asm.aluRR(ALU_CMP, RAX, pcReg, 1)
+                val notCanonical = asm.jcc(CC_NE)
+                asm.movRR(RAX, pcReg, 0)
+                asm.aluRI(ALU_AND, RAX, 0xE0000003.toInt(), 0)
+                asm.aluRI(ALU_CMP, RAX, 0x80000000.toInt(), 0)
+                val notKseg0 = asm.jcc(CC_NE)
+                asm.movRR(RAX, pcReg, 0)
+                asm.aluRI(ALU_AND, RAX, 0x1FFFFFFF, 0)
+                asm.aluRI(ALU_CMP, RAX, RDRAM_SIZE, 0)
+                val outOfRange = asm.jcc(CC_AE)
+                asm.movRM(RDX, RBX, CTX_JRTAB, 1)
+                asm.movRMIndexed(RAX, RDX, RAX, 2, 0, 1)
+                asm.testRR(RAX, RAX, 1)
+                val noBlock = asm.jcc(CC_E)
+                asm.jmpReg(RAX)
+                asm.patch(notCanonical)
+                asm.patch(notKseg0)
+                asm.patch(outOfRange)
+                asm.patch(noBlock)
+            }
             asm.movRI32(RAX, 0)
             exitJumps.add(asm.jmp())
             return
@@ -442,6 +486,8 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
 
             55 -> emitLd(rs, rt, imm)
             63 -> emitSd(rs, rt, imm)
+
+            17, 49, 53, 57, 61 -> callout(op)
         }
     }
 

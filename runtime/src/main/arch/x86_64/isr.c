@@ -50,6 +50,26 @@ static void eoi(void) {
     *(volatile uint32_t *)(kurtos_lapic_base + 0xB0) = 0;
 }
 
+static void kbd_push(uint8_t scancode) {
+    uint32_t tail = ring_tail;
+    uint32_t next = (tail + 1) & RING_MASK;
+    if (next == ring_head) {
+        ring_dropped++;
+    } else {
+        ring_buf[tail] = scancode;
+        ring_tail = next;
+    }
+}
+
+static void kbd_poll(void) {
+    for (int i = 0; i < 4; i++) {
+        uint8_t status = inb(0x64);
+        if (!(status & 0x01)) break;
+        uint8_t data = inb(0x60);
+        if (!(status & 0x20)) kbd_push(data);
+    }
+}
+
 static int panicking;
 
 void isr_dispatch(uint64_t *frame) {
@@ -67,19 +87,16 @@ void isr_dispatch(uint64_t *frame) {
     switch (vector) {
         case VECTOR_TIMER:
             kurtos_ticks++;
+            if (kurtos_kbd_poll) kbd_poll();
             break;
 
         case VECTOR_KEYBOARD: {
-            uint8_t scancode = inb(0x60);
+            uint8_t status = inb(0x64);
             kbd_events++;
-            uint32_t tail = ring_tail;
-            uint32_t next = (tail + 1) & RING_MASK;
-            if (next == ring_head) {
-                ring_dropped++;
-            } else {
-                ring_buf[tail] = scancode;
-                ring_tail = next;
-            }
+            if (!(status & 0x01)) break;
+            uint8_t scancode = inb(0x60);
+            if (status & 0x20) break;
+            kbd_push(scancode);
             break;
         }
 

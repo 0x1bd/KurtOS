@@ -24,6 +24,7 @@ const val CPU_MAX_BLOCK = 64
 const val CLS_OP = 0
 const val CLS_BRANCH = 1
 const val CLS_END = 2
+const val CLS_CALLOUT = 3
 
 typealias CodeFn = CPointer<CFunction<(CPointer<LongVar>?) -> Int>>
 
@@ -45,8 +46,10 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
     private val lutRPin = cpu.tlbLutR.pin()
     private val lutWPin = cpu.tlbLutW.pin()
     private val pagesPin = pageFlags.pin()
+    private val jrTable = LongArray(RDRAM_SIZE ushr 2)
+    private val jrPin = jrTable.pin()
 
-    val ctx: CPointer<LongVar> = nativeHeap.allocArray(20)
+    val ctx: CPointer<LongVar> = nativeHeap.allocArray(22)
 
     private val compiler = CpuCompiler(cpuCallbacks())
     private val ops = IntArray(CPU_MAX_BLOCK)
@@ -86,6 +89,9 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
         ctx[CTX_LUTR / 8] = lutRPin.addressOf(0).toLong()
         ctx[CTX_LUTW / 8] = lutWPin.addressOf(0).toLong()
         ctx[CTX_PAGES / 8] = pagesPin.addressOf(0).toLong()
+        ctx[CTX_JRTAB / 8] = jrPin.addressOf(0).toLong()
+        ctx[CTX_EXEC / 8] = cpuExecPtr()
+        compiler.dispatch = !nochain
         installTrampoline()
     }
 
@@ -101,6 +107,7 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
         table.fill(null)
         for (list in pageBlocks) list.clear()
         pageFlags.fill(0)
+        jrTable.fill(0L)
         for (list in pageLinkSlots) list.clear()
         for (list in pageLinkOrig) list.clear()
         linkCount = 0
@@ -135,6 +142,7 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
         for (block in list) {
             val index = block.physStart ushr 2
             if (table[index] === block) table[index] = null
+            jrTable[index] = 0L
         }
         list.clear()
         pageFlags[page] = 0
@@ -168,6 +176,10 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
         val hook = onUnit
         val trampoline = this.trampoline!!
         val chaining = hook == null && !nochain
+        if (chaining != compiler.dispatch) {
+            compiler.dispatch = chaining
+            flush()
+        }
         var pendingLink = 0L
         while (!cpu.frameDone && cpu.count < cpu.frameDeadline) {
             if (cpu.branchState != STATE_STEP) {
@@ -292,6 +304,7 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
 
         val block = CpuBlock(phys, vbase, n, entry)
         table[phys ushr 2] = block
+        if (entry != 0L && vbase == (phys or 0x80000000.toInt())) jrTable[phys ushr 2] = entry
         val page = phys ushr CPU_PAGE_SHIFT
         pageBlocks[page].add(block)
         pageFlags[page] = 1
@@ -344,6 +357,10 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
         40, 41, 42, 43, 46, 47,
         55, 63,
         -> CLS_OP
+
+        17 -> if (((op ushr 21) and 0x1F) == 8) CLS_END else CLS_CALLOUT
+
+        49, 53, 57, 61 -> CLS_CALLOUT
 
         else -> CLS_END
     }

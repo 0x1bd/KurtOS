@@ -248,6 +248,15 @@ class CPU(private val n64: N64) {
         }
     }
 
+    internal fun dynExec(op: Int, vaddr: Int): Int {
+        pc = vaddr.toLong()
+        execute(op)
+        gpr[0] = 0
+        if (branchState == STATE_STEP && pc == vaddr.toLong()) return 0
+        if (branchState == STATE_EXCEPTION) branchState = STATE_STEP
+        return 1
+    }
+
     fun step() {
         gpr[0] = 0
 

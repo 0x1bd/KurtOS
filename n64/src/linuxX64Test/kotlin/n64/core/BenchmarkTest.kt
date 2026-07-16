@@ -7,7 +7,14 @@ import kotlin.time.TimeSource
 class BenchmarkTest {
     private fun measure(console: N64, label: String, warmup: Int, frames: Int): Double {
         for (frame in 0 until warmup) {
-            console.setButtons(if (frame > 200 && (frame / 30) % 2 == 0) 0x1000 else 0)
+            val buttons = when (frame) {
+                in 250..252 -> 0x1000
+                in 500..502 -> 0x8000
+                in 560..562 -> 0x8000
+                in 620..622 -> 0x8000
+                else -> 0
+            }
+            console.setButtons(buttons)
             console.runFrame()
         }
         console.setButtons(0)

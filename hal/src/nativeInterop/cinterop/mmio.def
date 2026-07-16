@@ -199,6 +199,7 @@ typedef struct {
 extern kurtos_boot_info_t kurtos_boot_info;
 extern uint64_t kurtos_lapic_base;
 extern uint64_t kurtos_ticks;
+extern uint64_t kurtos_kbd_poll;
 
 extern int kbd_ring_pop(void);
 extern uint64_t kbd_ring_overflows(void);
@@ -232,5 +233,6 @@ static inline uint64_t boot_memmap_type(uint64_t i) { return kurtos_boot_info.me
 
 static inline uint64_t timer_ticks(void) { return kurtos_ticks; }
 static inline void lapic_base_set(uint64_t base) { kurtos_lapic_base = base; }
+static inline void kbd_poll_set(uint64_t on) { kurtos_kbd_poll = on; }
 
 static inline uint64_t isr_stub(uint64_t vector) { return (uint64_t)isr_stub_table[vector]; }

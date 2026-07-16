@@ -18,6 +18,7 @@ extern uint8_t __tbss_end[];
 kurtos_boot_info_t kurtos_boot_info;
 uint64_t kurtos_lapic_base;
 uint64_t kurtos_ticks;
+uint64_t kurtos_kbd_poll;
 
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(2);

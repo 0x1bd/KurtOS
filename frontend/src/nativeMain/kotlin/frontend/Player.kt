@@ -36,6 +36,7 @@ object Player {
         var fullscreen = false
         var repaint = true
         var clock = ""
+        statsWidth = 0
 
         var written = session.saveVersion()
         var seen = written
@@ -64,16 +65,30 @@ object Player {
         var audioCycles = 0UL
         var inputCycles = 0UL
         var totalCycles = 0UL
+        var worstCycles = 0UL
+        var sliverCycles = 0UL
+        var idleCycles = 0UL
+        var loopEnd = 0UL
         var winFrames = 0
         var mhz = 0
+        var vips = 0
+        var clockRtc0 = 0L
+        var clockUp0 = 0UL
+        var clockTsc0 = 0UL
+        var tickSkew = 0
+        var tscSkew = 0
         var emuMs = 0
         var presentMs = 0
         var audioMs = 0
         var inputMs = 0
         var otherMs = 0
+        var worstMs = 0
+        var sliverMs = 0
+        var idleMs = 0
 
         while (true) {
             val iterStart = Time.cycles()
+            if (loopEnd != 0UL) sliverCycles += iterStart - loopEnd
             val inputStart = Time.cycles()
             Input.poll()
 
@@ -117,6 +132,7 @@ object Player {
             if (repaint) {
                 repaint = false
                 clock = ""
+                statsWidth = 0
                 surface.clear(BACKDROP)
                 screen.layout(surface, fullscreen, session.video)
                 surface.presentAll()
@@ -150,7 +166,7 @@ object Player {
 
             if (Settings.showFps) {
                 if (session.frameChanged) counted++
-                drawStats(chrome, rate, mhz, emuMs, presentMs, audioMs, inputMs, otherMs, fullscreen)
+                drawStats(chrome, rate, vips, mhz, tickSkew, tscSkew, emuMs, presentMs, audioMs, inputMs, otherMs, worstMs, sliverMs, idleMs, fullscreen)
             }
 
             surface.present()
@@ -173,12 +189,16 @@ object Player {
 
             if (frames % GC_INTERVAL_FRAMES == 0) Sys.collectGarbage()
 
-            totalCycles += Time.cycles() - iterStart
+            val iterCycles = Time.cycles() - iterStart
+            totalCycles += iterCycles
+            if (iterCycles > worstCycles) worstCycles = iterCycles
+            loopEnd = iterStart + iterCycles
 
             if (Settings.showFps) {
                 val tock = Time.uptimeMillis()
                 if (tock - measured >= FPS_WINDOW_MS) {
                     rate = (counted.toULong() * 1000UL / (tock - measured)).toInt()
+                    vips = (winFrames.toULong() * 1000UL / (tock - measured)).toInt()
                     val perMs = Sys.tscMhz().toULong() * 1000UL
                     if (perMs > 0UL && winFrames > 0) {
                         val f = winFrames.toULong()
@@ -189,8 +209,28 @@ object Player {
                         val accounted = emuCycles + presentCycles + audioCycles + inputCycles
                         val other = if (totalCycles > accounted) totalCycles - accounted else 0UL
                         otherMs = (other / f / perMs).toInt()
+                        worstMs = (worstCycles / perMs).toInt()
+                        sliverMs = (sliverCycles / f / perMs).toInt()
+                        idleMs = (idleCycles / f / perMs).toInt()
                     }
                     mhz = Sys.cpuMhz()
+                    val epoch = Time.epochSeconds()
+                    if (epoch != null) {
+                        if (clockRtc0 == 0L) {
+                            clockRtc0 = epoch
+                            clockUp0 = tock
+                            clockTsc0 = Time.cycles()
+                        } else {
+                            val seconds = (epoch - clockRtc0).toULong()
+                            if (seconds >= 10UL) {
+                                tickSkew = ((tock - clockUp0) / (seconds * 10UL)).toInt()
+                                val tsc = Sys.tscMhz().toULong()
+                                if (tsc > 0UL) {
+                                    tscSkew = ((Time.cycles() - clockTsc0) / (seconds * tsc * 10_000UL)).toInt()
+                                }
+                            }
+                        }
+                    }
                     counted = 0
                     measured = tock
                     emuCycles = 0UL
@@ -198,16 +238,21 @@ object Player {
                     audioCycles = 0UL
                     inputCycles = 0UL
                     totalCycles = 0UL
+                    worstCycles = 0UL
+                    sliverCycles = 0UL
+                    idleCycles = 0UL
                     winFrames = 0
                 }
             }
 
             next += session.frameMicros ?: game.emulator.frameMicros
             val now = Time.uptimeMillis() * MICROS_PER_MILLI
-            if (now > next) {
-                next = now
-            } else {
+            if (now > next + MAX_DEBT_MICROS) {
+                next = now - MAX_DEBT_MICROS
+            } else if (now < next) {
+                val idleStart = Time.cycles()
                 while (Time.uptimeMillis() * MICROS_PER_MILLI < next) Time.idle()
+                idleCycles += Time.cycles() - idleStart
             }
         }
 
@@ -226,19 +271,26 @@ object Player {
     private fun drawStats(
         canvas: Canvas,
         rate: Int,
+        vips: Int,
         mhz: Int,
+        tickSkew: Int,
+        tscSkew: Int,
         emuMs: Int,
         presentMs: Int,
         audioMs: Int,
         inputMs: Int,
         otherMs: Int,
+        worstMs: Int,
+        sliverMs: Int,
+        idleMs: Int,
         fullscreen: Boolean,
     ) {
         val lines = arrayOf(
-            "$rate FPS",
-            "$mhz MHZ",
-            "E$emuMs P$presentMs",
-            "A$audioMs I$inputMs O$otherMs",
+            "$rate FPS V$vips",
+            "$mhz MHZ T$tickSkew C$tscSkew",
+            "E$emuMs P$presentMs W$worstMs",
+            "A$audioMs I$inputMs O$otherMs S$sliverMs Z$idleMs",
+            Input.diagnostics(),
         )
 
         var width = 0
@@ -246,6 +298,8 @@ object Player {
             val w = canvas.textWidth(line, FPS_SCALE)
             if (w > width) width = w
         }
+        if (width > statsWidth) statsWidth = width
+        width = statsWidth
 
         val lineHeight = canvas.glyphHeight * FPS_SCALE + 4
         val x = canvas.width - width - FPS_MARGIN * 2 - 12
@@ -327,6 +381,8 @@ object Player {
 
         return screen
     }
+
+    private var statsWidth = 0
 
     private var sticksPrevious = false
 
@@ -419,8 +475,9 @@ object Player {
     }
 
     private const val MICROS_PER_MILLI = 1000UL
+    private const val MAX_DEBT_MICROS = 60000UL
 
-    private const val GC_INTERVAL_FRAMES = 60
+    private const val GC_INTERVAL_FRAMES = 600
 
     private const val SAVE_POLL_MS = 2000UL
     private const val MAX_SAVE_BYTES = 262144u

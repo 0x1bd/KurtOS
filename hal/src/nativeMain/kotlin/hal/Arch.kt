@@ -3,6 +3,7 @@ package hal
 import kotlinx.cinterop.ExperimentalForeignApi
 import mmio.isr_stub
 import mmio.kbd_irq_count
+import mmio.kbd_poll_set
 import mmio.kbd_ring_overflows
 import mmio.kbd_ring_pop
 import mmio.lapic_base_set
@@ -28,6 +29,8 @@ object Arch {
     fun ticks(): ULong = timer_ticks()
 
     fun nextScancode(): Int = kbd_ring_pop()
+
+    fun enableKeyboardPoll() = kbd_poll_set(1u)
 
     fun droppedScancodes(): ULong = kbd_ring_overflows()
 

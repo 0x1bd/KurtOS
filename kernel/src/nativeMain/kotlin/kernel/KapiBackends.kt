@@ -58,6 +58,9 @@ object KernelInput : InputBackend {
 
     override fun status(): String =
         if (kernel.drivers.I8042.present) "ps/2 keyboard" else "no keyboard"
+
+    override fun diagnostics(): String =
+        "K${hal.Arch.keyboardInterrupts()} R${Keyboard.fromRing} P${Keyboard.fromPoll} X${hal.Arch.droppedScancodes()}"
 }
 
 object KernelTime : TimeBackend {

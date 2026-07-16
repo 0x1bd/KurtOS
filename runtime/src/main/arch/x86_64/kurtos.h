@@ -40,6 +40,7 @@ extern kurtos_boot_info_t kurtos_boot_info;
 
 extern uint64_t kurtos_lapic_base;
 extern uint64_t kurtos_ticks;
+extern uint64_t kurtos_kbd_poll;
 
 void debug_print(const char *msg);
 __attribute__((noreturn)) void hcf(void);
