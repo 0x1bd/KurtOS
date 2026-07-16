@@ -1,6 +1,6 @@
 package n64.core
 
-import kotlin.concurrent.AtomicInt
+import kotlin.concurrent.AtomicIntArray
 import kotlin.concurrent.Volatile
 import kotlin.native.concurrent.ObsoleteWorkersApi
 import kotlin.native.concurrent.Worker
@@ -16,7 +16,7 @@ fun interface PoolJob {
     fun run(lane: Int, lanes: Int)
 }
 
-@OptIn(ObsoleteWorkersApi::class, ExperimentalForeignApi::class)
+@OptIn(ObsoleteWorkersApi::class, ExperimentalForeignApi::class, ExperimentalStdlibApi::class)
 class WorkerPool private constructor(private val extra: Int) {
     val lanes = extra + 1
 
@@ -24,10 +24,11 @@ class WorkerPool private constructor(private val extra: Int) {
     private var job: PoolJob? = null
 
     @Volatile
-    private var failure: Throwable? = null
+    private var broken = false
 
-    private val seq = AtomicInt(0)
-    private val done = AtomicInt(0)
+    private var epoch = 0
+    private val jobSeq = AtomicIntArray(extra)
+    private val ackSeq = AtomicIntArray(extra)
 
     init {
         for (index in 0 until extra) {
@@ -37,11 +38,11 @@ class WorkerPool private constructor(private val extra: Int) {
     }
 
     private fun loop(lane: Int) {
-        var seen = 0
+        val slot = lane - 1
         var idle = 0L
         while (true) {
-            val current = seq.value
-            if (current == seen) {
+            val want = jobSeq[slot]
+            if (want == ackSeq[slot]) {
                 idle++
                 if (idle >= SLEEP_AFTER) {
                     usleep(1000u)
@@ -50,38 +51,43 @@ class WorkerPool private constructor(private val extra: Int) {
                 }
                 continue
             }
-            seen = current
             idle = 0
             val fn = job
             if (fn != null) {
                 try {
                     fn.run(lane, lanes)
                 } catch (t: Throwable) {
-                    failure = t
+                    println("pool: lane $lane failed: ${t.message ?: t::class.simpleName}")
                 }
             }
-            done.incrementAndGet()
+            ackSeq[slot] = want
         }
     }
 
     fun run(fn: PoolJob) {
-        job = fn
-        done.value = 0
-        seq.incrementAndGet()
-        fn.run(0, lanes)
-        var waited = 0L
-        while (done.value != extra) {
-            waited++
-            if (waited >= YIELD_AFTER) sched_yield()
-            if (waited >= JOIN_LIMIT) {
-                job = null
-                throw IllegalStateException("worker pool join stalled: ${done.value}/$extra lanes finished")
-            }
+        if (broken) {
+            for (lane in 0 until lanes) fn.run(lane, lanes)
+            return
         }
-        job = null
-        failure?.let {
-            failure = null
-            throw it
+
+        job = fn
+        epoch++
+        for (slot in 0 until extra) jobSeq[slot] = epoch
+
+        fn.run(0, lanes)
+
+        for (slot in 0 until extra) {
+            var waited = 0L
+            while (ackSeq[slot] != epoch) {
+                waited++
+                if (waited >= YIELD_AFTER) sched_yield()
+                if (waited >= JOIN_LIMIT) {
+                    broken = true
+                    println("pool: lane ${slot + 1} unresponsive, rendering inline from now on")
+                    fn.run(slot + 1, lanes)
+                    break
+                }
+            }
         }
     }
 

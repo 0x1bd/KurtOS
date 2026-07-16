@@ -9,7 +9,7 @@ kotlin {
                 freeCompilerArgs = freeCompilerArgs + listOf(
                     "-Xbinary=gc=stwms",
                     "-Xbinary=gcMarkSingleThreaded=true",
-                    "-Xbinary=gcSchedulerType=manual",
+                    "-Xbinary=gcSchedulerType=adaptive",
                 )
                 freeCompilerArgs = freeCompilerArgs + if (buildType.name == "RELEASE") "-opt" else "-g"
             }

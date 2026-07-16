@@ -4,16 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="feat: smp + multithreading">
+    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="chore: update console icons">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/arch/Smp.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/arch/Smp.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Home.kt" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Home.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Player.kt" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Player.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/build.gradle.kts" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/build.gradle.kts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/WorkerPool.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/WorkerPool.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/runtime/src/main/abi/kotlin_native_stubs.def" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/abi/kotlin_native_stubs.def" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/runtime/src/main/abi/posix.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/abi/posix.c" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/isr.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/isr.c" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/smp.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/smp.c" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/threads.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/threads.c" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/runtime/src/main/lib/stdio.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/lib/stdio.c" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -95,7 +91,7 @@
       <option name="presentableId" value="Default" />
       <updated>1784110690091</updated>
       <workItem from="1784118255606" duration="18419000" />
-      <workItem from="1784208115593" duration="8897000" />
+      <workItem from="1784208115593" duration="11862000" />
     </task>
     <task id="LOCAL-00001" summary="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard">
       <option name="closed" value="true" />
@@ -145,7 +141,23 @@
       <option name="project" value="LOCAL" />
       <updated>1784214000933</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="fix: multithread freeze fix&#10;TODO: GC dont work no more">
+      <option name="closed" value="true" />
+      <created>1784222304209</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1784222304209</updated>
+    </task>
+    <task id="LOCAL-00008" summary="chore: update console icons">
+      <option name="closed" value="true" />
+      <created>1784223633639</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1784223633639</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -158,7 +170,9 @@
     <MESSAGE value="fix: text rendering" />
     <MESSAGE value="fix: blending of tirangles" />
     <MESSAGE value="feat: smp + multithreading" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: smp + multithreading" />
+    <MESSAGE value="fix: multithread freeze fix&#10;TODO: GC dont work no more" />
+    <MESSAGE value="chore: update console icons" />
+    <option name="LAST_COMMIT_MESSAGE" value="chore: update console icons" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

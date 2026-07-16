@@ -187,8 +187,6 @@ object Player {
                 seen = version
             }
 
-            if (frames % GC_INTERVAL_FRAMES == 0) Sys.collectGarbage()
-
             val iterCycles = Time.cycles() - iterStart
             totalCycles += iterCycles
             if (iterCycles > worstCycles) worstCycles = iterCycles
@@ -476,8 +474,6 @@ object Player {
 
     private const val MICROS_PER_MILLI = 1000UL
     private const val MAX_DEBT_MICROS = 60000UL
-
-    private const val GC_INTERVAL_FRAMES = 600
 
     private const val SAVE_POLL_MS = 2000UL
     private const val MAX_SAVE_BYTES = 262144u

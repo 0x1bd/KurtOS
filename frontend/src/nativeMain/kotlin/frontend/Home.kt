@@ -224,7 +224,11 @@ object Home {
     }
 
     private fun play(surface: Surface, game: Game) {
-        val failure = Player.play(surface, game)
+        val failure = try {
+            Player.play(surface, game)
+        } catch (t: Throwable) {
+            "crashed: ${t.message ?: t::class.simpleName}"
+        }
 
         if (failure != null) Sys.toast(game.name.uppercase(), failure)
     }
