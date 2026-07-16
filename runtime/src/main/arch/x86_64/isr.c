@@ -9,6 +9,7 @@
 #define RING_MASK (RING_CAPACITY - 1)
 
 extern void kernel_panic(uint64_t frame);
+extern int kthread_on_ap(void);
 
 static volatile uint32_t ring_head;
 static volatile uint32_t ring_tail;
@@ -76,6 +77,25 @@ void isr_dispatch(uint64_t *frame) {
     uint64_t vector = frame[15];
 
     if (vector < 32) {
+        if (kthread_on_ap()) {
+            debug_print("\n[smp] fault on ap, core halted: vector ");
+            char digits[3];
+            digits[0] = '0' + (char)(vector / 10);
+            digits[1] = '0' + (char)(vector % 10);
+            digits[2] = 0;
+            debug_print(digits);
+            debug_print(" rip ");
+            uint64_t rip = frame[17];
+            char hex[17];
+            for (int i = 15; i >= 0; i--) {
+                hex[i] = "0123456789abcdef"[rip & 0xF];
+                rip >>= 4;
+            }
+            hex[16] = 0;
+            debug_print(hex);
+            debug_print("\n");
+            hcf();
+        }
         if (!panicking) {
             panicking = 1;
             kernel_panic((uint64_t)frame);

@@ -10,6 +10,7 @@ import platform.posix._SC_NPROCESSORS_ONLN
 import platform.posix.getenv
 import platform.posix.sched_yield
 import platform.posix.sysconf
+import platform.posix.usleep
 
 fun interface PoolJob {
     fun run(lane: Int, lanes: Int)
@@ -37,13 +38,15 @@ class WorkerPool private constructor(private val extra: Int) {
 
     private fun loop(lane: Int) {
         var seen = 0
-        var idle = 0
+        var idle = 0L
         while (true) {
             val current = seq.value
             if (current == seen) {
-                if (++idle >= SPIN_LIMIT) {
+                idle++
+                if (idle >= SLEEP_AFTER) {
+                    usleep(1000u)
+                } else if (idle % SPIN_HOT == 0L) {
                     sched_yield()
-                    idle = 0
                 }
                 continue
             }
@@ -66,7 +69,14 @@ class WorkerPool private constructor(private val extra: Int) {
         done.value = 0
         seq.incrementAndGet()
         fn.run(0, lanes)
+        var waited = 0L
         while (done.value != extra) {
+            waited++
+            if (waited >= YIELD_AFTER) sched_yield()
+            if (waited >= JOIN_LIMIT) {
+                job = null
+                throw IllegalStateException("worker pool join stalled: ${done.value}/$extra lanes finished")
+            }
         }
         job = null
         failure?.let {
@@ -76,7 +86,10 @@ class WorkerPool private constructor(private val extra: Int) {
     }
 
     companion object {
-        private const val SPIN_LIMIT = 2000
+        private const val SPIN_HOT = 2000L
+        private const val SLEEP_AFTER = 2_000_000L
+        private const val YIELD_AFTER = 4_000_000L
+        private const val JOIN_LIMIT = YIELD_AFTER + 10_000L
         private const val MAX_EXTRA = 3
 
         val shared: WorkerPool? by lazy {

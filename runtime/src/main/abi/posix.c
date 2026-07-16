@@ -22,6 +22,10 @@ void kthread_exit(void *retval);
 
 typedef struct {
     volatile uint64_t locked;
+    volatile uint64_t owner;
+    volatile uint64_t count;
+    volatile uint64_t lock_ra;
+    volatile uint64_t unlock_ra;
 } kmutex_t;
 
 typedef struct {
@@ -35,6 +39,15 @@ static uint64_t now_nanos(void) {
 static void relax(void) {
     if (kthread_on_ap()) {
         __asm__ volatile("pause");
+    } else {
+        kthread_yield();
+    }
+}
+
+static void backoff_pause(uint64_t *backoff) {
+    if (kthread_on_ap()) {
+        for (uint64_t i = 0; i < *backoff; i++) __asm__ volatile("pause");
+        if (*backoff < 8192) *backoff <<= 1;
     } else {
         kthread_yield();
     }
@@ -54,31 +67,101 @@ long sysconf(int name) {
     }
 }
 
+static int mwait_supported(void) {
+    static int cached = -1;
+    if (cached < 0) {
+        uint32_t a, b, c, d;
+        __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1), "c"(0));
+        cached = (c >> 3) & 1;
+    }
+    return cached;
+}
+
+static inline uint64_t ticks_now(void) {
+    return *(volatile uint64_t *)&kurtos_ticks;
+}
+
+int usleep(unsigned int usec) {
+    uint64_t deadline = ticks_now() + usec / 1000 + 1;
+
+    if (!kthread_on_ap()) {
+        while (ticks_now() < deadline) kthread_yield();
+        return 0;
+    }
+
+    while (ticks_now() < deadline) {
+        if (mwait_supported()) {
+            __asm__ volatile("monitor" : : "a"(&kurtos_ticks), "c"(0), "d"(0) : "memory");
+            if (ticks_now() >= deadline) break;
+            __asm__ volatile("mwait" : : "a"(0), "c"(0) : "memory");
+        } else {
+            __asm__ volatile("pause" : : : "memory");
+        }
+    }
+    return 0;
+}
+
 int pthread_mutex_init(void *m, const void *attr) {
     (void)attr;
-    ((kmutex_t *)m)->locked = 0;
+    kmutex_t *mutex = (kmutex_t *)m;
+    mutex->locked = 0;
+    mutex->owner = 0;
+    mutex->count = 0;
     return 0;
 }
 
 int pthread_mutex_destroy(void *m) {
-    ((kmutex_t *)m)->locked = 0;
-    return 0;
+    return pthread_mutex_init(m, 0);
 }
 
 int pthread_mutex_lock(void *m) {
     kmutex_t *mutex = (kmutex_t *)m;
-    while (__atomic_exchange_n(&mutex->locked, 1, __ATOMIC_ACQUIRE)) relax();
-    return 0;
+    uint64_t self = kthread_self();
+
+    if (__atomic_load_n(&mutex->locked, __ATOMIC_RELAXED) && mutex->owner == self) {
+        mutex->count++;
+        return 0;
+    }
+
+    uint64_t backoff = 8;
+    for (;;) {
+        if (__atomic_load_n(&mutex->locked, __ATOMIC_RELAXED) == 0 &&
+            __atomic_exchange_n(&mutex->locked, 1, __ATOMIC_ACQUIRE) == 0) {
+            mutex->owner = self;
+            mutex->count = 1;
+            mutex->lock_ra = (uint64_t)(uintptr_t)__builtin_return_address(0);
+            return 0;
+        }
+        backoff_pause(&backoff);
+    }
 }
 
 int pthread_mutex_trylock(void *m) {
     kmutex_t *mutex = (kmutex_t *)m;
+    uint64_t self = kthread_self();
+
+    if (__atomic_load_n(&mutex->locked, __ATOMIC_RELAXED) && mutex->owner == self) {
+        mutex->count++;
+        return 0;
+    }
+
     if (__atomic_exchange_n(&mutex->locked, 1, __ATOMIC_ACQUIRE)) return EBUSY;
+    mutex->owner = self;
+    mutex->count = 1;
+    mutex->lock_ra = (uint64_t)(uintptr_t)__builtin_return_address(0);
     return 0;
 }
 
 int pthread_mutex_unlock(void *m) {
-    __atomic_store_n(&((kmutex_t *)m)->locked, 0, __ATOMIC_RELEASE);
+    kmutex_t *mutex = (kmutex_t *)m;
+    if (mutex->count > 1) {
+        mutex->count--;
+        return 0;
+    }
+    mutex->owner = 0;
+    mutex->count = 0;
+    mutex->unlock_ra = (uint64_t)(uintptr_t)__builtin_return_address(0);
+    __atomic_store_n(&mutex->locked, 0, __ATOMIC_RELEASE);
     return 0;
 }
 
@@ -106,9 +189,13 @@ int pthread_cond_broadcast(void *c) {
 int pthread_cond_wait(void *c, void *m) {
     kcond_t *cond = (kcond_t *)c;
     uint64_t seen = __atomic_load_n(&cond->generation, __ATOMIC_ACQUIRE);
+    uint64_t spurious = ticks_now() + 2;
 
     pthread_mutex_unlock(m);
-    while (__atomic_load_n(&cond->generation, __ATOMIC_ACQUIRE) == seen) relax();
+    while (__atomic_load_n(&cond->generation, __ATOMIC_ACQUIRE) == seen) {
+        if (ticks_now() >= spurious) break;
+        relax();
+    }
     pthread_mutex_lock(m);
 
     return 0;

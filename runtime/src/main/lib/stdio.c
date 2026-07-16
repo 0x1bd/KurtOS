@@ -579,9 +579,14 @@ static int next_key = 0;
 
 int pthread_key_create(pthread_key_t *key, void (*destructor)(void *)) {
     (void)destructor;
-    if (next_key >= MAX_KEYS) return 11;
-    *key = next_key++;
+    int slot = __atomic_fetch_add(&next_key, 1, __ATOMIC_ACQ_REL);
+    if (slot >= MAX_KEYS) return 11;
+    *key = (pthread_key_t)slot;
     return 0;
+}
+
+int __pthread_key_create(pthread_key_t *key, void (*destructor)(void *)) {
+    return pthread_key_create(key, destructor);
 }
 
 void *pthread_getspecific(pthread_key_t key) {
@@ -602,7 +607,14 @@ int pthread_key_delete(pthread_key_t key) {
 }
 
 int pthread_once(pthread_once_t *once, void (*init_routine)(void)) {
-    uint8_t *flag = (uint8_t *)once;
-    if (!*flag) { *flag = 1; init_routine(); }
+    int expected = 0;
+    if (__atomic_compare_exchange_n((int *)once, &expected, 1, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        init_routine();
+        __atomic_store_n((int *)once, 2, __ATOMIC_RELEASE);
+        return 0;
+    }
+    while (__atomic_load_n((int *)once, __ATOMIC_ACQUIRE) != 2) {
+        __asm__ volatile("pause");
+    }
     return 0;
 }

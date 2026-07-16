@@ -8,7 +8,6 @@ int __fxstat(int ver, int fd, void *stat_buf): return_enosys
 long syscall(long number, ...): return_enosysL
 
 unsigned int sleep(unsigned int seconds): abort
-int usleep(unsigned int usec): abort
 int getpagesize(void): return_pagesize
 int gettimeofday(void *tv, void *tz): return_enosys
 int getrusage(int who, void *usage): return_enosys

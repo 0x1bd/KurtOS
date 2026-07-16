@@ -46,9 +46,15 @@ typedef struct ap {
 
 static ap_t aps[MAX_APS];
 static int ap_total;
+static volatile int ap_booted;
 static volatile int ap_online;
+static volatile int ap_parked;
 static volatile int dispatch_enabled;
 static uint8_t idt_descriptor[10];
+
+static uint32_t smt_shift;
+static uint32_t bsp_core;
+static volatile uint64_t claimed_cores[8];
 
 static __thread ap_t *tls_ap;
 
@@ -58,6 +64,56 @@ static inline void wrmsr_fs(uint64_t base) {
 
 static inline void cpu_pause(void) {
     __asm__ volatile("pause");
+}
+
+static inline void cpuid(uint32_t leaf, uint32_t subleaf,
+                         uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
+    __asm__ volatile("cpuid" : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d) : "a"(leaf), "c"(subleaf));
+}
+
+static uint32_t topology_smt_shift(void) {
+    uint32_t a, b, c, d;
+    cpuid(0, 0, &a, &b, &c, &d);
+    if (a < 0xB) return 0;
+    cpuid(0xB, 0, &a, &b, &c, &d);
+    if (((c >> 8) & 0xFF) != 1 || (b & 0xFFFF) == 0) return 0;
+    return a & 0x1F;
+}
+
+static uint32_t my_core_id(void) {
+    uint32_t a, b, c, d;
+    cpuid(0, 0, &a, &b, &c, &d);
+    if (a < 0xB) return 0xFFFFFFFF;
+    cpuid(0xB, 0, &a, &b, &c, &d);
+    return d >> smt_shift;
+}
+
+static int claim_core(uint32_t core) {
+    if (core == 0xFFFFFFFF) return 1;
+    if (core == bsp_core) return 0;
+    if (core >= 512) return 1;
+    uint64_t bit = 1ULL << (core & 63);
+    uint64_t prev = __atomic_fetch_or(&claimed_cores[core >> 6], bit, __ATOMIC_ACQ_REL);
+    return (prev & bit) == 0;
+}
+
+__attribute__((noreturn))
+static void ap_park(void) {
+    __atomic_add_fetch(&ap_parked, 1, __ATOMIC_ACQ_REL);
+    __atomic_add_fetch(&ap_booted, 1, __ATOMIC_ACQ_REL);
+    for (;;) __asm__ volatile("cli; hlt");
+}
+
+static void print_number(const char *label, uint64_t value) {
+    char buf[24];
+    int at = 23;
+    buf[at] = 0;
+    do {
+        buf[--at] = '0' + (char)(value % 10);
+        value /= 10;
+    } while (value && at > 0);
+    debug_print(label);
+    debug_print(&buf[at]);
 }
 
 static void ap_enable_sse(void) {
@@ -163,6 +219,8 @@ static void ap_enter_loop(ap_t *ap) {
 static void ap_entry(struct limine_mp_info *info) {
     __asm__ volatile("cli");
 
+    if (!claim_core(my_core_id())) ap_park();
+
     ap_t *ap = (ap_t *)(uintptr_t)info->extra_argument;
 
     ap_enable_sse();
@@ -177,6 +235,7 @@ static void ap_entry(struct limine_mp_info *info) {
 
     __atomic_store_n(&ap->state, AP_IDLE, __ATOMIC_RELEASE);
     __atomic_add_fetch(&ap_online, 1, __ATOMIC_ACQ_REL);
+    __atomic_add_fetch(&ap_booted, 1, __ATOMIC_ACQ_REL);
 
     ap_enter_loop(ap);
 }
@@ -189,6 +248,9 @@ int kurtos_smp_start(void) {
     }
 
     __asm__ volatile("sidt %0" : "=m"(*(struct { uint16_t l; uint64_t b; } __attribute__((packed)) *)idt_descriptor));
+
+    smt_shift = topology_smt_shift();
+    bsp_core = my_core_id();
 
     for (uint64_t i = 0; i < res->cpu_count && ap_total < MAX_APS; i++) {
         struct limine_mp_info *cpu = res->cpus[i];
@@ -207,13 +269,15 @@ int kurtos_smp_start(void) {
     }
 
     for (uint64_t spin = 0; spin < 4000000000ULL; spin++) {
-        if (__atomic_load_n(&ap_online, __ATOMIC_ACQUIRE) >= ap_total) break;
+        if (__atomic_load_n(&ap_booted, __ATOMIC_ACQUIRE) >= ap_total) break;
         cpu_pause();
     }
 
     __atomic_store_n(&dispatch_enabled, 1, __ATOMIC_RELEASE);
 
-    debug_print("[smp] application processors online\n");
+    print_number("[smp] aps online=", __atomic_load_n(&ap_online, __ATOMIC_ACQUIRE));
+    print_number(" parked=", __atomic_load_n(&ap_parked, __ATOMIC_ACQUIRE));
+    debug_print("\n");
     return __atomic_load_n(&ap_online, __ATOMIC_ACQUIRE);
 }
 

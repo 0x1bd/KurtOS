@@ -11,6 +11,7 @@ extern void tls_free(uint64_t base);
 extern uint64_t tls_main;
 
 extern int kurtos_smp_available(void);
+extern int kurtos_smp_cpus(void);
 extern int kurtos_smp_run(void *(*fn)(void *), void *arg, uint64_t tls_tp, uint64_t thread_id,
                           void *volatile *retval_slot, volatile int *state_slot, int done_state);
 extern void kurtos_smp_thread_exit(void *ret);
@@ -152,28 +153,35 @@ int kthread_create(uint64_t *out_id, void *(*start)(void *), void *arg) {
 
     kthread_t *t = &threads[idx];
 
-    if (kurtos_smp_available()) {
+    int want_ap = kurtos_smp_cpus() > 1;
+    for (int attempt = 0; want_ap && attempt < 50; attempt++) {
+        if (!kurtos_smp_available()) {
+            kthread_yield();
+            continue;
+        }
+
         uint64_t base = 0;
         uint64_t tp = tls_alloc(&base);
-        if (tp) {
-            t->stack = 0;
-            t->tp = tp;
-            t->tls_base = base;
-            t->start = start;
-            t->arg = arg;
-            t->retval = 0;
-            t->detached = 0;
-            t->state = T_AP;
+        if (!tp) break;
 
-            if (kurtos_smp_run(start, arg, tp, (uint64_t)(idx + 1),
-                               &t->retval, &t->state, T_DONE) == 0) {
-                if (out_id) *out_id = (uint64_t)(idx + 1);
-                return 0;
-            }
+        t->stack = 0;
+        t->tp = tp;
+        t->tls_base = base;
+        t->start = start;
+        t->arg = arg;
+        t->retval = 0;
+        t->detached = 0;
+        t->state = T_AP;
 
-            t->state = T_FREE;
-            tls_free(base);
+        if (kurtos_smp_run(start, arg, tp, (uint64_t)(idx + 1),
+                           &t->retval, &t->state, T_DONE) == 0) {
+            if (out_id) *out_id = (uint64_t)(idx + 1);
+            return 0;
         }
+
+        t->state = T_FREE;
+        tls_free(base);
+        kthread_yield();
     }
 
     t->stack = (uint8_t *)malloc(STACK_SIZE);

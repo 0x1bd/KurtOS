@@ -32,7 +32,7 @@ object Smp {
         while (counter.value != workers.size && spins < 2_000_000_000L) spins++
         workersVerified = counter.value == workers.size
 
-        for (worker in workers) worker.requestTermination(processScheduledJobs = true)
+        for (worker in workers) worker.requestTermination(processScheduledJobs = true).result
 
         Serial.print("smp: $cpus cpus, worker self-test ${if (workersVerified) "ok" else "FAILED"}\n")
     }
