@@ -3,10 +3,11 @@ package frontend
 import kapi.Time
 import kapi.ui.Canvas
 import kapi.ui.Panels
+import kapi.ui.Icon
 import kapi.ui.PixelIcons
 
 object Chrome {
-    class Hint(val icon: PixelIcons.Icon?, val glyph: String?, val color: UInt, val label: String)
+    class Hint(val icon: Icon?, val glyph: String?, val color: UInt, val label: String)
 
     fun barHeight(height: Int): Int = maxOf(40, height * 10 / 108)
 

@@ -12,6 +12,7 @@ import kapi.Surface
 import kapi.Sys
 import kapi.Time
 import kapi.ui.Canvas
+import kapi.ui.Icon
 import kapi.ui.Panels
 import kapi.ui.PixelIcons
 import shell.CommandRegistry
@@ -23,7 +24,7 @@ object Home {
         val body: UInt,
         val band: UInt,
         val edge: UInt,
-        val art: PixelIcons.Icon,
+        val art: Icon,
         val extension: String,
     )
 

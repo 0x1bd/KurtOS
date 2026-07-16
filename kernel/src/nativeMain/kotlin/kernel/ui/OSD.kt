@@ -3,6 +3,7 @@ package kernel.ui
 import hal.Clock
 import kapi.ui.Canvas
 import kapi.ui.Panels
+import kapi.ui.Icon
 import kapi.ui.PixelIcons
 import kernel.audio.AudioService
 import kernel.graphics.Framebuffer
@@ -32,7 +33,7 @@ object OSD {
     private var drawnRows = 0u
     private var drawnOffset = 0
 
-    fun notify(icon: PixelIcons.Icon, title: String, subtitle: String?, sound: SystemSounds.Clip?) {
+    fun notify(icon: Icon, title: String, subtitle: String?, sound: SystemSounds.Clip?) {
         val fb = ensure() ?: return
 
         if (sound != null) SystemSounds.play(sound)
@@ -186,7 +187,7 @@ object OSD {
         return fb
     }
 
-    private fun renderToast(icon: PixelIcons.Icon, title: String, subtitle: String?) {
+    private fun renderToast(icon: Icon, title: String, subtitle: String?) {
         val buffer = panel ?: return
         val ui = Canvas(buffer, buffer.width, buffer.height)
 
