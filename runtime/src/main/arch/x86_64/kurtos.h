@@ -55,4 +55,8 @@ void lgdt_load(void *ptr, uint16_t code_sel, uint16_t data_sel);
 void ltr_load(uint16_t sel);
 void lidt_load(void *ptr);
 
+int kurtos_smp_start(void);
+int kurtos_smp_cpus(void);
+int kurtos_smp_available(void);
+
 #endif

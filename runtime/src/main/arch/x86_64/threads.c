@@ -10,9 +10,14 @@ extern uint64_t tls_alloc(uint64_t *base_out);
 extern void tls_free(uint64_t base);
 extern uint64_t tls_main;
 
+extern int kurtos_smp_available(void);
+extern int kurtos_smp_run(void *(*fn)(void *), void *arg, uint64_t tls_tp, uint64_t thread_id,
+                          void *volatile *retval_slot, volatile int *state_slot, int done_state);
+extern void kurtos_smp_thread_exit(void *ret);
+
 void kthread_switch(uint64_t *save_sp, uint64_t new_sp, uint64_t new_tp);
 
-#define MAX_THREADS 8
+#define MAX_THREADS 32
 #define STACK_SIZE  (128 * 1024)
 
 enum {
@@ -20,6 +25,7 @@ enum {
     T_READY,
     T_RUNNING,
     T_DONE,
+    T_AP,
 };
 
 typedef struct {
@@ -29,14 +35,17 @@ typedef struct {
     uint8_t *stack;
     void *(*start)(void *);
     void *arg;
-    void *retval;
-    int state;
+    void *volatile retval;
+    volatile int state;
     int detached;
 } kthread_t;
 
 static kthread_t threads[MAX_THREADS];
 static int current_index;
 static int scheduler_ready;
+
+static __thread uint64_t tls_thread_id;
+static __thread int tls_on_ap;
 
 void kthread_init(void) {
     for (int i = 0; i < MAX_THREADS; i++) threads[i].state = T_FREE;
@@ -48,9 +57,20 @@ void kthread_init(void) {
 
     current_index = 0;
     scheduler_ready = 1;
+    tls_thread_id = 1;
+}
+
+void kthread_mark_ap(uint64_t id) {
+    tls_thread_id = id;
+    tls_on_ap = 1;
+}
+
+int kthread_on_ap(void) {
+    return tls_on_ap;
 }
 
 uint64_t kthread_self(void) {
+    if (tls_thread_id != 0) return tls_thread_id;
     return (uint64_t)(current_index + 1);
 }
 
@@ -63,6 +83,10 @@ static void kthread_reap(kthread_t *t) {
 }
 
 void kthread_yield(void) {
+    if (tls_on_ap) {
+        __asm__ volatile("pause");
+        return;
+    }
     if (!scheduler_ready) return;
 
     int from = current_index;
@@ -93,6 +117,7 @@ void kthread_yield(void) {
 
 static void kthread_trampoline(void) {
     kthread_t *self = &threads[current_index];
+    tls_thread_id = (uint64_t)(current_index + 1);
 
     self->retval = self->start(self->arg);
     self->state = T_DONE;
@@ -102,8 +127,16 @@ static void kthread_trampoline(void) {
     for (;;) kthread_yield();
 }
 
+static void reap_finished_detached(void) {
+    for (int i = 1; i < MAX_THREADS; i++) {
+        if (threads[i].state == T_DONE && threads[i].detached) kthread_reap(&threads[i]);
+    }
+}
+
 int kthread_create(uint64_t *out_id, void *(*start)(void *), void *arg) {
     if (!scheduler_ready) return -1;
+
+    reap_finished_detached();
 
     int idx = -1;
     for (int i = 1; i < MAX_THREADS; i++) {
@@ -118,6 +151,30 @@ int kthread_create(uint64_t *out_id, void *(*start)(void *), void *arg) {
     }
 
     kthread_t *t = &threads[idx];
+
+    if (kurtos_smp_available()) {
+        uint64_t base = 0;
+        uint64_t tp = tls_alloc(&base);
+        if (tp) {
+            t->stack = 0;
+            t->tp = tp;
+            t->tls_base = base;
+            t->start = start;
+            t->arg = arg;
+            t->retval = 0;
+            t->detached = 0;
+            t->state = T_AP;
+
+            if (kurtos_smp_run(start, arg, tp, (uint64_t)(idx + 1),
+                               &t->retval, &t->state, T_DONE) == 0) {
+                if (out_id) *out_id = (uint64_t)(idx + 1);
+                return 0;
+            }
+
+            t->state = T_FREE;
+            tls_free(base);
+        }
+    }
 
     t->stack = (uint8_t *)malloc(STACK_SIZE);
     if (!t->stack) {
@@ -179,6 +236,8 @@ int kthread_detach(uint64_t id) {
 }
 
 void kthread_exit(void *retval) {
+    if (tls_on_ap) kurtos_smp_thread_exit(retval);
+
     kthread_t *self = &threads[current_index];
 
     if (current_index == 0) {

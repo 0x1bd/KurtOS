@@ -239,7 +239,23 @@ class Rdp(private val n64: N64) {
     private val spanMinorX = IntArray(SPANS * 4)
     private val spanMajorX = IntArray(SPANS * 4)
     private val spanInvalY = IntArray(SPANS * 4)
-    private val cvgBuf = IntArray(4096)
+
+    private val pool = WorkerPool.shared
+    private val poolLanes = pool?.lanes ?: 1
+    private val laneCvg = Array(poolLanes) { IntArray(4096) }
+    private val lanePixels = LongArray(poolLanes * 8)
+
+    private var jobFirst = 0
+    private var jobLast = 0
+    private var jobFlip = false
+    private var jobTile: Tile? = null
+    private var jobShade = false
+    private var jobTexture = false
+    private var jobDepth = false
+
+    private val spanJob = PoolJob { lane, lanes ->
+        renderSpanRange(jobFirst, jobLast, lane, lanes, jobFlip, jobTile!!, jobShade, jobTexture, jobDepth)
+    }
     private val spanR = IntArray(SPANS)
     private val spanG = IntArray(SPANS)
     private val spanB = IntArray(SPANS)
@@ -818,17 +834,21 @@ class Rdp(private val n64: N64) {
         val top = maxOf(yh, scissorYh)
         val bottom = minOf(yl, scissorYl - 1)
 
+        var count = 0L
         for (y in top..bottom) {
             for (x in left..right) {
                 when (cycleType) {
                     CYCLE_FILL -> writeFill(x, y)
                     else -> {
                         val color = combine(0, 0, 0, 0xFF, 0, 0)
+                        count++
                         writePixel(x, y, color, 0x3FFFF, false)
                     }
                 }
             }
         }
+        pixels += count
+        workPixels += count
     }
 
     private fun writeFill(x: Int, y: Int) {
@@ -888,6 +908,7 @@ class Rdp(private val n64: N64) {
 
         if (cycleType != CYCLE_COPY) prepareTileCache(tile)
 
+        var count = 0L
         for (y in top..bottom) {
             for (x in left..right) {
                 val dx = x - x0
@@ -911,10 +932,13 @@ class Rdp(private val n64: N64) {
                 } else {
                     val texel = sample(tile, texS, texT)
                     val color = combine(texel, texel, 0xFFFFFFFF.toInt(), 0xFF, 0, 0)
+                    count++
                     writePixel(x, y, color, 0x3FFFF, false)
                 }
             }
         }
+        pixels += count
+        workPixels += count
     }
 
     private fun triangle(opcode: Int) {
@@ -1231,7 +1255,7 @@ class Rdp(private val n64: N64) {
         return (x + (x shr 4)) and 0xF
     }
 
-    private fun computeCoverage(i: Int, flip: Boolean) {
+    private fun computeCoverage(i: Int, flip: Boolean, cvgBuf: IntArray) {
         val purgestart = if (flip) spanRx[i] else spanLx[i]
         val purgeend = if (flip) spanLx[i] else spanRx[i]
         if (purgestart < 0 || purgeend >= cvgBuf.size || purgeend - purgestart < 0) return
@@ -1295,6 +1319,47 @@ class Rdp(private val n64: N64) {
     ) {
         if (texture) prepareTileCache(tile)
 
+        val first = maxOf(start, 0)
+        val last = minOf(end, SPANS - 1)
+        if (last < first) return
+
+        val pool = pool
+        if (pool != null && !diagEnabled && last - first >= PARALLEL_MIN_ROWS) {
+            jobFirst = first
+            jobLast = last
+            jobFlip = flip
+            jobTile = tile
+            jobShade = shade
+            jobTexture = texture
+            jobDepth = depth
+            pool.run(spanJob)
+        } else {
+            renderSpanRange(first, last, 0, 1, flip, tile, shade, texture, depth)
+        }
+
+        var total = 0L
+        for (lane in 0 until poolLanes) {
+            total += lanePixels[lane * 8]
+            lanePixels[lane * 8] = 0
+        }
+        pixels += total
+        workPixels += total
+    }
+
+    private fun renderSpanRange(
+        first: Int,
+        last: Int,
+        lane: Int,
+        lanes: Int,
+        flip: Boolean,
+        tile: Tile,
+        shade: Boolean,
+        texture: Boolean,
+        depth: Boolean,
+    ) {
+        val cvgBuf = laneCvg[lane]
+        var count = 0L
+
         val drinc = if (flip) spansDr else -spansDr
         val dginc = if (flip) spansDg else -spansDg
         val dbinc = if (flip) spansDb else -spansDb
@@ -1305,8 +1370,12 @@ class Rdp(private val n64: N64) {
         val dzinc = if (flip) spansDz else -spansDz
         val xinc = if (flip) 1 else -1
 
-        for (i in maxOf(start, 0)..minOf(end, SPANS - 1)) {
-            if (!spanValid[i]) continue
+        var i = first + lane
+        while (i <= last) {
+            if (!spanValid[i]) {
+                i += lanes
+                continue
+            }
 
             val xstart = spanLx[i]
             val xend = spanUnscrx[i]
@@ -1346,7 +1415,7 @@ class Rdp(private val n64: N64) {
 
             val ownerMode = forceBlend && !coverageTimesAlpha && !alphaCoverageSelect
             val needCvg = coverageTimesAlpha || alphaCoverageSelect || ownerMode
-            if (needCvg) computeCoverage(i, flip)
+            if (needCvg) computeCoverage(i, flip, cvgBuf)
 
             var x = xendsc
 
@@ -1382,6 +1451,7 @@ class Rdp(private val n64: N64) {
                         val pixelZ = zCorrect(if (zSourceSelect) primDepth shl 16 else z)
 
                         val color = combine(texel, texel, shadeColor, (shadeColor ushr 24) and 0xFF, 0, 0)
+                        count++
                         writePixel(x, i, color, pixelZ, depth, (shadeColor ushr 24) and 0xFF, drawCvg)
                     }
                 }
@@ -1396,7 +1466,11 @@ class Rdp(private val n64: N64) {
                 z += dzinc
                 x += xinc
             }
+
+            i += lanes
         }
+
+        lanePixels[lane * 8] += count
     }
 
     private fun high(value: Int): Int = value and 0xFFFF0000.toInt()
@@ -1998,8 +2072,6 @@ class Rdp(private val n64: N64) {
     )
 
     private fun writePixel(x: Int, y: Int, color: Int, z: Int, useDepth: Boolean, shadeAlpha: Int = 0, cvg: Int = 8) {
-        pixels++
-        workPixels++
         if (cvg == 0) return
 
         var alpha = (color ushr 24) and 0xFF
@@ -2219,6 +2291,7 @@ class Rdp(private val n64: N64) {
 
     companion object {
         private const val SPANS = 1024
+        private const val PARALLEL_MIN_ROWS = 8
 
         private val NORM_POINT = intArrayOf(
             0x4000, 0x3F04, 0x3E10, 0x3D22, 0x3C3C, 0x3B5D, 0x3A83, 0x39B1,

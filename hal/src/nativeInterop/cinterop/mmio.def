@@ -211,6 +211,8 @@ extern void lidt_load(void *ptr);
 extern void *isr_stub_table[];
 extern uint64_t heap_used(void);
 extern uint64_t heap_total(void);
+extern int kurtos_smp_start(void);
+extern int kurtos_smp_cpus(void);
 
 static inline uint64_t boot_hhdm(void) { return kurtos_boot_info.hhdm_offset; }
 static inline uint64_t boot_fb_address(void) { return kurtos_boot_info.fb_address; }
@@ -236,3 +238,6 @@ static inline void lapic_base_set(uint64_t base) { kurtos_lapic_base = base; }
 static inline void kbd_poll_set(uint64_t on) { kurtos_kbd_poll = on; }
 
 static inline uint64_t isr_stub(uint64_t vector) { return (uint64_t)isr_stub_table[vector]; }
+
+static inline int smp_start(void) { return kurtos_smp_start(); }
+static inline int smp_cpus(void) { return kurtos_smp_cpus(); }

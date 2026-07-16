@@ -51,8 +51,10 @@ object Cpu {
         return v.ebx == 0x68747541u && v.ecx == 0x444D4163u && v.edx == 0x69746E65u
     }
 
+    private fun isHypervisor(): Boolean = (cpuid(1u).ecx and (1u shl 31)) != 0u
+
     fun requestMaxPerformance() {
-        if (!isAmd()) return
+        if (!isAmd() || isHypervisor()) return
         val hwcr = readMsr(MSR_HWCR)
         writeMsr(MSR_HWCR, hwcr and (1UL shl 25).inv())
         writeMsr(MSR_PSTATE_CTL, 0UL)

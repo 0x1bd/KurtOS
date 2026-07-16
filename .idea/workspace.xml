@@ -6,22 +6,21 @@
   <component name="ChangeListManager">
     <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="fix: blending of tirangles">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Player.kt" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/src/nativeMain/kotlin/frontend/Player.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Makefile" beforeDir="false" afterPath="$PROJECT_DIR$/Makefile" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/hal/src/nativeInterop/cinterop/mmio.def" beforeDir="false" afterPath="$PROJECT_DIR$/hal/src/nativeInterop/cinterop/mmio.def" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/hal/src/nativeMain/kotlin/hal/Arch.kt" beforeDir="false" afterPath="$PROJECT_DIR$/hal/src/nativeMain/kotlin/hal/Arch.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/Kapi.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/Kapi.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hal/src/nativeMain/kotlin/hal/CPU.kt" beforeDir="false" afterPath="$PROJECT_DIR$/hal/src/nativeMain/kotlin/hal/CPU.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/KapiBackends.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/KapiBackends.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/Main.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/Main.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/Keyboard.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/Keyboard.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/BenchmarkTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/BenchmarkTest.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CPU.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CPU.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuCompiler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuCompiler.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuDynarec.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuDynarec.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuRuntime.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuRuntime.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/N64.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/N64.kt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RDP.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RDP.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/runtime/build.gradle.kts" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/build.gradle.kts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/runtime/src/main/abi/kotlin_native_stubs.def" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/abi/kotlin_native_stubs.def" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/runtime/src/main/abi/posix.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/abi/posix.c" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/boot.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/boot.c" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/isr.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/isr.c" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/kurtos.h" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/kurtos.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/threads.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/threads.c" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/runtime/src/main/memory/allocator.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/memory/allocator.c" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -103,6 +102,7 @@
       <option name="presentableId" value="Default" />
       <updated>1784110690091</updated>
       <workItem from="1784118255606" duration="18419000" />
+      <workItem from="1784208115593" duration="3935000" />
     </task>
     <task id="LOCAL-00001" summary="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard">
       <option name="closed" value="true" />

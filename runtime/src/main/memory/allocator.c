@@ -99,6 +99,18 @@ static uint64_t live_bytes;
 
 int heap_ready = 0;
 
+static volatile int heap_lock;
+
+static inline void heap_acquire(void) {
+    while (__atomic_exchange_n(&heap_lock, 1, __ATOMIC_ACQUIRE)) {
+        __asm__ volatile("pause");
+    }
+}
+
+static inline void heap_release(void) {
+    __atomic_store_n(&heap_lock, 0, __ATOMIC_RELEASE);
+}
+
 static inline int fls64(uint64_t x) {
     return 63 - __builtin_clzll(x);
 }
@@ -305,7 +317,7 @@ uint64_t heap_total(void) {
     return heap_ready ? (uint64_t)(heap_limit - heap_base) : 0;
 }
 
-void *malloc(size_t n) {
+static void *malloc_unlocked(size_t n) {
     if (!heap_ready || n == 0) return (void *)0;
 
     uint64_t size = adjust_size((uint64_t)n);
@@ -323,14 +335,23 @@ void *malloc(size_t n) {
     return payload_ptr(b);
 }
 
+void *malloc(size_t n) {
+    heap_acquire();
+    void *p = malloc_unlocked(n);
+    heap_release();
+    return p;
+}
+
 void free(void *ptr) {
     if (!ptr || !heap_ready) return;
 
+    heap_acquire();
     block_t *b = block_of(ptr);
-    if (is_free(b)) return;
-
-    live_bytes -= payload_of(b);
-    release(b);
+    if (!is_free(b)) {
+        live_bytes -= payload_of(b);
+        release(b);
+    }
+    heap_release();
 }
 
 void *calloc(size_t nmemb, size_t size) {
@@ -349,6 +370,7 @@ void *realloc(void *ptr, size_t size) {
         return (void *)0;
     }
 
+    heap_acquire();
     block_t *b = block_of(ptr);
     uint64_t need = adjust_size((uint64_t)size);
     uint64_t cur = payload_of(b);
@@ -356,6 +378,7 @@ void *realloc(void *ptr, size_t size) {
     if (need <= cur) {
         split_block(b, need);
         live_bytes -= cur - payload_of(b);
+        heap_release();
         return ptr;
     }
 
@@ -366,8 +389,10 @@ void *realloc(void *ptr, size_t size) {
         mark_used(b);
         split_block(b, need);
         live_bytes += payload_of(b) - cur;
+        heap_release();
         return ptr;
     }
+    heap_release();
 
     void *np = malloc(size);
     if (!np) return (void *)0;
@@ -397,8 +422,10 @@ int posix_memalign(void **memptr, size_t alignment, size_t size) {
     uint64_t need = adjust_size((uint64_t)size);
     uint64_t slack = (uint64_t)alignment + HDR_SIZE + MIN_PAYLOAD + ALIGN_SIZE;
 
+    heap_acquire();
     block_t *b = find_suitable(need + slack);
     if (!b) {
+        heap_release();
         debug_print("posix_memalign: out of memory\n");
         return 12;
     }
@@ -432,6 +459,7 @@ int posix_memalign(void **memptr, size_t alignment, size_t size) {
     live_bytes += payload_of(b);
 
     *memptr = payload_ptr(b);
+    heap_release();
     return 0;
 }
 

@@ -8,7 +8,8 @@ ACCEL = $(shell test -w /dev/kvm && echo -enable-kvm -cpu host)
 
 QEMU_FLAGS = -M q35 \
              $(ACCEL) \
-             -m 512M \
+             -smp 4 \
+             -m 2G \
              -drive if=none,id=stick,format=raw,file=$(IMAGE) \
              -device qemu-xhci,id=xhci \
              -device usb-storage,bus=xhci.0,drive=stick,bootindex=0 \
@@ -17,7 +18,8 @@ QEMU_FLAGS = -M q35 \
 
 IDE_FLAGS = -M q35 \
             $(ACCEL) \
-            -m 512M \
+            -smp 4 \
+            -m 2G \
             -drive file=$(IMAGE),format=raw \
             -serial stdio \
             -no-reboot

@@ -10,6 +10,8 @@ import mmio.lapic_base_set
 import mmio.lgdt_load
 import mmio.lidt_load
 import mmio.ltr_load
+import mmio.smp_cpus
+import mmio.smp_start
 import mmio.timer_ticks
 import mmio.usb_irq_count
 
@@ -37,6 +39,10 @@ object Arch {
     fun keyboardInterrupts(): ULong = kbd_irq_count()
 
     fun usbInterrupts(): ULong = usb_irq_count()
+
+    fun smpStart(): Int = smp_start()
+
+    fun smpCpus(): Int = smp_cpus()
 }
 
 @OptIn(ExperimentalForeignApi::class)

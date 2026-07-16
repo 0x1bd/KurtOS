@@ -13,6 +13,7 @@ import kernel.arch.Gdt
 import kernel.arch.Idt
 import kernel.arch.IoApic
 import kernel.arch.Pic
+import kernel.arch.Smp
 import kapi.Gamepad
 import kernel.audio.AudioService
 import kernel.drivers.usb.GamepadService
@@ -94,6 +95,8 @@ private fun startInterrupts() {
 
     Apic.initialize()
     PerfMonitor.initialize()
+
+    Smp.initialize()
 
     if (I8042.initialize()) {
         IoApic.route(IRQ_KEYBOARD, Idt.VECTOR_KEYBOARD, Apic.localId())

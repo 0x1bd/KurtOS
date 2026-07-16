@@ -24,15 +24,12 @@ int fflush(void *stream): return0
 int close(int fd): return_enosys
 int open(const char *path, int flags, ...): return_enosys
 long lseek(int fd, long offset, int whence): return_enosysL
-long sysconf(int name): return_enosysL
 int dl_iterate_phdr(int (*callback)(void *, size_t, void *), void *data): return0
 int dladdr(const void *addr, void *info): return0
 int* __errno_location(void): return_errno_location
 char* strerror(int errnum): return_unsupported_string
 
 int __cxa_atexit(void (*f)(void *), void *p, void *d): return0
-int __cxa_guard_acquire(int *g): return1
-void __cxa_guard_release(int *g): empty
 
 void __assert_fail(const char *assertion, const char *file, unsigned int line, const char *function): abort
 void __stack_chk_fail(void): abort

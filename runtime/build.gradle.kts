@@ -23,7 +23,7 @@ val baseCFlags = listOf(
 
 val noSseFlags = listOf("-mno-80387", "-mno-mmx", "-mno-sse", "-mno-sse2")
 
-val sseFreeSources = setOf("boot.c", "isr.c")
+val sseFreeSources = setOf("boot.c", "isr.c", "smp.c")
 
 fun flagsFor(source: File): List<String> =
     if (source.name in sseFreeSources) baseCFlags + noSseFlags else baseCFlags

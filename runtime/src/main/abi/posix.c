@@ -3,9 +3,11 @@
 
 extern void debug_print(const char *msg);
 extern uint64_t kurtos_ticks;
+extern int kurtos_smp_cpus(void);
 
 void kthread_yield(void);
 uint64_t kthread_self(void);
+int kthread_on_ap(void);
 int kthread_create(uint64_t *out_id, void *(*start)(void *), void *arg);
 int kthread_join(uint64_t id, void **retval);
 int kthread_detach(uint64_t id);
@@ -30,9 +32,26 @@ static uint64_t now_nanos(void) {
     return kurtos_ticks * NS_PER_MS;
 }
 
+static void relax(void) {
+    if (kthread_on_ap()) {
+        __asm__ volatile("pause");
+    } else {
+        kthread_yield();
+    }
+}
+
 int sched_yield(void) {
     kthread_yield();
     return 0;
+}
+
+long sysconf(int name) {
+    switch (name) {
+        case 30: return 4096;
+        case 83:
+        case 84: return kurtos_smp_cpus();
+        default: return -1;
+    }
 }
 
 int pthread_mutex_init(void *m, const void *attr) {
@@ -48,20 +67,18 @@ int pthread_mutex_destroy(void *m) {
 
 int pthread_mutex_lock(void *m) {
     kmutex_t *mutex = (kmutex_t *)m;
-    while (mutex->locked) kthread_yield();
-    mutex->locked = 1;
+    while (__atomic_exchange_n(&mutex->locked, 1, __ATOMIC_ACQUIRE)) relax();
     return 0;
 }
 
 int pthread_mutex_trylock(void *m) {
     kmutex_t *mutex = (kmutex_t *)m;
-    if (mutex->locked) return EBUSY;
-    mutex->locked = 1;
+    if (__atomic_exchange_n(&mutex->locked, 1, __ATOMIC_ACQUIRE)) return EBUSY;
     return 0;
 }
 
 int pthread_mutex_unlock(void *m) {
-    ((kmutex_t *)m)->locked = 0;
+    __atomic_store_n(&((kmutex_t *)m)->locked, 0, __ATOMIC_RELEASE);
     return 0;
 }
 
@@ -77,21 +94,21 @@ int pthread_cond_destroy(void *c) {
 }
 
 int pthread_cond_signal(void *c) {
-    ((kcond_t *)c)->generation++;
+    __atomic_add_fetch(&((kcond_t *)c)->generation, 1, __ATOMIC_ACQ_REL);
     return 0;
 }
 
 int pthread_cond_broadcast(void *c) {
-    ((kcond_t *)c)->generation++;
+    __atomic_add_fetch(&((kcond_t *)c)->generation, 1, __ATOMIC_ACQ_REL);
     return 0;
 }
 
 int pthread_cond_wait(void *c, void *m) {
     kcond_t *cond = (kcond_t *)c;
-    uint64_t seen = cond->generation;
+    uint64_t seen = __atomic_load_n(&cond->generation, __ATOMIC_ACQUIRE);
 
     pthread_mutex_unlock(m);
-    while (cond->generation == seen) kthread_yield();
+    while (__atomic_load_n(&cond->generation, __ATOMIC_ACQUIRE) == seen) relax();
     pthread_mutex_lock(m);
 
     return 0;
@@ -102,16 +119,16 @@ int pthread_cond_timedwait(void *c, void *m, const void *abstime) {
     const int64_t *ts = (const int64_t *)abstime;
 
     uint64_t deadline = (uint64_t)ts[0] * NS_PER_SEC + (uint64_t)ts[1];
-    uint64_t seen = cond->generation;
+    uint64_t seen = __atomic_load_n(&cond->generation, __ATOMIC_ACQUIRE);
     int timed_out = 0;
 
     pthread_mutex_unlock(m);
-    while (cond->generation == seen) {
+    while (__atomic_load_n(&cond->generation, __ATOMIC_ACQUIRE) == seen) {
         if (now_nanos() >= deadline) {
             timed_out = 1;
             break;
         }
-        kthread_yield();
+        relax();
     }
     pthread_mutex_lock(m);
 
@@ -143,6 +160,29 @@ int pthread_detach(unsigned long thread) {
 void pthread_exit(void *retval) {
     kthread_exit(retval);
     for (;;) __asm__ volatile("cli; hlt");
+}
+
+int __cxa_guard_acquire(uint64_t *g) {
+    unsigned char *guard = (unsigned char *)g;
+    if (__atomic_load_n(&guard[0], __ATOMIC_ACQUIRE)) return 0;
+
+    while (__atomic_exchange_n(&guard[1], 1, __ATOMIC_ACQUIRE)) relax();
+
+    if (__atomic_load_n(&guard[0], __ATOMIC_ACQUIRE)) {
+        __atomic_store_n(&guard[1], 0, __ATOMIC_RELEASE);
+        return 0;
+    }
+    return 1;
+}
+
+void __cxa_guard_release(uint64_t *g) {
+    unsigned char *guard = (unsigned char *)g;
+    __atomic_store_n(&guard[0], 1, __ATOMIC_RELEASE);
+    __atomic_store_n(&guard[1], 0, __ATOMIC_RELEASE);
+}
+
+void __cxa_guard_abort(uint64_t *g) {
+    __atomic_store_n(&((unsigned char *)g)[1], 0, __ATOMIC_RELEASE);
 }
 
 int clock_gettime(int clk_id, void *tp) {

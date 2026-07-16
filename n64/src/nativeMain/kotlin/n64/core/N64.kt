@@ -332,12 +332,24 @@ class N64(image: ByteArray, forceNoDynarec: Boolean = false, forceNoRspDynarec: 
         return (rdram[index] ushr shift) and 0xFF
     }
 
+    private val invalidateLock = kotlin.concurrent.AtomicInt(0)
+
+    private fun invalidateLocked(page: Int) {
+        while (!invalidateLock.compareAndSet(0, 1)) {
+        }
+        try {
+            dynarec?.invalidatePage(page)
+        } finally {
+            invalidateLock.value = 0
+        }
+    }
+
     fun ramWrite8(addr: Int, value: Int) {
         val index = (addr and RDRAM_MASK) ushr 2
         val shift = 24 - ((addr and 3) shl 3)
         rdram[index] = (rdram[index] and (0xFF shl shift).inv()) or ((value and 0xFF) shl shift)
         val page = (addr and RDRAM_MASK) ushr CPU_PAGE_SHIFT
-        if (codePages[page].toInt() != 0) dynarec?.invalidatePage(page)
+        if (codePages[page].toInt() != 0) invalidateLocked(page)
     }
 
     fun ramRead16(addr: Int): Int = (ramRead8(addr) shl 8) or ramRead8(addr + 1)
@@ -347,7 +359,7 @@ class N64(image: ByteArray, forceNoDynarec: Boolean = false, forceNoRspDynarec: 
     fun ramWrite32(addr: Int, value: Int) {
         rdram[(addr and RDRAM_MASK) ushr 2] = value
         val page = (addr and RDRAM_MASK) ushr CPU_PAGE_SHIFT
-        if (codePages[page].toInt() != 0) dynarec?.invalidatePage(page)
+        if (codePages[page].toInt() != 0) invalidateLocked(page)
     }
 
     fun describe(): String =

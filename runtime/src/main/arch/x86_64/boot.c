@@ -51,7 +51,7 @@ static volatile struct limine_rsdp_request rsdp_request = {
 
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_stack_size_request stack_size_request = {
-    .id = LIMINE_STACK_SIZE_REQUEST, .revision = 0, .stack_size = 64 * 1024,
+    .id = LIMINE_STACK_SIZE_REQUEST, .revision = 0, .stack_size = 256 * 1024,
 };
 
 #define COM1 0x3F8
