@@ -13,7 +13,7 @@ KurtOS uses Kotlin/Native for its kernel, drivers and emulation. This is done by
 - _more to come_
 #### Known issues:
 - SNES does not support any additional coprocessors (SuperFX, SA-1) which makes some games unplayable (Super Mario World 2: Yoshi’s Island...)
-- N64 has visual glitches and performance problems. (Ryzen 5 3700U avg FPS ~40 / 50 in SM64)
+- N64 has visual glitches and performance problems. (Ryzen 7 3700U avg FPS ~40 / 50 in SM64)
 - Audio scaling behaves incorrectly on different systems.
 - There is no multi-monitor support yet, nor can you output via HDMI or DP.
 ### Peripherals
