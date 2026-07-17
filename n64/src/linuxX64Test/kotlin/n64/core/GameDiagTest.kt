@@ -19,6 +19,8 @@ class GameDiagTest {
         val dumpAt = environment("KURTOS_DUMP_FRAMES")?.split(",")?.mapNotNull { it.toIntOrNull() }
             ?: listOf(1, 10, 30, 60, 120, 240, 600)
 
+        if (environment("KURTOS_FPE_DEBUG") != null) console.cpu.debugFpe = true
+
         val traceFrom = environment("KURTOS_TRACE")?.toIntOrNull() ?: -1
         environment("KURTOS_BREAK")?.let { console.cpu.debugBreakPc = it.removePrefix("0x").toLong(16) }
 
@@ -129,6 +131,18 @@ class GameDiagTest {
                 " buttons=${console.pif.debugCommands[1]} eepromRead=${console.pif.debugCommands[4]}" +
                 " eepromWrite=${console.pif.debugCommands[5]}",
         )
+
+        environment("KURTOS_DUMP_PC")?.let {
+            val base = (it.removePrefix("0x").toLong(16).toInt() and 0x7FFFFFFF) - 0x40
+            for (o in 0 until 0xA0 step 4) {
+                val op = console.ramRead32(base + o)
+                println(
+                    "[code] ${hex(0x80000000.toInt() or (base + o))}: ${op.toUInt().toString(16).padStart(8, '0')}" +
+                        " op=${op ushr 26} rs=${(op ushr 21) and 0x1F} rt=${(op ushr 16) and 0x1F}" +
+                        " rd=${(op ushr 11) and 0x1F} sa=${(op ushr 6) and 0x1F} f=${op and 0x3F} imm=${op.toShort()}",
+                )
+            }
+        }
 
         dumpThreads(console)
 

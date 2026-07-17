@@ -26,9 +26,20 @@ class WorkerPool private constructor(private val extra: Int) {
     @Volatile
     private var broken = false
 
+    @Volatile
+    private var active = false
+
     private var epoch = 0
     private val jobSeq = AtomicIntArray(extra)
     private val ackSeq = AtomicIntArray(extra)
+
+    fun wake() {
+        active = true
+    }
+
+    fun rest() {
+        active = false
+    }
 
     init {
         for (index in 0 until extra) {
@@ -44,7 +55,7 @@ class WorkerPool private constructor(private val extra: Int) {
             val want = jobSeq[slot]
             if (want == ackSeq[slot]) {
                 idle++
-                if (idle >= SLEEP_AFTER) {
+                if (idle >= SLEEP_AFTER || (!active && idle >= REST_AFTER)) {
                     usleep(1000u)
                 } else if (idle % SPIN_HOT == 0L) {
                     sched_yield()
@@ -70,6 +81,7 @@ class WorkerPool private constructor(private val extra: Int) {
             return
         }
 
+        active = true
         job = fn
         epoch++
         for (slot in 0 until extra) jobSeq[slot] = epoch
@@ -94,6 +106,7 @@ class WorkerPool private constructor(private val extra: Int) {
     companion object {
         private const val SPIN_HOT = 2000L
         private const val SLEEP_AFTER = 2_000_000L
+        private const val REST_AFTER = 100_000L
         private const val YIELD_AFTER = 4_000_000L
         private const val JOIN_LIMIT = YIELD_AFTER + 10_000L
         private const val MAX_EXTRA = 3

@@ -352,7 +352,27 @@ class N64(image: ByteArray, forceNoDynarec: Boolean = false, forceNoRspDynarec: 
         if (codePages[page].toInt() != 0) invalidateLocked(page)
     }
 
-    fun ramRead16(addr: Int): Int = (ramRead8(addr) shl 8) or ramRead8(addr + 1)
+    fun ramRead16(addr: Int): Int {
+        if (addr and 1 == 0) {
+            val index = (addr and RDRAM_MASK) ushr 2
+            val shift = 16 - ((addr and 2) shl 3)
+            return (rdram[index] ushr shift) and 0xFFFF
+        }
+        return (ramRead8(addr) shl 8) or ramRead8(addr + 1)
+    }
+
+    fun ramWrite16(addr: Int, value: Int) {
+        if (addr and 1 == 0) {
+            val index = (addr and RDRAM_MASK) ushr 2
+            val shift = 16 - ((addr and 2) shl 3)
+            rdram[index] = (rdram[index] and (0xFFFF shl shift).inv()) or ((value and 0xFFFF) shl shift)
+            val page = (addr and RDRAM_MASK) ushr CPU_PAGE_SHIFT
+            if (codePages[page].toInt() != 0) invalidateLocked(page)
+            return
+        }
+        ramWrite8(addr, (value ushr 8) and 0xFF)
+        ramWrite8(addr + 1, value and 0xFF)
+    }
 
     fun ramRead32(addr: Int): Int = rdram[(addr and RDRAM_MASK) ushr 2]
 

@@ -26,6 +26,8 @@ const val CC_BE = 6
 const val CC_A = 7
 const val CC_S = 8
 const val CC_NS = 9
+const val CC_P = 10
+const val CC_NP = 11
 const val CC_L = 12
 const val CC_GE = 13
 const val CC_LE = 14
@@ -287,6 +289,13 @@ class Asm {
         int32(imm)
     }
 
+    fun testMI(base: Int, disp: Int, imm: Int) {
+        rex(0, 0, 0, base)
+        byte(0xF7)
+        modrmMem(0, base, disp)
+        int32(imm)
+    }
+
     fun cmpMI8Disp(base: Int, disp: Int, imm: Int) {
         rex(0, 0, 0, base)
         byte(0x80)
@@ -440,6 +449,74 @@ class Asm {
         if (has38) byte(0x38)
         byte(op)
         modrmMem(xmm, base, disp)
+    }
+
+    private fun sseRR(prefix: Int, op: Int, dst: Int, src: Int) {
+        if (prefix != 0) byte(prefix)
+        rex(0, dst, 0, src)
+        byte(0x0F)
+        byte(op)
+        modrmReg(dst, src)
+    }
+
+    fun movssLoad(xmm: Int, base: Int, disp: Int) = sseMem(0xF3, false, 0x10, xmm, base, disp)
+    fun movsdLoad(xmm: Int, base: Int, disp: Int) = sseMem(0xF2, false, 0x10, xmm, base, disp)
+
+    fun addssMem(xmm: Int, base: Int, disp: Int) = sseMem(0xF3, false, 0x58, xmm, base, disp)
+    fun subssMem(xmm: Int, base: Int, disp: Int) = sseMem(0xF3, false, 0x5C, xmm, base, disp)
+    fun mulssMem(xmm: Int, base: Int, disp: Int) = sseMem(0xF3, false, 0x59, xmm, base, disp)
+    fun divssMem(xmm: Int, base: Int, disp: Int) = sseMem(0xF3, false, 0x5E, xmm, base, disp)
+    fun addsdMem(xmm: Int, base: Int, disp: Int) = sseMem(0xF2, false, 0x58, xmm, base, disp)
+    fun subsdMem(xmm: Int, base: Int, disp: Int) = sseMem(0xF2, false, 0x5C, xmm, base, disp)
+    fun mulsdMem(xmm: Int, base: Int, disp: Int) = sseMem(0xF2, false, 0x59, xmm, base, disp)
+    fun divsdMem(xmm: Int, base: Int, disp: Int) = sseMem(0xF2, false, 0x5E, xmm, base, disp)
+
+    fun sqrtss(dst: Int, src: Int) = sseRR(0xF3, 0x51, dst, src)
+    fun sqrtsd(dst: Int, src: Int) = sseRR(0xF2, 0x51, dst, src)
+
+    fun ucomiss(dst: Int, src: Int) = sseRR(0, 0x2E, dst, src)
+    fun ucomisd(dst: Int, src: Int) = sseRR(0x66, 0x2E, dst, src)
+    fun ucomissMem(xmm: Int, base: Int, disp: Int) = sseMem(0, false, 0x2E, xmm, base, disp)
+    fun ucomisdMem(xmm: Int, base: Int, disp: Int) = sseMem(0x66, false, 0x2E, xmm, base, disp)
+
+    fun cvtss2sd(dst: Int, src: Int) = sseRR(0xF3, 0x5A, dst, src)
+    fun cvtsd2ss(dst: Int, src: Int) = sseRR(0xF2, 0x5A, dst, src)
+    fun cvtsi2ssMem(xmm: Int, base: Int, disp: Int) = sseMem(0xF3, false, 0x2A, xmm, base, disp)
+    fun cvtsi2sdMem(xmm: Int, base: Int, disp: Int) = sseMem(0xF2, false, 0x2A, xmm, base, disp)
+
+    fun cvttss2si(gpr: Int, xmm: Int) = sseRR(0xF3, 0x2C, gpr, xmm)
+    fun cvtss2si(gpr: Int, xmm: Int) = sseRR(0xF3, 0x2D, gpr, xmm)
+    fun cvttsd2si(gpr: Int, xmm: Int) = sseRR(0xF2, 0x2C, gpr, xmm)
+    fun cvtsd2si(gpr: Int, xmm: Int) = sseRR(0xF2, 0x2D, gpr, xmm)
+
+    fun movdRX(gpr: Int, xmm: Int) {
+        byte(0x66)
+        rex(0, xmm, 0, gpr)
+        byte(0x0F)
+        byte(0x7E)
+        modrmReg(xmm, gpr)
+    }
+
+    fun movqRX(gpr: Int, xmm: Int) {
+        byte(0x66)
+        rex(1, xmm, 0, gpr, force = true)
+        byte(0x0F)
+        byte(0x7E)
+        modrmReg(xmm, gpr)
+    }
+
+    fun stmxcsr(base: Int, disp: Int) {
+        rex(0, 3, 0, base)
+        byte(0x0F)
+        byte(0xAE)
+        modrmMem(3, base, disp)
+    }
+
+    fun ldmxcsr(base: Int, disp: Int) {
+        rex(0, 2, 0, base)
+        byte(0x0F)
+        byte(0xAE)
+        modrmMem(2, base, disp)
     }
 
     fun movdquLoad(xmm: Int, base: Int, disp: Int) = sseMem(0xF3, false, 0x6F, xmm, base, disp)

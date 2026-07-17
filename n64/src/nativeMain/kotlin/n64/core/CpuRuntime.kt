@@ -76,13 +76,17 @@ private fun hostInvalidate(page: Int) {
     cpuHostN64().dynarec!!.invalidatePage(page)
 }
 
-private fun hostExec(op: Int, vaddr: Int): Int {
+private fun hostExec(op: Int, vaddr: Int, slot: Int): Int {
     val n64 = cpuHostN64()
-    val result = n64.cpu.dynExec(op, vaddr)
+    val ctx = n64.dynarec!!.ctx
+    n64.cpu.fcr31 = ctx[CTX_FCR31 / 8].toInt()
+    n64.cpu.count = ctx[1]
+    val result = n64.cpu.dynExec(op, vaddr, slot)
+    ctx[CTX_FCR31 / 8] = n64.cpu.fcr31.toLong()
     if (result != 0) {
-        val ctx = n64.dynarec!!.ctx
         ctx[0] = n64.cpu.pc
-        n64.cpu.count = ctx[1]
+        n64.cpu.count += 1
+        ctx[1] = n64.cpu.count
         refreshLimit(n64)
     }
     return result

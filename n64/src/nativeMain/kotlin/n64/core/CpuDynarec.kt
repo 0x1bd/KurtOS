@@ -24,7 +24,6 @@ const val CPU_MAX_BLOCK = 64
 const val CLS_OP = 0
 const val CLS_BRANCH = 1
 const val CLS_END = 2
-const val CLS_CALLOUT = 3
 
 typealias CodeFn = CPointer<CFunction<(CPointer<LongVar>?) -> Int>>
 
@@ -46,10 +45,12 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
     private val lutRPin = cpu.tlbLutR.pin()
     private val lutWPin = cpu.tlbLutW.pin()
     private val pagesPin = pageFlags.pin()
+    private val fgrPin = cpu.fgr.pin()
+    private val cop0Pin = cpu.cop0.pin()
     private val jrTable = LongArray(RDRAM_SIZE ushr 2)
     private val jrPin = jrTable.pin()
 
-    val ctx: CPointer<LongVar> = nativeHeap.allocArray(22)
+    val ctx: CPointer<LongVar> = nativeHeap.allocArray(25)
 
     private val compiler = CpuCompiler(cpuCallbacks())
     private val ops = IntArray(CPU_MAX_BLOCK)
@@ -82,6 +83,7 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
     private val skipMul = "mul" in skip
     private val skipShift = "shift" in skip
     private val skipAlu = "alu" in skip
+    private val skipFpu = "fpu" in skip
 
     init {
         ctx[CTX_GPR / 8] = gprPin.addressOf(0).toLong()
@@ -91,6 +93,8 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
         ctx[CTX_PAGES / 8] = pagesPin.addressOf(0).toLong()
         ctx[CTX_JRTAB / 8] = jrPin.addressOf(0).toLong()
         ctx[CTX_EXEC / 8] = cpuExecPtr()
+        ctx[CTX_FGR / 8] = fgrPin.addressOf(0).toLong()
+        ctx[CTX_COP0 / 8] = cop0Pin.addressOf(0).toLong()
         compiler.dispatch = !nochain
         installTrampoline()
     }
@@ -102,6 +106,8 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
         ctx[CTX_RETURN / 8] = code + ret
         trampolineEnd = arena.offset
     }
+
+    fun debugEntry(phys: Int): Long = table[phys ushr 2]?.entry ?: 0L
 
     fun flush() {
         table.fill(null)
@@ -224,6 +230,7 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
             ctx[CTX_COUNT / 8] = cpu.count
             ctx[CTX_HI / 8] = cpu.hi
             ctx[CTX_LO / 8] = cpu.lo
+            ctx[CTX_FCR31 / 8] = cpu.fcr31.toLong()
             ctx[CTX_INITMODE / 8] = if (n64.mi.initMode) 1L else 0L
             ctx[CTX_LIMIT / 8] = if (chaining) chainLimit() else Long.MAX_VALUE
             ctx[CTX_DISPATCH / 8] = block.entry
@@ -235,6 +242,7 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
             cpu.count = ctx[CTX_COUNT / 8]
             cpu.hi = ctx[CTX_HI / 8]
             cpu.lo = ctx[CTX_LO / 8]
+            cpu.fcr31 = ctx[CTX_FCR31 / 8].toInt()
             val ran = ctx[CTX_INSTRS / 8]
             cpu.instructions += ran
             blockInstrs += ran
@@ -268,6 +276,7 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
 
     private fun compile(vbase: Int, phys: Int): CpuBlock {
         compiles++
+        compiler.fr = cpu.fprFull
         var at = phys
         var n = 0
         var endsWithBranch = false
@@ -320,6 +329,7 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
 
     private fun skipClass(op: Int): Boolean {
         val major = op ushr 26
+        if (major == 17 || major == 49 || major == 53 || major == 57 || major == 61) return skipFpu
         if (major in 32..39 || major == 55) return skipLoad
         if (major in 40..47 || major == 63) return skipStore
         if (major == 0) {
@@ -358,9 +368,13 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
         55, 63,
         -> CLS_OP
 
-        17 -> if (((op ushr 21) and 0x1F) == 8) CLS_END else CLS_CALLOUT
+        17 -> when ((op ushr 21) and 0x1F) {
+            8 -> CLS_BRANCH
+            0, 1, 2, 4, 5, 6, 16, 17, 20, 21 -> CLS_OP
+            else -> CLS_END
+        }
 
-        49, 53, 57, 61 -> CLS_CALLOUT
+        49, 53, 57, 61 -> CLS_OP
 
         else -> CLS_END
     }

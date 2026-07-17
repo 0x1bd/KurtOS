@@ -197,8 +197,14 @@ class CPU(private val n64: N64) {
         cop0WriteMask[31] = -1L
     }
 
+    val fprFull: Boolean get() = fr
+
     fun setFpuRegisterMode() {
-        fr = cop0[COP0_STATUS] and STATUS_FR != 0L
+        val next = cop0[COP0_STATUS] and STATUS_FR != 0L
+        if (next != fr) {
+            fr = next
+            n64.dynarec?.flush()
+        }
     }
 
     fun addCycles(cycles: Long) {
@@ -248,10 +254,12 @@ class CPU(private val n64: N64) {
         }
     }
 
-    internal fun dynExec(op: Int, vaddr: Int): Int {
+    internal fun dynExec(op: Int, vaddr: Int, slot: Int): Int {
         pc = vaddr.toLong()
+        if (slot != 0) branchState = STATE_DELAY_NOT_TAKEN
         execute(op)
         gpr[0] = 0
+        if (slot != 0 && branchState == STATE_DELAY_NOT_TAKEN) branchState = STATE_STEP
         if (branchState == STATE_STEP && pc == vaddr.toLong()) return 0
         if (branchState == STATE_EXCEPTION) branchState = STATE_STEP
         return 1
@@ -1031,9 +1039,16 @@ class CPU(private val n64: N64) {
     }
 
     private fun floatingPointException() {
+        if (debugFpe) {
+            val regs = StringBuilder()
+            for (i in 0 until 32 step 2) regs.append(" f$i=0x${fgr[i].toULong().toString(16)}")
+            println("[fpe] pc=0x${pc.toUInt().toString(16)} fcr31=0x${fcr31.toUInt().toString(16)}$regs")
+        }
         cop0[COP0_CAUSE] = EXC_FPE
         generalException(0x180)
     }
+
+    var debugFpe = false
 
     private fun addressException(address: Int, write: Boolean) = addressException64(address.toLong(), write)
 

@@ -398,6 +398,8 @@ class Rdp(private val n64: N64) {
         var current = regsDpc[DPC_CURRENT]
         val end = regsDpc[DPC_END]
 
+        if (current < end) pool?.wake()
+
         while (current < end) {
             val word0 = readCommand(current)
             val opcode = (word0 ushr 24) and 0x3F
@@ -416,6 +418,7 @@ class Rdp(private val n64: N64) {
         }
 
         regsDpc[DPC_CURRENT] = current
+        pool?.rest()
     }
 
     val diagCombine = LongArray(128)
@@ -2201,11 +2204,10 @@ class Rdp(private val n64: N64) {
         val a = channel(color, 3)
 
         if (colorSize == 2) {
-            val value = ((r * 31 / 255) shl 11) or ((g * 31 / 255) shl 6) or ((b * 31 / 255) shl 1) or
+            val value = (TO5[r] shl 11) or (TO5[g] shl 6) or (TO5[b] shl 1) or
                 (if (a >= 128) 1 else 0)
             val at = colorImage + (y * colorWidth + x) * 2
-            n64.ramWrite8(at, (value ushr 8) and 0xFF)
-            n64.ramWrite8(at + 1, value and 0xFF)
+            n64.ramWrite16(at, value)
         } else if (colorSize == 3) {
             val value = (r shl 24) or (g shl 16) or (b shl 8) or a
             n64.ramWrite32(colorImage + (y * colorWidth + x) * 4, value)
@@ -2284,14 +2286,15 @@ class Rdp(private val n64: N64) {
     private fun zStore(x: Int, y: Int, z: Int, dzPixEnc: Int) {
         val at = zImage + (y * colorWidth + x) * 2
         val zval = zComTable[z and 0x3FFFF] or (dzPixEnc shr 2)
-        n64.ramWrite8(at, (zval ushr 8) and 0xFF)
-        n64.ramWrite8(at + 1, zval and 0xFF)
+        n64.ramWrite16(at, zval)
         n64.hidden[(at and RDRAM_MASK) ushr 1] = (dzPixEnc and 3).toByte()
     }
 
     companion object {
         private const val SPANS = 1024
         private const val PARALLEL_MIN_ROWS = 8
+
+        private val TO5 = IntArray(256) { it * 31 / 255 }
 
         private val NORM_POINT = intArrayOf(
             0x4000, 0x3F04, 0x3E10, 0x3D22, 0x3C3C, 0x3B5D, 0x3A83, 0x39B1,

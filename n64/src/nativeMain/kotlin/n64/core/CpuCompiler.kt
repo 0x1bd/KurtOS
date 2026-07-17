@@ -21,6 +21,10 @@ const val CTX_LINKSRC = 136
 const val CTX_INSTRS = 144
 const val CTX_JRTAB = 152
 const val CTX_EXEC = 160
+const val CTX_FGR = 168
+const val CTX_FCR31 = 176
+const val CTX_MXCSR = 184
+const val CTX_COP0 = 192
 
 const val DELAY_NONE = 0
 const val DELAY_COND_IMM = 1
@@ -51,6 +55,8 @@ class CpuCallbacks(
 
 class CpuCompiler(private val callbacks: CpuCallbacks) {
     val asm = Asm()
+
+    var fr = false
 
     private var vbase = 0
     private var cycles = 0
@@ -167,16 +173,6 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
         for (at in exitJumps) asm.patch(at)
         asm.jmpMem(RBX, CTX_RETURN)
         return asm.len
-    }
-
-    private fun callout(op: Int) {
-        flush()
-        asm.movRI32(RDI, op)
-        asm.movRI32(RSI, currentVaddr)
-        asm.movRM(RAX, RBX, CTX_EXEC, 1)
-        asm.callReg(RAX)
-        asm.testRR(RAX, RAX, 0)
-        calloutExits.add(asm.jcc(CC_NE))
     }
 
     private fun beginOp(i: Int) {
@@ -339,6 +335,14 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
                 }
                 likely = which == 2 || which == 3 || which == 18 || which == 19
             }
+
+            17 -> {
+                cu1Bail()
+                asm.movRM(RAX, RBX, CTX_FCR31, 0)
+                asm.testRI(RAX, 1 shl 23)
+                asm.setcc(if (rt and 1 == 0) CC_E else CC_NE, R11)
+                likely = rt and 2 != 0
+            }
         }
 
         cycles += 1
@@ -487,8 +491,462 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
             55 -> emitLd(rs, rt, imm)
             63 -> emitSd(rs, rt, imm)
 
-            17, 49, 53, 57, 61 -> callout(op)
+            17 -> emitCop1(op, rt, rd, sa)
+            49 -> emitLwc1(rs, rt, imm)
+            53 -> emitLdc1(rs, rt, imm)
+            57 -> emitSwc1(rs, rt, imm)
+            61 -> emitSdc1(rs, rt, imm)
         }
+    }
+
+    private fun calloutSafe(op: Int) {
+        asm.movMR(RBX, CTX_SCR1, R11, 1)
+        flush()
+        asm.movRI32(RDI, op)
+        asm.movRI32(RSI, currentVaddr)
+        asm.movRI32(RDX, if (delayKind != DELAY_NONE) 1 else 0)
+        asm.movRM(RAX, RBX, CTX_EXEC, 1)
+        asm.callReg(RAX)
+        asm.movRM(R11, RBX, CTX_SCR1, 1)
+        asm.testRR(RAX, RAX, 0)
+        calloutExits.add(asm.jcc(CC_NE))
+    }
+
+    private fun cu1Bail() {
+        asm.movRM(RAX, RBX, CTX_COP0, 1)
+        asm.testMI(RAX, COP0_STATUS * 8, 0x20000000)
+        bailCc(CC_E)
+    }
+
+    private fun fgrBase(reg: Int) = asm.movRM(reg, RBX, CTX_FGR, 1)
+
+    private fun fprWord(reg: Int): Int =
+        if (fr || reg and 1 == 0) reg * 8 else (reg and 1.inv()) * 8 + 4
+
+    private fun fprDouble(reg: Int): Int = (if (fr) reg else reg and 1.inv()) * 8
+
+    private fun fprResult(reg: Int): Int = (if (fr) reg else reg and 1.inv()) * 8
+
+    private fun fpuGuard(slow: ArrayList<Int>) {
+        asm.movRM(RAX, RBX, CTX_FCR31, 0)
+        asm.testRI(RAX, 0xF83)
+        slow.add(asm.jcc(CC_NE))
+    }
+
+    private fun finishFpu(op: Int, slow: ArrayList<Int>) {
+        if (slow.isEmpty()) return
+        val done = asm.jmp()
+        for (at in slow) asm.patch(at)
+        calloutSafe(op)
+        asm.patch(done)
+    }
+
+    private fun emitCop1(op: Int, rt: Int, fs: Int, fd: Int) {
+        cu1Bail()
+        when ((op ushr 21) and 0x1F) {
+            0 -> {
+                fgrBase(RSI)
+                asm.movRM(RAX, RSI, fprWord(fs), 0)
+                asm.movsxdRR(RAX, RAX)
+                storeG(rt, RAX)
+            }
+
+            1 -> {
+                fgrBase(RSI)
+                asm.movRM(RAX, RSI, fprDouble(fs), 1)
+                storeG(rt, RAX)
+            }
+
+            2 -> {
+                when (fs) {
+                    31 -> {
+                        asm.movRM(RAX, RBX, CTX_FCR31, 0)
+                        asm.movsxdRR(RAX, RAX)
+                    }
+
+                    0 -> asm.movRI32sx(RAX, 0x00000A00)
+                    else -> asm.movRI32(RAX, 0)
+                }
+                storeG(rt, RAX)
+            }
+
+            4 -> {
+                fgrBase(RSI)
+                loadG(RAX, rt, 0)
+                asm.movMR(RSI, fprWord(fs), RAX, 0)
+            }
+
+            5 -> {
+                fgrBase(RSI)
+                loadG(RAX, rt, 1)
+                asm.movMR(RSI, fprDouble(fs), RAX, 1)
+            }
+
+            16 -> emitFpuSingle(op, fs, rt, fd)
+            17 -> emitFpuDouble(op, fs, rt, fd)
+            20 -> emitFpuWord(op, fs, fd)
+
+            else -> calloutSafe(op)
+        }
+    }
+
+    private fun emitCauseClear() {
+        asm.movRM(RDX, RBX, CTX_FCR31, 0)
+        asm.aluRI(ALU_AND, RDX, 0x3F000.inv(), 0)
+        asm.movMR(RBX, CTX_FCR31, RDX, 0)
+    }
+
+    private fun emitMxcsrReset() {
+        asm.stmxcsr(RBX, CTX_MXCSR)
+        asm.aluMI(ALU_AND, RBX, CTX_MXCSR, 0x3F.inv(), 0)
+        asm.ldmxcsr(RBX, CTX_MXCSR)
+    }
+
+    private fun emitFpuMask(divide: Boolean, single: Boolean) {
+        asm.stmxcsr(RBX, CTX_MXCSR)
+        asm.movRM(RAX, RBX, CTX_MXCSR, 0)
+
+        asm.aluRR(ALU_XOR, R8, R8, 0)
+        if (single) {
+            asm.movRR(RCX, RAX, 0)
+            asm.shiftRI(SH_SHR, RCX, 5, 0)
+            asm.aluRI(ALU_AND, RCX, 1, 0)
+            asm.movRR(R8, RCX, 0)
+        }
+
+        asm.testRI(RAX, 8)
+        val noOverflow = asm.jcc(CC_E)
+        asm.aluRI(ALU_OR, R8, 5, 0)
+        asm.patch(noOverflow)
+
+        if (divide) {
+            asm.testRI(RAX, 4)
+            val noZero = asm.jcc(CC_E)
+            asm.aluRI(ALU_OR, R8, 13, 0)
+            asm.patch(noZero)
+        }
+
+        if (single) {
+            asm.movdRX(RCX, 0)
+            asm.aluRI(ALU_AND, RCX, 0x7FFFFFFF, 0)
+            val zero = asm.jcc(CC_E)
+            asm.aluRI(ALU_CMP, RCX, 0x00800000, 0)
+            val notTiny = asm.jcc(CC_AE)
+            asm.aluRI(ALU_OR, R8, 3, 0)
+            asm.patch(zero)
+            asm.patch(notTiny)
+        }
+
+        asm.movRM(RDX, RBX, CTX_FCR31, 0)
+        asm.aluRI(ALU_AND, RDX, 0x3F000.inv(), 0)
+        asm.movRR(RCX, R8, 0)
+        asm.shiftRI(SH_SHL, RCX, 12, 0)
+        asm.aluRR(ALU_OR, RDX, RCX, 0)
+        asm.movRR(RCX, R8, 0)
+        asm.shiftRI(SH_SHL, RCX, 2, 0)
+        asm.aluRR(ALU_OR, RDX, RCX, 0)
+        asm.movMR(RBX, CTX_FCR31, RDX, 0)
+    }
+
+    private fun emitFpuSingle(op: Int, fs: Int, ft: Int, fd: Int) {
+        flush()
+        val slow = ArrayList<Int>()
+
+        when (val fn = op and 0x3F) {
+            in 0..4 -> {
+                fpuGuard(slow)
+                fgrBase(RSI)
+                asm.movssLoad(0, RSI, fprWord(fs))
+                emitMxcsrReset()
+                when (fn) {
+                    0 -> asm.addssMem(0, RSI, fprWord(ft))
+                    1 -> asm.subssMem(0, RSI, fprWord(ft))
+                    2 -> asm.mulssMem(0, RSI, fprWord(ft))
+                    3 -> asm.divssMem(0, RSI, fprWord(ft))
+                    else -> asm.sqrtss(0, 0)
+                }
+                asm.ucomiss(0, 0)
+                slow.add(asm.jcc(CC_P))
+                emitFpuMask(fn == 3, true)
+                asm.movdRX(RAX, 0)
+                asm.movMR(RSI, fprResult(fd), RAX, 1)
+            }
+
+            5 -> {
+                emitCauseClear()
+                fgrBase(RSI)
+                asm.movRM(RAX, RSI, fprWord(fs), 0)
+                asm.aluRI(ALU_AND, RAX, 0x7FFFFFFF, 0)
+                asm.movMR(RSI, fprResult(fd), RAX, 1)
+            }
+
+            6 -> {
+                fgrBase(RSI)
+                asm.movRM(RAX, RSI, fprWord(fs), 0)
+                asm.movMR(RSI, fprResult(fd), RAX, 1)
+            }
+
+            7 -> {
+                emitCauseClear()
+                fgrBase(RSI)
+                asm.movRM(RAX, RSI, fprWord(fs), 0)
+                asm.aluRI(ALU_XOR, RAX, 0x80000000.toInt(), 0)
+                asm.movMR(RSI, fprResult(fd), RAX, 1)
+            }
+
+            12, 13, 36 -> {
+                if (fn == 36) fpuGuard(slow)
+                fgrBase(RSI)
+                asm.movssLoad(0, RSI, fprWord(fs))
+                if (fn == 13) asm.cvttss2si(RAX, 0) else asm.cvtss2si(RAX, 0)
+                asm.aluRI(ALU_CMP, RAX, 0x80000000.toInt(), 0)
+                slow.add(asm.jcc(CC_E))
+                emitCauseClear()
+                asm.movMR(RSI, fprResult(fd), RAX, 1)
+            }
+
+            33 -> {
+                emitCauseClear()
+                fgrBase(RSI)
+                asm.movssLoad(0, RSI, fprWord(fs))
+                asm.cvtss2sd(0, 0)
+                asm.movqStore(RSI, fprDouble(fd), 0)
+            }
+
+            in 48..63 -> {
+                emitFpuCompare(op, fs, ft, true)
+                return
+            }
+
+            else -> {
+                calloutSafe(op)
+                return
+            }
+        }
+
+        finishFpu(op, slow)
+    }
+
+    private fun emitFpuDouble(op: Int, fs: Int, ft: Int, fd: Int) {
+        flush()
+        val slow = ArrayList<Int>()
+
+        when (val fn = op and 0x3F) {
+            in 0..4 -> {
+                fpuGuard(slow)
+                fgrBase(RSI)
+                asm.movsdLoad(0, RSI, fprDouble(fs))
+                emitMxcsrReset()
+                when (fn) {
+                    0 -> asm.addsdMem(0, RSI, fprDouble(ft))
+                    1 -> asm.subsdMem(0, RSI, fprDouble(ft))
+                    2 -> asm.mulsdMem(0, RSI, fprDouble(ft))
+                    3 -> asm.divsdMem(0, RSI, fprDouble(ft))
+                    else -> asm.sqrtsd(0, 0)
+                }
+                asm.ucomisd(0, 0)
+                slow.add(asm.jcc(CC_P))
+                emitFpuMask(fn == 3, false)
+                asm.movqStore(RSI, fprDouble(fd), 0)
+            }
+
+            5 -> {
+                emitCauseClear()
+                fgrBase(RSI)
+                asm.movRM(RAX, RSI, fprDouble(fs), 1)
+                asm.movRI64(RDX, 0x7FFFFFFFFFFFFFFFL)
+                asm.aluRR(ALU_AND, RAX, RDX, 1)
+                asm.movMR(RSI, fprDouble(fd), RAX, 1)
+            }
+
+            6 -> {
+                fgrBase(RSI)
+                asm.movRM(RAX, RSI, fprDouble(fs), 1)
+                asm.movMR(RSI, fprDouble(fd), RAX, 1)
+            }
+
+            7 -> {
+                emitCauseClear()
+                fgrBase(RSI)
+                asm.movRM(RAX, RSI, fprDouble(fs), 1)
+                asm.movRI64(RDX, Long.MIN_VALUE)
+                asm.aluRR(ALU_XOR, RAX, RDX, 1)
+                asm.movMR(RSI, fprDouble(fd), RAX, 1)
+            }
+
+            12, 13, 36 -> {
+                if (fn == 36) fpuGuard(slow)
+                fgrBase(RSI)
+                asm.movsdLoad(0, RSI, fprDouble(fs))
+                if (fn == 13) asm.cvttsd2si(RAX, 0) else asm.cvtsd2si(RAX, 0)
+                asm.aluRI(ALU_CMP, RAX, 0x80000000.toInt(), 0)
+                slow.add(asm.jcc(CC_E))
+                emitCauseClear()
+                asm.movMR(RSI, fprResult(fd), RAX, 1)
+            }
+
+            32 -> {
+                emitCauseClear()
+                fgrBase(RSI)
+                asm.movsdLoad(0, RSI, fprDouble(fs))
+                asm.cvtsd2ss(0, 0)
+                asm.movdRX(RAX, 0)
+                asm.movMR(RSI, fprResult(fd), RAX, 1)
+            }
+
+            in 48..63 -> {
+                emitFpuCompare(op, fs, ft, false)
+                return
+            }
+
+            else -> {
+                calloutSafe(op)
+                return
+            }
+        }
+
+        finishFpu(op, slow)
+    }
+
+    private fun emitFpuWord(op: Int, fs: Int, fd: Int) {
+        flush()
+        when (op and 0x3F) {
+            32 -> {
+                fgrBase(RSI)
+                asm.cvtsi2ssMem(0, RSI, fprWord(fs))
+                asm.movdRX(RAX, 0)
+                asm.movMR(RSI, fprResult(fd), RAX, 1)
+            }
+
+            33 -> {
+                fgrBase(RSI)
+                asm.cvtsi2sdMem(0, RSI, fprWord(fs))
+                asm.movqStore(RSI, fprDouble(fd), 0)
+            }
+
+            else -> calloutSafe(op)
+        }
+    }
+
+    private fun emitFpuCompare(op: Int, fs: Int, ft: Int, single: Boolean) {
+        flush()
+        val cond = op and 0xF
+        val slow = ArrayList<Int>()
+        fpuGuard(slow)
+
+        fgrBase(RSI)
+        if (single) {
+            asm.movssLoad(0, RSI, fprWord(fs))
+            asm.ucomissMem(0, RSI, fprWord(ft))
+        } else {
+            asm.movsdLoad(0, RSI, fprDouble(fs))
+            asm.ucomisdMem(0, RSI, fprDouble(ft))
+        }
+
+        asm.movRI32(RAX, 0)
+        asm.movRI32(RCX, 0)
+        val unordered = asm.jcc(CC_P)
+        when (cond and 6) {
+            6 -> asm.setcc(CC_BE, RAX)
+            4 -> asm.setcc(CC_B, RAX)
+            2 -> asm.setcc(CC_E, RAX)
+        }
+        val over = asm.jmp()
+        asm.patch(unordered)
+        if (cond and 1 != 0) asm.movRI32(RAX, 1)
+        asm.movRI32(RCX, 0x10040)
+        asm.patch(over)
+
+        asm.movRM(RDX, RBX, CTX_FCR31, 0)
+        asm.aluRI(ALU_AND, RDX, ((1 shl 23) or 0x3F000).inv(), 0)
+        asm.aluRR(ALU_OR, RDX, RCX, 0)
+        asm.shiftRI(SH_SHL, RAX, 23, 0)
+        asm.aluRR(ALU_OR, RDX, RAX, 0)
+        asm.movMR(RBX, CTX_FCR31, RDX, 0)
+
+        finishFpu(op, slow)
+    }
+
+    private fun emitLwc1(rs: Int, ft: Int, imm: Int) {
+        cu1Bail()
+        flush()
+        emitTranslate(rs, imm, 3, false)
+        asm.aluRI(ALU_CMP, RCX, RDRAM_SIZE, 0)
+        val mmio = asm.jcc(CC_AE)
+        asm.movRMIndexed(RAX, R13, RCX, 1, 0, 0)
+        val done = asm.jmp()
+        asm.patch(mmio)
+        calloutPrologue(false)
+        asm.movRR(RDI, RCX, 0)
+        call(callbacks.read32)
+        calloutEpilogue(false)
+        asm.patch(done)
+        fgrBase(RDX)
+        asm.movMR(RDX, fprWord(ft), RAX, 0)
+    }
+
+    private fun emitLdc1(rs: Int, ft: Int, imm: Int) {
+        cu1Bail()
+        flush()
+        emitTranslate(rs, imm, 7, false)
+        asm.aluRI(ALU_CMP, RCX, RDRAM_SIZE, 0)
+        val mmio = asm.jcc(CC_AE)
+        asm.movRMIndexed(RAX, R13, RCX, 1, 0, 0)
+        asm.shiftRI(SH_SHL, RAX, 32, 1)
+        asm.movRMIndexed(RDX, R13, RCX, 1, 4, 0)
+        asm.aluRR(ALU_OR, RAX, RDX, 1)
+        val done = asm.jmp()
+        asm.patch(mmio)
+        calloutPrologue(false)
+        asm.movRR(RDI, RCX, 0)
+        call(callbacks.read64)
+        calloutEpilogue(false)
+        asm.patch(done)
+        fgrBase(RDX)
+        asm.movMR(RDX, fprDouble(ft), RAX, 1)
+    }
+
+    private fun emitSwc1(rs: Int, ft: Int, imm: Int) {
+        cu1Bail()
+        val (m1, m2) = emitStoreCommon(rs, imm, 3)
+        fgrBase(RDX)
+        asm.movRM(RAX, RDX, fprWord(ft), 0)
+        asm.movMRIndexed(R13, RCX, 1, 0, RAX, 0)
+        emitInvalidateCheck(RCX)
+        val end = asm.jmp()
+        asm.patch(m1)
+        asm.patch(m2)
+        fgrBase(RDX)
+        asm.movRM(RAX, RDX, fprWord(ft), 0)
+        calloutPrologue(false)
+        asm.movRR(RSI, RAX, 0)
+        asm.movRR(RDI, RCX, 0)
+        call(callbacks.write32)
+        calloutEpilogue(false)
+        asm.patch(end)
+    }
+
+    private fun emitSdc1(rs: Int, ft: Int, imm: Int) {
+        cu1Bail()
+        val (m1, m2) = emitStoreCommon(rs, imm, 7)
+        fgrBase(RDX)
+        asm.movRM(RAX, RDX, fprDouble(ft), 1)
+        asm.movRR(RDX, RAX, 1)
+        asm.shiftRI(SH_SHR, RDX, 32, 1)
+        asm.movMRIndexed(R13, RCX, 1, 0, RDX, 0)
+        asm.movMRIndexed(R13, RCX, 1, 4, RAX, 0)
+        emitInvalidateCheck(RCX)
+        val end = asm.jmp()
+        asm.patch(m1)
+        asm.patch(m2)
+        fgrBase(RDX)
+        asm.movRM(RAX, RDX, fprDouble(ft), 1)
+        calloutPrologue(false)
+        asm.movRR(RSI, RAX, 1)
+        asm.movRR(RDI, RCX, 0)
+        call(callbacks.write64)
+        calloutEpilogue(false)
+        asm.patch(end)
     }
 
     private fun emitSpecial(op: Int, rs: Int, rt: Int, rd: Int, sa: Int) {

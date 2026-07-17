@@ -1,6 +1,10 @@
 package n64.core
 
 import kotlin.test.Test
+import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.get
+import kotlinx.cinterop.toCPointer
 
 class DynarecDiffTest {
     @Test
@@ -36,15 +40,22 @@ class DynarecDiffTest {
 
             var badGpr = false
             for (i in 0 until 32) if (a.gpr[i] != b.gpr[i]) badGpr = true
+            var badFgr = false
+            for (i in 0 until 32) if (a.fgr[i] != b.fgr[i]) badFgr = true
             val badHiLo = a.hi != b.hi || a.lo != b.lo
             val badPc = a.pc != b.pc
+            val badFcr = a.fcr31 != b.fcr31
 
-            if (badGpr || badHiLo || badPc) {
+            if (badGpr || badHiLo || badPc || badFgr || badFcr) {
                 println("[jitdiff] MISMATCH unit=$unit startPc=${h(startPc)} n=$n block=$isBlock")
                 println("[jitdiff]   pc dynarec=${h(a.pc)} ref=${h(b.pc)} count dynarec=${a.count} ref=${b.count}")
                 for (i in 0 until 32) {
                     if (a.gpr[i] != b.gpr[i]) println("[jitdiff]   gpr[$i] dynarec=${h(a.gpr[i])} ref=${h(b.gpr[i])}")
                 }
+                for (i in 0 until 32) {
+                    if (a.fgr[i] != b.fgr[i]) println("[jitdiff]   fgr[$i] dynarec=${h(a.fgr[i])} ref=${h(b.fgr[i])}")
+                }
+                if (a.fcr31 != b.fcr31) println("[jitdiff]   fcr31 dynarec=${h(a.fcr31.toLong())} ref=${h(b.fcr31.toLong())}")
                 if (a.hi != b.hi) println("[jitdiff]   hi dynarec=${h(a.hi)} ref=${h(b.hi)}")
                 if (a.lo != b.lo) println("[jitdiff]   lo dynarec=${h(a.lo)} ref=${h(b.lo)}")
                 dumpBlock(jitConsole, startPc, n)
@@ -68,6 +79,52 @@ class DynarecDiffTest {
             if (stop) break
         }
         println("[jitdiff] done units=$unit stop=$stop lastPc=${h(a.pc)}")
+    }
+
+    @Test
+    fun watch() {
+        val watchPc = environment("KURTOS_JITWATCH")?.removePrefix("0x")?.toLongOrNull(16) ?: return
+        val img = game() ?: return
+
+        val console = N64(img)
+        val dynarec = console.dynarec ?: return
+        val cpu = console.cpu
+        var hits = 0
+
+        dynarec.onUnit = hook@{ startPc, n, isBlock ->
+            if (startPc.toInt() != watchPc.toInt() || hits >= 20) return@hook
+            hits++
+            println(
+                "[watch] hit=$hits block=$isBlock n=$n pc=${h(cpu.pc)}" +
+                    " f0=${h(cpu.fgr[0])} f2=${h(cpu.fgr[2])} f4=${h(cpu.fgr[4])}" +
+                    " f12=${h(cpu.fgr[12])} f14=${h(cpu.fgr[14])}" +
+                    " fcr31=${h(cpu.fcr31.toLong())} fr=${cpu.fprFull}" +
+                    " status=${h(cpu.cop0[COP0_STATUS])}",
+            )
+        }
+
+        for (frame in 0 until 400) {
+            console.runFrame()
+            if (hits >= 20) break
+        }
+        println("[watch] done hits=$hits")
+
+        if (environment("KURTOS_DUMP_CODE") != null) dumpCode(dynarec, watchPc.toInt())
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun dumpCode(dynarec: CpuDynarec, pc: Int) {
+        val entry = dynarec.debugEntry(pc and 0x1FFFFFFF)
+        if (entry == 0L) {
+            println("[code] no block")
+            return
+        }
+        val p = entry.toCPointer<ByteVar>()!!
+        val bytes = StringBuilder()
+        for (i in 0 until 700) {
+            bytes.append((p[i].toInt() and 0xFF).toString(16).padStart(2, '0'))
+        }
+        println("[code] $bytes")
     }
 
     private fun dumpBlock(console: N64, startPc: Long, n: Int) {

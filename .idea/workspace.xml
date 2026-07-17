@@ -4,9 +4,19 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="feat: Use .qoi asset icons instead of hardcoded strings">
+    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="fix README.md">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/DynarecDiffTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/DynarecDiffTest.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/GameDiagTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/GameDiagTest.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/Asm.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/Asm.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CPU.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CPU.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuCompiler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuCompiler.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuDynarec.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuDynarec.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuRuntime.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuRuntime.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/N64.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/N64.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RDP.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RDP.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/WorkerPool.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/WorkerPool.kt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -63,7 +73,7 @@
     "node.js.detected.package.jshint": "true",
     "node.js.selected.package.jshint": "",
     "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "preferences.pluginManager",
+    "settings.editor.selected.configurable": "reference.settingsdialog.project.gradle",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
@@ -89,7 +99,8 @@
       <option name="presentableId" value="Default" />
       <updated>1784110690091</updated>
       <workItem from="1784118255606" duration="18419000" />
-      <workItem from="1784208115593" duration="17302000" />
+      <workItem from="1784208115593" duration="21022000" />
+      <workItem from="1784278996152" duration="2361000" />
     </task>
     <task id="LOCAL-00001" summary="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard">
       <option name="closed" value="true" />
@@ -187,7 +198,23 @@
       <option name="project" value="LOCAL" />
       <updated>1784237710366</updated>
     </task>
-    <option name="localTasksCounter" value="13" />
+    <task id="LOCAL-00013" summary="chore: update README.md">
+      <option name="closed" value="true" />
+      <created>1784238429655</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1784238429655</updated>
+    </task>
+    <task id="LOCAL-00014" summary="fix README.md">
+      <option name="closed" value="true" />
+      <created>1784238516118</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1784238516118</updated>
+    </task>
+    <option name="localTasksCounter" value="15" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -205,7 +232,9 @@
     <MESSAGE value="fix: gc should use adaptive scheduler" />
     <MESSAGE value="feat: Input rework. More player support." />
     <MESSAGE value="feat: Use .qoi asset icons instead of hardcoded strings" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: Use .qoi asset icons instead of hardcoded strings" />
+    <MESSAGE value="chore: update README.md" />
+    <MESSAGE value="fix README.md" />
+    <option name="LAST_COMMIT_MESSAGE" value="fix README.md" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />
