@@ -1,25 +1,37 @@
 # KurtOS
-KurtOS is an operating system capable of running on x86 bare metal whose main focus is to emulate consoles from the [4th to 6th generation](https://en.wikipedia.org/wiki/History_of_video_game_consoles).
 
-KurtOS uses Kotlin/Native for its kernel, drivers and emulation. This is done by supplying a custom interface for the K/N compiler to link against at build time.
+KurtOS is an operating system that runs on x86 bare metal, focused on emulating consoles from the [4th to 6th generation](https://en.wikipedia.org/wiki/History_of_video_game_consoles#Fourth_generation_(1987%E2%80%932004)).
+
+The kernel, drivers, and emulation are written in Kotlin/Native, built by supplying a custom interface for the K/N compiler to link against at build time.
 
 ## Features
-### Supported consoles for emulation
+
+### Console emulation
+
+Currently supported:
+
 - Game Boy (DMG)
 - Game Boy Color (GBC)
 - Game Boy Advance (GBA)
-- SNES (Super Nintendo Entertainment System)
-- N64 (Nintendo 64)
-- _more to come_
-#### Known issues:
-- SNES does not support any additional coprocessors (SuperFX, SA-1) which makes some games unplayable (Super Mario World 2: Yoshi’s Island...)
-- N64 has visual glitches and performance problems. (Ryzen 7 3700U avg FPS ~40 / 50 in SM64)
-- Audio scaling behaves incorrectly on different systems.
-- There is no multi-monitor support yet, nor can you output via HDMI or DP.
+- Super Nintendo Entertainment System (SNES)
+- Nintendo 64 (N64)
+- *more to come*
+
+#### Known issues
+
+- **SNES** has no support for additional coprocessors (SuperFX, SA-1), making some games unplayable (e.g. *Super Mario World 2: Yoshi's Island*).
+- **N64** has visual glitches and performance problems (Ryzen 7 3700U, ~40–50 avg FPS in *SM64*).
+- Audio scaling behaves incorrectly on some systems.
+- No multi-monitor support yet, and no HDMI or DisplayPort output.
+
 ### Peripherals
-KurtOS supports keyboards and XInput gamepads. This is subject to change in future versions to support more peripheral devices.
+
+KurtOS supports keyboards and XInput gamepads. Support for additional peripheral devices is planned for future versions.
+
 ### Desktop
-KurtOS features a simple desktop environment which includes:
-- A home page for playing a game on an emulator
+
+KurtOS includes a simple desktop environment with:
+
+- A home page for launching games in an emulator
 - A settings page
-- A very simple command shell
+- A basic command shell
