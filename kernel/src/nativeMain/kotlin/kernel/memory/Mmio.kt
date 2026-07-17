@@ -4,10 +4,15 @@ import hal.BootInfo
 import hal.Cpu
 import hal.RawMemory
 
+enum class MemType {
+    Uncached,
+    WriteCombining,
+}
+
 object Mmio {
     private var next = WINDOW_BASE
 
-    fun map(physical: ULong, bytes: ULong): ULong {
+    fun map(physical: ULong, bytes: ULong, memType: MemType = MemType.Uncached): ULong {
         if (physical == 0UL || bytes == 0UL) return 0UL
 
         val start = physical and LARGE_MASK.inv()
@@ -19,7 +24,7 @@ object Mmio {
         var frame = start
 
         while (frame < end) {
-            if (!mapLarge(current, frame)) return 0UL
+            if (!mapLarge(current, frame, flagsFor(memType))) return 0UL
             Cpu.invalidatePage(current)
 
             current += LARGE_SIZE
@@ -30,14 +35,19 @@ object Mmio {
         return virtual + offset
     }
 
-    private fun mapLarge(virtual: ULong, physical: ULong): Boolean {
+    private fun flagsFor(memType: MemType): ULong = when (memType) {
+        MemType.Uncached -> LARGE_FLAGS
+        MemType.WriteCombining -> WC_FLAGS
+    }
+
+    private fun mapLarge(virtual: ULong, physical: ULong, flags: ULong): Boolean {
         val root = BootInfo.toVirtual(Cpu.readCr3() and ADDRESS_MASK)
 
         val directoryPointer = descend(root, index(virtual, 39)) ?: return false
         val directory = descend(directoryPointer, index(virtual, 30)) ?: return false
 
         val entry = directory + index(virtual, 21).toULong() * 8UL
-        RawMemory.write64(entry, (physical and ADDRESS_MASK) or LARGE_FLAGS)
+        RawMemory.write64(entry, (physical and ADDRESS_MASK) or flags)
 
         return true
     }
@@ -81,4 +91,5 @@ object Mmio {
 
     private const val TABLE_FLAGS: ULong = 0x3UL
     private const val LARGE_FLAGS: ULong = 0x9BUL
+    private const val WC_FLAGS: ULong = 0x8BUL
 }

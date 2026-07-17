@@ -84,6 +84,16 @@ void hcf(void) {
 
 #define MAX_PAGE_POOL (64ULL * 1024 * 1024)
 #define MIN_HEAP      (16ULL * 1024 * 1024)
+#define GPU_POOL      (64ULL * 1024 * 1024)
+#define LARGE_PAGE    (2ULL * 1024 * 1024)
+
+void pat_init(void) {
+    uint32_t lo, hi;
+    __asm__ volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(0x277));
+    lo = (lo & ~0x0000FF00u) | 0x00000100u;
+    __asm__ volatile("wbinvd");
+    __asm__ volatile("wrmsr" : : "c"(0x277), "a"(lo), "d"(hi));
+}
 
 #define ALIGN_UP(v, a)   (((v) + (a) - 1) & ~((a) - 1))
 #define ALIGN_DOWN(v, a) ((v) & ~((a) - 1))
@@ -133,6 +143,16 @@ static void collect_memmap(void) {
     }
 
     uint64_t usable = region_end - heap_base;
+
+    if (usable >= 8 * GPU_POOL) {
+        uint64_t gpu_end = ALIGN_DOWN(region_end, LARGE_PAGE);
+        uint64_t gpu_base = gpu_end - GPU_POOL;
+        kurtos_boot_info.gpu_pool_start = gpu_base + hhdm;
+        kurtos_boot_info.gpu_pool_end = gpu_end + hhdm;
+        region_end = gpu_base;
+        usable = region_end - heap_base;
+    }
+
     uint64_t pool = usable / 4;
     if (pool > MAX_PAGE_POOL) pool = MAX_PAGE_POOL;
 
@@ -229,6 +249,7 @@ static void enable_sse(void) {
 
 void kmain_entry(void) {
     enable_sse();
+    pat_init();
 
     debug_print("\n[kurtos] boot\n");
 

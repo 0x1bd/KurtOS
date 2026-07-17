@@ -42,6 +42,14 @@ mcopy -i "$ESP_OUT" limine.conf ::/boot/limine/limine.conf
 mcopy -i "$ESP_OUT" "${LIMINE_DIR}/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
 mcopy -i "$ESP_OUT" "${LIMINE_DIR}/limine-bios.sys" ::/boot/limine/limine-bios.sys
 
+if [ -d third_party/firmware ]; then
+    mmd -i "$ESP_OUT" ::/firmware
+    for fw in third_party/firmware/*.bin; do
+        [ -e "$fw" ] || continue
+        mcopy -i "$ESP_OUT" "$fw" ::/firmware/
+    done
+fi
+
 assets=0
 if [ -d "$ASSETS_DIR" ]; then
     for entry in "$ASSETS_DIR"/*; do

@@ -5,18 +5,40 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="fix README.md">
+      <change afterPath="$PROJECT_DIR$/kapi/src/nativeMain/kotlin/kapi/gpu/Gpu.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/GpuLog.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/GpuPool.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/GpuFirmware.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/GpuService.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaProbe.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaPsp.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaReg.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaRegs.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaSdma.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaSmu.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaVm.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaVram.kt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/third_party/firmware/picasso_ce.bin" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/third_party/firmware/picasso_gpu_info.bin" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/third_party/firmware/picasso_me.bin" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/third_party/firmware/picasso_mec.bin" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/third_party/firmware/picasso_mec2.bin" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/third_party/firmware/picasso_pfp.bin" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/third_party/firmware/picasso_rlc.bin" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/third_party/firmware/picasso_sdma.bin" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/DynarecDiffTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/DynarecDiffTest.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/GameDiagTest.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/linuxX64Test/kotlin/n64/core/GameDiagTest.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/Asm.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/Asm.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CPU.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CPU.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuCompiler.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuCompiler.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuDynarec.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuDynarec.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuRuntime.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/CpuRuntime.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/N64.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/N64.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RDP.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/RDP.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/WorkerPool.kt" beforeDir="false" afterPath="$PROJECT_DIR$/n64/src/nativeMain/kotlin/n64/core/WorkerPool.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hal/src/nativeInterop/cinterop/mmio.def" beforeDir="false" afterPath="$PROJECT_DIR$/hal/src/nativeInterop/cinterop/mmio.def" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hal/src/nativeMain/kotlin/hal/BootInfo.kt" beforeDir="false" afterPath="$PROJECT_DIR$/hal/src/nativeMain/kotlin/hal/BootInfo.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hal/src/nativeMain/kotlin/hal/CPU.kt" beforeDir="false" afterPath="$PROJECT_DIR$/hal/src/nativeMain/kotlin/hal/CPU.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/Main.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/Main.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/console/BootScreen.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/console/BootScreen.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/PCI.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/PCI.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/memory/Mmio.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/memory/Mmio.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/shellext/KernelShell.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/shellext/KernelShell.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/boot.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/boot.c" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/kurtos.h" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/kurtos.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/smp.c" beforeDir="false" afterPath="$PROJECT_DIR$/runtime/src/main/arch/x86_64/smp.c" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tools/mkimage.sh" beforeDir="false" afterPath="$PROJECT_DIR$/tools/mkimage.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -56,28 +78,32 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "CidrDebugProfileConversion": "true",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.cidr.known.project.marker": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.readMode.enableVisualFormatting": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "cidr.known.project.marker": "true",
-    "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "main",
-    "kotlin-language-version-configured": "true",
-    "node.js.detected.package.jshint": "true",
-    "node.js.selected.package.jshint": "",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "reference.settingsdialog.project.gradle",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;CidrDebugProfileConversion&quot;: &quot;true&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.jshint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.jshint&quot;: &quot;&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;reference.settingsdialog.project.gradle&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager">
+    <configuration default="true" type="KotlinStandaloneScriptRunConfigurationType">
+      <option name="filePath" />
+      <method v="2" />
+    </configuration>
     <configuration default="true" type="KotlinStandaloneScriptRunConfigurationType">
       <option name="filePath" />
       <method v="2" />
@@ -101,6 +127,7 @@
       <workItem from="1784118255606" duration="18419000" />
       <workItem from="1784208115593" duration="21022000" />
       <workItem from="1784278996152" duration="2361000" />
+      <workItem from="1784297311079" duration="11536000" />
     </task>
     <task id="LOCAL-00001" summary="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard">
       <option name="closed" value="true" />

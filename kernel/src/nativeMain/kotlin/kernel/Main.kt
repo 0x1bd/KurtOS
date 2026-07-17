@@ -21,6 +21,7 @@ import kernel.drivers.usb.USBService
 import kernel.console.BootScreen
 import kernel.console.SystemConsole
 import kernel.drivers.I8042
+import kernel.drivers.gpu.vega.GpuService
 import kernel.fs.StorageService
 import kernel.graphics.GraphicsService
 import kernel.memory.PageAllocator
@@ -64,6 +65,7 @@ fun main() {
     AudioService.initialize()
     GamepadService.initialize()
     StorageService.initialize()
+    GpuService.initialize()
     USBService.armInterrupts(Idt.VECTOR_USB, Apic.localId())
     InputService.start()
 

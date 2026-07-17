@@ -20,6 +20,9 @@ import kernel.ui.OSD
 import kernel.audio.AudioService
 import kapi.Audio
 import kernel.drivers.Pci
+import kernel.drivers.gpu.GpuLog
+import kernel.drivers.gpu.vega.GpuService
+import kernel.drivers.gpu.vega.VegaReg
 import kernel.drivers.usb.GamepadService
 import kernel.drivers.usb.USBService
 import kernel.drivers.usb.UsbLock
@@ -195,6 +198,42 @@ object KernelShell {
             }
 
             Console.println("layout: ${Keyboard.layoutName}")
+        }
+
+        registry.register("gpu", "show gpu bring-up log; 'gpu regs' live sdma/mmhub; 'gpu gfx' probes gfx (may hang)") { args ->
+            if (args.firstOrNull() == "regs") {
+                val regs = GpuService.regs
+                if (regs == null) {
+                    Console.println("no register access (gpu absent or bring-up failed)")
+                    return@register
+                }
+                Console.println("sdma:  0x${regs.read(VegaReg.SDMA0_STATUS_REG).toString(16)}")
+                Console.println("rbcntl:0x${regs.read(VegaReg.SDMA0_GFX_RB_CNTL).toString(16)}")
+                Console.println("rptr:  0x${regs.read(VegaReg.SDMA0_GFX_RB_RPTR).toString(16)}")
+                Console.println("wptr:  0x${regs.read(VegaReg.SDMA0_GFX_RB_WPTR).toString(16)}")
+                Console.println("fbbase:0x${regs.read(VegaReg.MC_VM_FB_LOCATION_BASE).toString(16)}")
+                return@register
+            }
+
+            if (args.firstOrNull() == "gfx") {
+                Console.println("probing gfx registers; if gfxoff is engaged this hangs the box")
+                Console.println(GpuService.probeGfx())
+                return@register
+            }
+
+            if (GpuLog.history.isEmpty()) {
+                Console.println("gpu: no log (service did not run)")
+                return@register
+            }
+
+            for (entry in GpuLog.history) {
+                if (entry.ok == null) {
+                    Console.println("       ${entry.detail}")
+                    continue
+                }
+                val badge = if (entry.ok) " OK " else "FAIL"
+                Console.println("[$badge] ${entry.name.padEnd(10)} ${entry.detail}")
+            }
         }
 
         registry.register("pci", "list pci devices") {

@@ -15,6 +15,7 @@ import mmio.cpu_rdtsc
 import mmio.cpu_invlpg
 import mmio.cpu_read_cr2
 import mmio.cpu_read_cr3
+import mmio.cpu_sfence
 import mmio.msr_read
 import mmio.msr_write
 
@@ -45,6 +46,8 @@ object Cpu {
     fun readMsr(msr: UInt): ULong = msr_read(msr)
 
     fun writeMsr(msr: UInt, value: ULong) = msr_write(msr, value)
+
+    fun storeFence() = cpu_sfence()
 
     private fun isAmd(): Boolean {
         val v = cpuid(0u)

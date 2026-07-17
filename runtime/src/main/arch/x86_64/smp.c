@@ -224,6 +224,7 @@ static void ap_entry(struct limine_mp_info *info) {
     ap_t *ap = (ap_t *)(uintptr_t)info->extra_argument;
 
     ap_enable_sse();
+    pat_init();
     lgdt_load(ap->gdt_descriptor, 0x08, 0x10);
     ltr_load(0x28);
     lidt_load(idt_descriptor);

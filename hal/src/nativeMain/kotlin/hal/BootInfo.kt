@@ -16,6 +16,8 @@ import mmio.boot_memmap_base
 import mmio.boot_memmap_count
 import mmio.boot_memmap_length
 import mmio.boot_memmap_type
+import mmio.boot_gpu_pool_end
+import mmio.boot_gpu_pool_start
 import mmio.boot_pages_end
 import mmio.boot_pages_start
 import mmio.boot_rsdp
@@ -61,6 +63,10 @@ object BootInfo {
     val pagesStart: ULong get() = boot_pages_start()
 
     val pagesEnd: ULong get() = boot_pages_end()
+
+    val gpuPoolStart: ULong get() = boot_gpu_pool_start()
+
+    val gpuPoolEnd: ULong get() = boot_gpu_pool_end()
 
     val rsdpAddress: ULong get() = boot_rsdp()
 

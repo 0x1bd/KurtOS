@@ -89,6 +89,10 @@ static inline void cpu_hang(void) {
     for (;;) __asm__ volatile("cli; hlt");
 }
 
+static inline void cpu_sfence(void) {
+    __asm__ volatile("sfence" : : : "memory");
+}
+
 static inline uint8_t raw_read8(uint64_t addr) {
     return *((volatile uint8_t*)addr);
 }
@@ -192,6 +196,8 @@ typedef struct {
     uint64_t heap_end;
     uint64_t pages_start;
     uint64_t pages_end;
+    uint64_t gpu_pool_start;
+    uint64_t gpu_pool_end;
     uint64_t memmap_count;
     kurtos_memmap_entry_t memmap[64];
 } kurtos_boot_info_t;
@@ -228,6 +234,8 @@ static inline uint64_t boot_heap_start(void) { return kurtos_boot_info.heap_star
 static inline uint64_t boot_heap_end(void) { return kurtos_boot_info.heap_end; }
 static inline uint64_t boot_pages_start(void) { return kurtos_boot_info.pages_start; }
 static inline uint64_t boot_pages_end(void) { return kurtos_boot_info.pages_end; }
+static inline uint64_t boot_gpu_pool_start(void) { return kurtos_boot_info.gpu_pool_start; }
+static inline uint64_t boot_gpu_pool_end(void) { return kurtos_boot_info.gpu_pool_end; }
 static inline uint64_t boot_memmap_count(void) { return kurtos_boot_info.memmap_count; }
 static inline uint64_t boot_memmap_base(uint64_t i) { return kurtos_boot_info.memmap[i].base; }
 static inline uint64_t boot_memmap_length(uint64_t i) { return kurtos_boot_info.memmap[i].length; }

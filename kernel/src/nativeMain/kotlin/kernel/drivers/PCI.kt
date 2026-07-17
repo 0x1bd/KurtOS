@@ -31,6 +31,49 @@ class PciDevice(val bus: Int, val slot: Int, val function: Int) {
         return base or (high.toULong() shl 32)
     }
 
+    fun barSize(index: Int): ULong {
+        val offset = 0x10 + index * 4
+        val low = PCIConfig.read32(bus, slot, function, offset)
+
+        if (low and 0x1u != 0u) return 0UL
+
+        val wide = ((low shr 1) and 0x3u) == 0x2u
+        val high = if (wide) PCIConfig.read32(bus, slot, function, offset + 4) else 0u
+
+        val command = PCIConfig.read16(bus, slot, function, 0x04)
+        PCIConfig.write16(bus, slot, function, 0x04, (command.toUInt() and 0x3u.inv()).toUShort())
+
+        PCIConfig.write32(bus, slot, function, offset, 0xFFFFFFFFu)
+        val sizedLow = PCIConfig.read32(bus, slot, function, offset)
+        PCIConfig.write32(bus, slot, function, offset, low)
+
+        var mask = (sizedLow and 0xFFFFFFF0u).toULong()
+
+        if (wide) {
+            PCIConfig.write32(bus, slot, function, offset + 4, 0xFFFFFFFFu)
+            val sizedHigh = PCIConfig.read32(bus, slot, function, offset + 4)
+            PCIConfig.write32(bus, slot, function, offset + 4, high)
+            mask = mask or (sizedHigh.toULong() shl 32)
+        } else if (mask != 0UL) {
+            mask = mask or 0xFFFFFFFF00000000UL
+        }
+
+        PCIConfig.write16(bus, slot, function, 0x04, command)
+
+        if (mask == 0UL) return 0UL
+        return mask.inv() + 1UL
+    }
+
+    fun bar64(index: Int): Boolean {
+        val low = PCIConfig.read32(bus, slot, function, 0x10 + index * 4)
+        return low and 0x1u == 0u && ((low shr 1) and 0x3u) == 0x2u
+    }
+
+    fun barPrefetchable(index: Int): Boolean {
+        val low = PCIConfig.read32(bus, slot, function, 0x10 + index * 4)
+        return low and 0x1u == 0u && (low and 0x8u) != 0u
+    }
+
     fun enableBusMaster() {
         val command = PCIConfig.read16(bus, slot, function, 0x04).toUInt()
         PCIConfig.write16(bus, slot, function, 0x04, (command or 0x0006u).toUShort())

@@ -31,6 +31,8 @@ typedef struct {
     uint64_t heap_end;
     uint64_t pages_start;
     uint64_t pages_end;
+    uint64_t gpu_pool_start;
+    uint64_t gpu_pool_end;
 
     uint64_t memmap_count;
     kurtos_memmap_entry_t memmap[KURTOS_MAX_MEMMAP];
@@ -46,6 +48,7 @@ void debug_print(const char *msg);
 __attribute__((noreturn)) void hcf(void);
 
 void heap_init(uint64_t base, uint64_t size);
+void pat_init(void);
 
 int      kbd_ring_pop(void);
 uint64_t kbd_ring_overflows(void);

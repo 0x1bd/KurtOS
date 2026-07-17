@@ -4,6 +4,7 @@ import hal.Arch
 import hal.Clock
 import hal.Cpu
 import hal.Serial
+import kapi.Keys
 import kapi.Pad
 import kapi.ui.Canvas
 import kernel.KernelSystem
@@ -11,6 +12,8 @@ import kernel.arch.Acpi
 import kernel.audio.AudioService
 import kernel.drivers.I8042
 import kernel.drivers.Keyboard
+import kernel.drivers.gpu.GpuLog
+import kernel.drivers.gpu.vega.GpuService
 import kernel.drivers.usb.GamepadService
 import kernel.drivers.usb.USBService
 import kernel.fs.StorageService
@@ -39,6 +42,8 @@ object BootScreen {
     private const val TITLE_SCALE = 4
     private const val BODY_SCALE = 2
 
+    private const val GPU_LINES = 18
+
     private const val AUTO_ADVANCE_MS = 2_500UL
     private const val RENDER_INTERVAL_MS = 120UL
 
@@ -61,6 +66,17 @@ object BootScreen {
         lines += statusLine(GraphicsService.framebuffer() != null, "display", GraphicsService.status())
         lines += statusLine(Acpi.available, "acpi", if (Acpi.available) "madt parsed, apic routing active" else "no madt")
 
+        if (GpuLog.history.isNotEmpty()) {
+            lines += Line(Status.HEAD, "GPU", "")
+            for (entry in GpuLog.history.take(GPU_LINES)) {
+                if (entry.ok == null) {
+                    lines += Line(Status.INFO, "", entry.detail)
+                    continue
+                }
+                lines += Line(if (entry.ok) Status.OK else Status.FAIL, entry.name, entry.detail)
+            }
+        }
+
         lines += Line(Status.HEAD, "INPUT", "")
         lines += Line(
             if (I8042.present) Status.OK else Status.WARN,
@@ -82,6 +98,8 @@ object BootScreen {
 
         lines += Line(Status.HEAD, "STORAGE", "")
         lines += Line(if (StorageService.ready) Status.OK else Status.WARN, "storage", StorageService.status)
+        val esp = StorageService.system()
+        lines += Line(if (esp != null) Status.OK else Status.WARN, "esp", esp?.status ?: "not mounted")
 
         lines += Line(Status.HEAD, "USB", "")
         val usb = USBService.describe()
@@ -94,7 +112,7 @@ object BootScreen {
     private fun statusLine(ok: Boolean, label: String, value: String): Line =
         Line(if (ok) Status.OK else Status.WARN, label, value)
 
-    private fun render(canvas: Canvas, lines: List<Line>, progressPermille: Int) {
+    private fun render(canvas: Canvas, lines: List<Line>, progressPermille: Int, held: Boolean = false) {
         canvas.clear(BG)
 
         val charWidth = canvas.glyphWidth * BODY_SCALE
@@ -110,11 +128,12 @@ object BootScreen {
         val footerHeight = canvas.glyphHeight * BODY_SCALE + 20 + barHeight
         val footerTop = canvas.height - footerHeight
         canvas.fill(0, footerTop, canvas.width, footerHeight, BAND)
-        canvas.text(MARGIN, footerTop + 8, "PRESS (A) OR START TO CONTINUE", PROMPT, BODY_SCALE)
+        val prompt = if (held) "HELD - ENTER TO CONTINUE" else "ENTER TO HOLD, (A) OR START TO CONTINUE"
+        canvas.text(MARGIN, footerTop + 8, prompt, PROMPT, BODY_SCALE)
 
         val barTop = canvas.height - barHeight
         val fill = canvas.width * progressPermille.coerceIn(0, 1000) / 1000
-        canvas.fill(0, barTop, fill, barHeight, ACCENT)
+        canvas.fill(0, barTop, fill, barHeight, if (held) SECTION else ACCENT)
 
         val labelWidth = 10 * charWidth
         var y = bandHeight + lineHeight
@@ -157,10 +176,17 @@ object BootScreen {
         var lastRender = 0UL
         var previousA = true
         var previousStart = true
+        var held = false
 
         while (true) {
             Keyboard.poll()
             if (Serial.tryReadChar() != null) return
+
+            if (Keyboard.consumePress(Keys.ENTER)) {
+                if (held) return
+                held = true
+                lastRender = 0UL
+            }
 
             val event = GamepadService.pump()
             GamepadService.poll()
@@ -179,13 +205,12 @@ object BootScreen {
             previousA = a
             previousStart = start
 
-            if (now >= deadline) return
+            if (!held && now >= deadline) return
 
             if (canvas != null && now - lastRender >= RENDER_INTERVAL_MS) {
                 lastRender = now
-                val remaining = deadline - now
-                val permille = (remaining * 1000UL / AUTO_ADVANCE_MS).toInt()
-                render(canvas, collect(), permille)
+                val permille = if (held) 1000 else ((deadline - now) * 1000UL / AUTO_ADVANCE_MS).toInt()
+                render(canvas, collect(), permille, held)
             }
 
             Cpu.waitForInterrupt()
