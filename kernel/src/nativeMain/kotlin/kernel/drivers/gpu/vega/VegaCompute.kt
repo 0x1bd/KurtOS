@@ -184,6 +184,80 @@ class VegaCompute(
         return ok
     }
 
+    fun runKernel(shader: Shader): Boolean {
+        val fenceMem = fence ?: return false
+        val isaBuf = VegaVram.allocate(0x1000UL) ?: return false
+        val kernarg = VegaVram.allocate(0x1000UL) ?: return false
+        val output = VegaVram.allocate(0x1000UL) ?: return false
+
+        for (i in 0 until shader.isa.size / 4) {
+            val at = i * 4
+            val word = (shader.isa[at].toUInt() and 0xFFu) or
+                ((shader.isa[at + 1].toUInt() and 0xFFu) shl 8) or
+                ((shader.isa[at + 2].toUInt() and 0xFFu) shl 16) or
+                ((shader.isa[at + 3].toUInt() and 0xFFu) shl 24)
+            isaBuf.writeDword(at.toULong(), word)
+        }
+        output.writeDword(0UL, 0u)
+        kernarg.writeDword(0UL, (output.gpuAddress and 0xFFFFFFFFUL).toUInt())
+        kernarg.writeDword(4UL, (output.gpuAddress shr 32).toUInt())
+        Cpu.storeFence()
+
+        seq++
+        fenceMem.writeDword(0UL, 0u)
+        Cpu.storeFence()
+
+        val pgm = isaBuf.gpuAddress shr 8
+        setShReg(VegaReg.COMPUTE_PGM_LO, (pgm and 0xFFFFFFFFUL).toUInt(), (pgm shr 32).toUInt())
+        setShReg(VegaReg.COMPUTE_PGM_RSRC1, shader.rsrc1, shader.rsrc2)
+        setShReg3(VegaReg.COMPUTE_NUM_THREAD_X, 1u, 1u, 1u)
+        setShReg1(VegaReg.COMPUTE_RESOURCE_LIMITS, 0u)
+        setShReg(VegaReg.COMPUTE_STATIC_THREAD_MGMT_SE0, 0xFFFFFFFFu, 0xFFFFFFFFu)
+        setShReg(VegaReg.COMPUTE_STATIC_THREAD_MGMT_SE2, 0xFFFFFFFFu, 0xFFFFFFFFu)
+
+        setShReg(VegaReg.COMPUTE_USER_DATA_0, 0u, 0u)
+        setShReg(VegaReg.COMPUTE_USER_DATA_0 + 2u, 0u, 0u)
+
+        if (shader.kernargEnabled) {
+            val idx = shader.kernargSgprIndex
+            setShReg(
+                VegaReg.COMPUTE_USER_DATA_0 + idx.toUInt(),
+                (kernarg.gpuAddress and 0xFFFFFFFFUL).toUInt(),
+                (kernarg.gpuAddress shr 32).toUInt(),
+            )
+        }
+
+        emit(VegaReg.packet3(VegaReg.PACKET3_DISPATCH_DIRECT, 3))
+        emit(1u)
+        emit(1u)
+        emit(1u)
+        emit(VegaReg.COMPUTE_SHADER_EN)
+
+        emit(VegaReg.packet3(VegaReg.PACKET3_RELEASE_MEM, 6))
+        emit(RELEASE_EVENT)
+        emit(RELEASE_DATA_SEL)
+        emit((fenceMem.gpuAddress and 0xFFFFFFFFUL).toUInt())
+        emit((fenceMem.gpuAddress shr 32).toUInt())
+        emit(seq)
+        emit(0u)
+        emit(0u)
+
+        ringDoorbell()
+
+        var spins = FENCE_SPINS
+        while (spins > 0) {
+            regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
+            if (fenceMem.readDword(0UL) == seq) break
+            spins--
+        }
+
+        regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
+        val result = output.readDword(0UL)
+        val ok = result == 0xCA11AB1Eu
+        GpuLog.step("mec kernel", ok, "${shader.name} out ${GpuLog.hex(result)} fence ${GpuLog.hex(fenceMem.readDword(0UL))}")
+        return ok
+    }
+
     private fun emit(value: UInt) {
         pqWrite((wptr and (RING_DWORDS - 1)), value)
         wptr++

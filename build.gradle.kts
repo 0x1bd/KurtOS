@@ -104,14 +104,54 @@ val linkKurtOS by tasks.registering(Exec::class) {
     }
 }
 
+val shadersDir = layout.projectDirectory.dir("shaders")
+val compiledShadersDir = layout.buildDirectory.dir("shaders")
+
+val compileShaders by tasks.registering {
+    group = "kurtos"
+    description = "Compile shaders/*.c to gfx902 HSA code objects and extract .kbin blobs"
+
+    inputs.dir(shadersDir).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file(layout.projectDirectory.file("tools/extract_shader.py"))
+    outputs.dir(compiledShadersDir)
+
+    doLast {
+        val outDir = compiledShadersDir.get().asFile
+        outDir.mkdirs()
+        val sources = shadersDir.asFile.listFiles()?.filter { it.extension == "c" }?.sortedBy { it.name } ?: emptyList()
+        for (src in sources) {
+            val base = src.nameWithoutExtension
+            val hsaco = outDir.resolve("$base.hsaco")
+            val kbin = outDir.resolve("$base.kbin")
+
+            val compile = ProcessBuilder(
+                "clang", "-x", "c", "--target=amdgcn-amd-amdhsa", "-mcpu=gfx902",
+                "-O2", "-nogpulib", "-ffreestanding",
+                src.absolutePath, "-o", hsaco.absolutePath,
+            ).redirectErrorStream(true).start()
+            val compileOut = compile.inputStream.bufferedReader().readText()
+            if (compile.waitFor() != 0) throw GradleException("shader compile failed for ${src.name}:\n$compileOut")
+
+            val extract = ProcessBuilder(
+                "python3", layout.projectDirectory.file("tools/extract_shader.py").asFile.absolutePath,
+                hsaco.absolutePath, kbin.absolutePath,
+            ).redirectErrorStream(true).start()
+            val extractOut = extract.inputStream.bufferedReader().readText()
+            if (extract.waitFor() != 0) throw GradleException("shader extract failed for ${src.name}:\n$extractOut")
+            logger.lifecycle("shader $base: $extractOut".trim())
+        }
+    }
+}
+
 val buildImage by tasks.registering(Exec::class) {
     group = "kurtos"
     description = "Build the bootable GPT/ESP disk image at build/kurtos.img"
-    dependsOn(linkKurtOS)
+    dependsOn(linkKurtOS, compileShaders)
 
     inputs.file(layout.buildDirectory.file("kurtos.elf"))
     inputs.file(layout.projectDirectory.file("limine.conf"))
     inputs.dir(assetsRoot).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(compiledShadersDir)
     outputs.file(diskImage)
     outputs.file(espImage)
 
@@ -123,6 +163,7 @@ val buildImage by tasks.registering(Exec::class) {
         assetsRoot.asFile.absolutePath,
         diskImage.get().asFile.absolutePath,
         espImage.get().asFile.absolutePath,
+        compiledShadersDir.get().asFile.absolutePath,
     )
 }
 

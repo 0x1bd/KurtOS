@@ -4,16 +4,12 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="feat(gpu): Implement a basic GPU driver for Vega10 mobile chip on Ryzen 7 3700U. &#10;&#10;*basically cloned from amdgpu linux hehe)">
-      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaCompute.kt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaGfx.kt" afterDir="false" />
+    <list default="true" id="fb98972f-fa7f-4684-b940-eb287406d541" name="Changes" comment="feat(gpu): Run compute shaders">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/GpuLog.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/GpuLog.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/GpuFirmware.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/GpuFirmware.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.gradle.kts" beforeDir="false" afterPath="$PROJECT_DIR$/build.gradle.kts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/GpuService.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/GpuService.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaPsp.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaPsp.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaReg.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaReg.kt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaVm.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaVm.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaCompute.kt" beforeDir="false" afterPath="$PROJECT_DIR$/kernel/src/nativeMain/kotlin/kernel/drivers/gpu/vega/VegaCompute.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tools/mkimage.sh" beforeDir="false" afterPath="$PROJECT_DIR$/tools/mkimage.sh" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -102,7 +98,7 @@
       <workItem from="1784118255606" duration="18419000" />
       <workItem from="1784208115593" duration="21022000" />
       <workItem from="1784278996152" duration="2361000" />
-      <workItem from="1784297311079" duration="16546000" />
+      <workItem from="1784297311079" duration="17340000" />
     </task>
     <task id="LOCAL-00001" summary="feat: BootScreen&#10;fix: Audio&#10;fix: Keyboard">
       <option name="closed" value="true" />
@@ -224,7 +220,15 @@
       <option name="project" value="LOCAL" />
       <updated>1784310168663</updated>
     </task>
-    <option name="localTasksCounter" value="16" />
+    <task id="LOCAL-00016" summary="feat(gpu): Run compute shaders">
+      <option name="closed" value="true" />
+      <created>1784319383171</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1784319383171</updated>
+    </task>
+    <option name="localTasksCounter" value="17" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -245,7 +249,8 @@
     <MESSAGE value="chore: update README.md" />
     <MESSAGE value="fix README.md" />
     <MESSAGE value="feat(gpu): Implement a basic GPU driver for Vega10 mobile chip on Ryzen 7 3700U. &#10;&#10;*basically cloned from amdgpu linux hehe)" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat(gpu): Implement a basic GPU driver for Vega10 mobile chip on Ryzen 7 3700U. &#10;&#10;*basically cloned from amdgpu linux hehe)" />
+    <MESSAGE value="feat(gpu): Run compute shaders" />
+    <option name="LAST_COMMIT_MESSAGE" value="feat(gpu): Run compute shaders" />
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

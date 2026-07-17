@@ -6,6 +6,7 @@ LIMINE_DIR="$2"
 ASSETS_DIR="$3"
 OUT="$4"
 ESP_OUT="$5"
+SHADERS_DIR="$6"
 
 SECTOR=512
 
@@ -47,6 +48,13 @@ if [ -d third_party/firmware ]; then
     for fw in third_party/firmware/*.bin; do
         [ -e "$fw" ] || continue
         mcopy -i "$ESP_OUT" "$fw" ::/firmware/
+    done
+fi
+
+if [ -n "${SHADERS_DIR:-}" ] && ls "$SHADERS_DIR"/*.kbin >/dev/null 2>&1; then
+    mmd -i "$ESP_OUT" ::/shaders
+    for sh in "$SHADERS_DIR"/*.kbin; do
+        mcopy -i "$ESP_OUT" "$sh" ::/shaders/
     done
 fi
 

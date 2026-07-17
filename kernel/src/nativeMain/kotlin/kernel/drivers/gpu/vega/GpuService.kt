@@ -176,6 +176,9 @@ object GpuService {
         engine.ringTest()
         engine.dispatch()
 
+        val shader = VegaShaderLoader.load("fill")
+        if (shader != null) engine.runKernel(shader)
+
         compute = engine
     }
 
