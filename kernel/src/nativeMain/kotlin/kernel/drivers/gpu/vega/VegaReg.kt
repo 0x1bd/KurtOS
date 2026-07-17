@@ -9,9 +9,15 @@ object VegaReg {
     const val SCRATCH_REG0: UInt = 0xC040u
 
     const val RLC_CNTL: UInt = 0xEC00u
+    const val RLC_SAFE_MODE: UInt = 0xEC05u
+    const val RLC_CGCG_CGLS_CTRL: UInt = 0xEC49u
     const val RLC_GPM_STAT: UInt = 0xEC40u
     const val RLC_GPM_UCODE_ADDR: UInt = 0xF83Cu
     const val RLC_GPM_UCODE_DATA: UInt = 0xF83Du
+
+    const val PWR_MISC_CNTL_STATUS: UInt = 0x16B83u
+    const val PWR_GFXOFF_STATUS_MASK: UInt = 0x6u
+    const val PWR_GFXOFF_STATUS_ON: UInt = 0x4u
 
     const val CP_MEC_CNTL: UInt = 0x208Du
     const val CP_MEC_ME1_UCODE_ADDR: UInt = 0xF81Au
@@ -37,6 +43,15 @@ object VegaReg {
     const val CP_MQD_CONTROL: UInt = 0x3267u
     const val CP_HQD_PQ_WPTR_LO: UInt = 0x327Bu
     const val CP_HQD_PQ_WPTR_HI: UInt = 0x327Cu
+    const val CP_HQD_EOP_BASE_ADDR: UInt = 0x326Au
+    const val CP_HQD_EOP_BASE_ADDR_HI: UInt = 0x326Bu
+    const val CP_HQD_EOP_CONTROL: UInt = 0x326Cu
+    const val CP_HQD_PQ_WPTR_POLL_ADDR: UInt = 0x1252u
+    const val CP_HQD_PQ_WPTR_POLL_ADDR_HI: UInt = 0x1253u
+    const val CP_PQ_WPTR_POLL_CNTL: UInt = 0x3083u
+    const val CP_MEC_DOORBELL_RANGE_LOWER: UInt = 0x305Cu
+    const val CP_MEC_DOORBELL_RANGE_UPPER: UInt = 0x305Du
+    const val MEC_RING0_DOORBELL_INDEX: UInt = 0x6u
 
     const val COMPUTE_NUM_THREAD_X: UInt = 0x2E07u
     const val COMPUTE_NUM_THREAD_Y: UInt = 0x2E08u
@@ -115,6 +130,38 @@ object VegaReg {
     const val VM_CONTEXT0_PAGE_TABLE_START_ADDR_HI32: UInt = 0x1A74Cu
     const val VM_CONTEXT0_PAGE_TABLE_END_ADDR_LO32: UInt = 0x1A76Bu
     const val VM_CONTEXT0_PAGE_TABLE_END_ADDR_HI32: UInt = 0x1A76Cu
+
+    const val GFX_MC_VM_MX_L1_TLB_CNTL: UInt = 0x2987u
+    const val GFX_VM_L2_CNTL: UInt = 0x2840u
+    const val GFX_VM_L2_CNTL2: UInt = 0x2841u
+    const val GFX_VM_L2_CNTL3: UInt = 0x2842u
+    const val GFX_VM_L2_CNTL4: UInt = 0x2857u
+    const val GFX_VM_CONTEXT0_CNTL: UInt = 0x2880u
+    const val GFX_MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_LSB: UInt = 0x296Cu
+    const val GFX_MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_MSB: UInt = 0x296Du
+    const val GFX_VM_L2_PROTECTION_FAULT_DEFAULT_ADDR_LO32: UInt = 0x284Eu
+    const val GFX_VM_L2_PROTECTION_FAULT_DEFAULT_ADDR_HI32: UInt = 0x284Fu
+    const val GFX_VM_CONTEXT0_PAGE_TABLE_BASE_ADDR_LO32: UInt = 0x28EBu
+    const val GFX_VM_CONTEXT0_PAGE_TABLE_BASE_ADDR_HI32: UInt = 0x28ECu
+    const val GFX_VM_CONTEXT0_PAGE_TABLE_START_ADDR_LO32: UInt = 0x290Bu
+    const val GFX_VM_CONTEXT0_PAGE_TABLE_START_ADDR_HI32: UInt = 0x290Cu
+    const val GFX_VM_CONTEXT0_PAGE_TABLE_END_ADDR_LO32: UInt = 0x292Bu
+    const val GFX_VM_CONTEXT0_PAGE_TABLE_END_ADDR_HI32: UInt = 0x292Cu
+
+    const val PACKET3_SET_SH_REG: UInt = 0x76u
+    const val PACKET3_DISPATCH_DIRECT: UInt = 0x15u
+    const val PACKET3_RELEASE_MEM: UInt = 0x49u
+    const val PACKET3_INDIRECT_BUFFER: UInt = 0x3Fu
+    const val PACKET3_WRITE_DATA: UInt = 0x37u
+    const val PACKET3_NOP: UInt = 0x10u
+    const val SET_SH_REG_START: UInt = 0x2C00u
+
+    fun packet3(op: UInt, count: Int): UInt = (3u shl 30) or ((op and 0xFFu) shl 8) or ((count.toUInt() and 0x3FFFu) shl 16)
+
+    const val S_ENDPGM: UInt = 0xBF810000u
+    const val COMPUTE_RSRC1_ENDPGM: UInt = 0x000C0000u
+    const val COMPUTE_SHADER_EN: UInt = 0x1u
+    const val MEC_ME1_HALT_BOTH: UInt = 0x50000000u
 
     const val L1_TLB_CNTL_VALUE: UInt = 0x3859u
     const val L2_CNTL_ENABLE: UInt = 0x80003u

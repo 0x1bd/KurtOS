@@ -1,6 +1,6 @@
 package kernel.drivers.gpu
 
-import kernel.console.SystemConsole
+import hal.Serial
 
 class GpuLogEntry(val ok: Boolean?, val name: String, val detail: String)
 
@@ -25,7 +25,7 @@ object GpuLog {
             entry.detail.isEmpty() -> "${entry.name}: ${status(entry.ok)}"
             else -> "${entry.name}: ${status(entry.ok)} (${entry.detail})"
         }
-        SystemConsole.println("[GPU] $line")
+        Serial.println("[GPU] $line")
     }
 
     private fun status(ok: Boolean): String = if (ok) "OK" else "FAIL"
@@ -39,5 +39,5 @@ object GpuLog {
 
     fun mib(bytes: ULong): String = "${bytes / (1024UL * 1024UL)} MiB"
 
-    private const val MAX_ENTRIES = 40
+    private const val MAX_ENTRIES = 80
 }

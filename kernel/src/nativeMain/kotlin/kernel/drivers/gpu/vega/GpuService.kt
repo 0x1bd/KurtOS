@@ -127,7 +127,7 @@ object GpuService {
         val fence = fenceMemory ?: return
         val rptr = rptrWriteback ?: return
 
-        VegaVm.enable(mapped)
+        VegaVm.enableMmhub(mapped)
 
         val mailbox = smu
         if (mailbox != null) {
@@ -151,6 +151,32 @@ object GpuService {
         if (!engine.copyTest(0x10000UL)) return
 
         sdma = engine
+
+        startCompute(mapped, loader)
+    }
+
+    var compute: VegaCompute? = null
+        private set
+
+    private fun startCompute(mapped: VegaRegs, loader: VegaPsp) {
+        val gfx = VegaGfx(mapped, smu)
+        if (!gfx.disableGfxOff()) return
+
+        if (!loader.loadFirmware("picasso_rlc.bin", VegaReg.GFX_FW_TYPE_RLC_G)) return
+        if (!loader.loadFirmware("picasso_mec.bin", VegaReg.GFX_FW_TYPE_CP_MEC)) return
+        loader.loadMecJt(VegaReg.GFX_FW_TYPE_CP_MEC_ME1)
+
+        VegaVm.enableGfxhub(mapped)
+
+        if (!gfx.startRlc()) return
+        if (!gfx.enableMec()) return
+
+        val engine = VegaCompute(mapped, gfx, doorbellWindow)
+        if (!engine.bringUp()) return
+        engine.ringTest()
+        engine.dispatch()
+
+        compute = engine
     }
 
     private fun trySmu(mapped: VegaRegs): Boolean {

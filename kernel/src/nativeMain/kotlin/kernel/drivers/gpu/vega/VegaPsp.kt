@@ -60,15 +60,25 @@ class VegaPsp(private val regs: VegaRegs) {
 
     fun loadFirmware(name: String, fwType: UInt): Boolean {
         val ucode = GpuFirmware.load(name) ?: return false
+        val label = name.removePrefix("picasso_").removeSuffix(".bin")
+        return loadRegion(ucode, ucode.payloadOffset, ucode.payloadBytes, fwType, label)
+    }
+
+    fun loadMecJt(fwType: UInt): Boolean {
+        val ucode = GpuFirmware.load("picasso_mec.bin") ?: return false
+        return loadRegion(ucode, ucode.jtOffsetBytes, ucode.jtSizeBytes, fwType, "mec-jt")
+    }
+
+    private fun loadRegion(ucode: Ucode, byteOffset: Int, byteSize: Int, fwType: UInt, label: String): Boolean {
         val c = cmd ?: return false
         val b = fw ?: return false
 
-        if (ucode.payloadBytes.toULong() > FW_BYTES) {
-            GpuLog.step("psp ${name}", false, "too large ${ucode.payloadBytes}")
+        if (byteSize.toULong() > FW_BYTES || byteOffset + byteSize > ucode.data.size) {
+            GpuLog.step("psp $label", false, "region ${GpuLog.hex(byteOffset.toUInt())}+$byteSize out of range")
             return false
         }
 
-        for (i in 0 until ucode.payloadDwords) b.writeDword(i.toULong() * 4UL, ucode.payloadDword(i))
+        for (i in 0 until byteSize / 4) b.writeDword(i.toULong() * 4UL, ucode.dwordAt(byteOffset + i * 4))
         Cpu.storeFence()
 
         c.zero()
@@ -77,12 +87,11 @@ class VegaPsp(private val regs: VegaRegs) {
         c.writeDword(8UL, VegaReg.GFX_CMD_ID_LOAD_IP_FW)
         c.writeDword(28UL, (b.gpuAddress and 0xFFFFFFFFUL).toUInt())
         c.writeDword(32UL, (b.gpuAddress shr 32).toUInt())
-        c.writeDword(36UL, ucode.payloadBytes.toUInt())
+        c.writeDword(36UL, byteSize.toUInt())
         c.writeDword(40UL, fwType)
 
         val status = submit()
-        val label = name.removePrefix("picasso_").removeSuffix(".bin")
-        GpuLog.step("psp $label", status == 0u, "status ${GpuLog.hex(status)}")
+        GpuLog.step("psp $label", status == 0u, "status ${GpuLog.hex(status)} ${byteSize}b")
         return status == 0u
     }
 
