@@ -195,6 +195,14 @@ object GpuService {
 
         compute = engine
 
+        val backend = VegaBackend(engine, mapped)
+        if (backend.selfTest()) {
+            kapi.gpu.Gpu.register(backend)
+            KLog.step("gpu", "rdp backend", kapi.gpu.Gpu.available(), kapi.gpu.Gpu.name ?: "none")
+        } else {
+            KLog.step("gpu", "rdp backend", false, "selftest failed, rdp stays in software")
+        }
+
         val gradient = VegaShaderLoader.load("gradient")
         val fb = BootInfo.framebuffer
         if (gradient != null && fb != null) prerenderScanout(engine, gradient, fb)

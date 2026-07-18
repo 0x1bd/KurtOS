@@ -326,6 +326,12 @@ class N64(image: ByteArray, forceNoDynarec: Boolean = false, forceNoRspDynarec: 
         }
     }
 
+    fun rdpInvalidateWords(loWord: Int, hiWord: Int) {
+        val start = loWord shl 2
+        val length = ((hiWord - loWord) shl 2) + 4
+        dynarec?.invalidateRange(start, length)
+    }
+
     fun ramRead8(addr: Int): Int {
         val index = (addr and RDRAM_MASK) ushr 2
         val shift = 24 - ((addr and 3) shl 3)

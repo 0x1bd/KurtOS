@@ -1,5 +1,6 @@
 package kernel.drivers.gpu.vega
 
+import hal.Clock
 import hal.Cpu
 import hal.RawMemory
 import kernel.KLog
@@ -153,7 +154,7 @@ class VegaCompute(
         fenceMem.writeDword(0UL, 0u)
         Cpu.storeFence()
 
-        val pgm = isaBuf.gpuAddress shr 8
+        val pgm = (isaBuf.gpuAddress + shader.entryOffset) shr 8
         emitAcquireMem()
         setShReg(VegaReg.COMPUTE_PGM_LO, (pgm and 0xFFFFFFFFUL).toUInt(), (pgm shr 32).toUInt())
         setShReg(VegaReg.COMPUTE_PGM_RSRC1, shader.rsrc1, shader.rsrc2)
@@ -193,14 +194,16 @@ class VegaCompute(
 
         ringDoorbell()
 
-        var spins = FENCE_SPINS
-        while (spins > 0) {
+        val deadline = Clock.uptimeMillis() + FENCE_TIMEOUT_MS
+        while (Clock.uptimeMillis() < deadline) {
             regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
             if (fenceMem.readDword(0UL) == seq) break
-            spins--
         }
         return fenceMem.readDword(0UL) == seq
     }
+
+    fun dispatch(shader: Shader, kernarg: VramAlloc, groups: UInt, threads: UInt): Boolean =
+        dispatchKernel(shader, kernarg, groups, 1u, threads, 1u)
 
     fun runKernel(shader: Shader): Boolean {
         if (kernargBuf == null) kernargBuf = VegaVram.allocate(0x1000UL)
@@ -281,6 +284,7 @@ class VegaCompute(
         const val RING_BYTES: ULong = 0x1000UL
         const val RING_DWORDS = 1024
         const val FENCE_SPINS = 40_000_002
+        const val FENCE_TIMEOUT_MS: ULong = 100UL
         const val RELEASE_EVENT: UInt = 0x238514u
         const val RELEASE_DATA_SEL: UInt = 0x20000000u
     }

@@ -126,7 +126,7 @@ val compileShaders by tasks.registering {
 
             val compile = ProcessBuilder(
                 "clang", "-x", "c", "--target=amdgcn-amd-amdhsa", "-mcpu=gfx902",
-                "-O2", "-nogpulib", "-ffreestanding",
+                "-O2", "-nogpulib", "-ffreestanding", "-fno-jump-tables",
                 src.absolutePath, "-o", hsaco.absolutePath,
             ).redirectErrorStream(true).start()
             val compileOut = compile.inputStream.bufferedReader().readText()

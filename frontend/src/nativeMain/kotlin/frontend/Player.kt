@@ -166,7 +166,7 @@ object Player {
 
             if (Settings.showFps) {
                 if (session.frameChanged) counted++
-                drawStats(chrome, rate, vips, mhz, tickSkew, tscSkew, emuMs, presentMs, audioMs, inputMs, otherMs, worstMs, sliverMs, idleMs, fullscreen)
+                drawStats(chrome, rate, vips, mhz, tickSkew, tscSkew, emuMs, presentMs, audioMs, inputMs, otherMs, worstMs, sliverMs, idleMs, fullscreen, session.diagnostics())
             }
 
             surface.present()
@@ -282,14 +282,16 @@ object Player {
         sliverMs: Int,
         idleMs: Int,
         fullscreen: Boolean,
+        emuDiag: String? = null,
     ) {
-        val lines = arrayOf(
+        val base = arrayOf(
             "$rate FPS V$vips",
             "$mhz MHZ T$tickSkew C$tscSkew",
             "E$emuMs P$presentMs W$worstMs",
             "A$audioMs I$inputMs O$otherMs S$sliverMs Z$idleMs",
             Input.diagnostics(),
         )
+        val lines = if (emuDiag != null) base + emuDiag else base
 
         var width = 0
         for (line in lines) {

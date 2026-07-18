@@ -32,6 +32,35 @@ object N64Emulator : Emulator {
         private var swapped = true
         override val frameChanged get() = swapped
 
+        private var snapGpuPx = 0L
+        private var snapTotalPx = 0L
+        private var snapDisp = 0L
+        private var snapFrame = 0
+        private var diagLine: String? = null
+
+        override fun diagnostics(): String? {
+            if (!console.rdp.gpuActive) return null
+            val frame = console.frameCount
+            if (frame - snapFrame >= DIAG_FRAMES) {
+                val gpuPx = console.rdp.gpuPixels
+                val totalPx = console.rdp.pixels
+                val disp = console.rdp.gpuDispatches
+
+                val dGpu = gpuPx - snapGpuPx
+                val dTotal = totalPx - snapTotalPx
+                val dDisp = disp - snapDisp
+
+                snapGpuPx = gpuPx
+                snapTotalPx = totalPx
+                snapDisp = disp
+                snapFrame = frame
+
+                val pct = if (dTotal > 0) (dGpu * 100 / dTotal).toInt() else 0
+                diagLine = "G${dGpu / 1000}K C${(dTotal - dGpu) / 1000}K D$dDisp $pct%"
+            }
+            return diagLine
+        }
+
         override fun setButtons(buttons: Int) = setInput(0, buttons, 0, 0)
 
         override fun setInput(
@@ -107,6 +136,7 @@ object N64Emulator : Emulator {
         }
     }
 
+    private const val DIAG_FRAMES = 30
     private const val C_THRESHOLD = 16384
     private const val STICK_DEADZONE = 4096
 

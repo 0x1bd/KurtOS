@@ -1,23 +1,43 @@
 package kapi.gpu
 
 interface GpuBuffer {
-    val handle: Long
-    val bytes: Long
+    val gpuAddress: Long
+    val words: Int
+
+    fun writeWord(word: Int, value: Int)
+    fun readWord(word: Int): Int
+    fun write(dstWord: Int, src: IntArray, srcWord: Int, count: Int)
+    fun read(srcWord: Int, dst: IntArray, dstWord: Int, count: Int)
+    fun zero()
+}
+
+interface GpuKernel {
+    val name: String
 }
 
 interface GpuBackend {
+    val name: String
+
     fun available(): Boolean
-    fun alloc(bytes: Long, deviceLocal: Boolean): GpuBuffer?
-    fun upload(dst: GpuBuffer, dstOffset: Long, src: ByteArray, srcOffset: Int, bytes: Int)
-    fun map(buf: GpuBuffer): Long
-    fun dispatch(kernelId: Int, groupsX: Int, groupsY: Int, groupsZ: Int, kernargs: LongArray): Long
-    fun wait(fence: Long, timeoutMicros: Long): Boolean
-    fun blitToScanout(src: GpuBuffer, srcWidth: Int, srcHeight: Int, srcStride: Int)
-    fun free(buf: GpuBuffer)
+    fun kernel(name: String): GpuKernel?
+    fun alloc(words: Int): GpuBuffer?
+    fun free(buffer: GpuBuffer)
+    fun dispatch(kernel: GpuKernel, kernargs: GpuBuffer, groups: Int, threadsPerGroup: Int): Boolean
 }
 
 object Gpu {
     var backend: GpuBackend? = null
+        private set
+
+    val name: String? get() = backend?.name
+
+    fun register(candidate: GpuBackend) {
+        if (candidate.available()) backend = candidate
+    }
+
+    fun unregister() {
+        backend = null
+    }
 
     fun available(): Boolean = backend?.available() == true
 }

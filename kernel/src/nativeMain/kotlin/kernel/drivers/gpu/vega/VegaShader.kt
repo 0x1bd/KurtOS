@@ -10,6 +10,7 @@ class Shader(
     val rsrc3: UInt,
     val kernargSize: UInt,
     val props: UInt,
+    val entryOffset: UInt,
     val isa: ByteArray,
 ) {
     val kernargSgprIndex: Int
@@ -49,6 +50,7 @@ object VegaShaderLoader {
         val kernargSize = dword(data, 16)
         val isaSize = dword(data, 20).toInt()
         val props = (data[24].toUInt() and 0xFFu) or ((data[25].toUInt() and 0xFFu) shl 8)
+        val entryOffset = (data[26].toUInt() and 0xFFu) or ((data[27].toUInt() and 0xFFu) shl 8)
 
         if (HEADER + isaSize > data.size) {
             KLog.step("gpu", "shader $name", false, "isa out of range")
@@ -57,7 +59,7 @@ object VegaShaderLoader {
 
         val isa = data.copyOfRange(HEADER, HEADER + isaSize)
         KLog.step("gpu", "shader $name", true, "rsrc1 ${KLog.hex(rsrc1)} rsrc2 ${KLog.hex(rsrc2)} karg ${kernargSize} isa ${isaSize}")
-        return Shader(name, rsrc1, rsrc2, rsrc3, kernargSize, props, isa)
+        return Shader(name, rsrc1, rsrc2, rsrc3, kernargSize, props, entryOffset, isa)
     }
 
     private fun dword(data: ByteArray, at: Int): UInt =

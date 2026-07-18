@@ -62,6 +62,8 @@ class Tile {
 }
 
 class Rdp(private val n64: N64) {
+    private val accel = RdpAccel(n64.rdram, n64.hidden) { lo, hi -> n64.rdpInvalidateWords(lo, hi) }
+
     val regsDpc = IntArray(8)
     val regsDps = IntArray(4)
 
@@ -286,7 +288,12 @@ class Rdp(private val n64: N64) {
         private set
     val debugOpcodes = IntArray(64)
 
+    val gpuDispatches: Long get() = accel.dispatched
+    val gpuPixels: Long get() = accel.offloadedPixels
+    val gpuActive: Boolean get() = !accel.disabled
+
     fun reset() {
+        accel.reset()
         regsDpc.fill(0)
         regsDps.fill(0)
         tmem.fill(0)
@@ -416,6 +423,8 @@ class Rdp(private val n64: N64) {
             execute(opcode)
             current += length
         }
+
+        accel.flush()
 
         regsDpc[DPC_CURRENT] = current
         pool?.rest()
@@ -669,6 +678,7 @@ class Rdp(private val n64: N64) {
     }
 
     private fun loadTile() {
+        accel.flush()
         invalidateTileCaches()
         val w0 = commands[0]
         val w1 = commands[1]
@@ -738,6 +748,7 @@ class Rdp(private val n64: N64) {
     }
 
     private fun loadBlock() {
+        accel.flush()
         invalidateTileCaches()
         val w0 = commands[0]
         val w1 = commands[1]
@@ -798,6 +809,7 @@ class Rdp(private val n64: N64) {
     }
 
     private fun loadTlut() {
+        accel.flush()
         invalidateTileCaches()
         val w0 = commands[0]
         val w1 = commands[1]
@@ -837,17 +849,28 @@ class Rdp(private val n64: N64) {
         val top = maxOf(yh, scissorYh)
         val bottom = minOf(yl, scissorYl - 1)
 
+        if (cycleType == CYCLE_FILL) {
+            if (right >= left && bottom >= top && (colorSize == 2 || colorSize == 3)) {
+                val kind = if (colorSize == 3) RDP_KIND_FILL32 else RDP_KIND_FILL16
+                if (accel.enqueueFill(kind, left, top, right, bottom, colorWidth, colorImage, fillColor)) {
+                    pixels += (right - left + 1).toLong() * (bottom - top + 1).toLong()
+                    return
+                }
+            }
+            for (y in top..bottom) {
+                for (x in left..right) writeFill(x, y)
+            }
+            return
+        }
+
+        accel.flush()
+
         var count = 0L
         for (y in top..bottom) {
             for (x in left..right) {
-                when (cycleType) {
-                    CYCLE_FILL -> writeFill(x, y)
-                    else -> {
-                        val color = combine(0, 0, 0, 0xFF, 0, 0)
-                        count++
-                        writePixel(x, y, color, 0x3FFFF, false)
-                    }
-                }
+                val color = combine(0, 0, 0, 0xFF, 0, 0)
+                count++
+                writePixel(x, y, color, 0x3FFFF, false)
             }
         }
         pixels += count
@@ -868,6 +891,7 @@ class Rdp(private val n64: N64) {
     }
 
     private fun textureRectangle(flip: Boolean) {
+        accel.flush()
         rectangles++
 
         val xl = ((commands[0] ushr 12) and 0xFFF)
@@ -945,6 +969,7 @@ class Rdp(private val n64: N64) {
     }
 
     private fun triangle(opcode: Int) {
+        accel.flush()
         triangles++
 
         val shade = opcode and 4 != 0
