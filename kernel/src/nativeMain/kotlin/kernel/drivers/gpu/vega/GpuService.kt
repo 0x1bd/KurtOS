@@ -9,6 +9,7 @@ import hal.Cpu
 import hal.PCIConfig
 import hal.RawMemory
 import kernel.drivers.PciDevice
+import kernel.graphics.DisplayContext
 import kernel.memory.MemType
 import kernel.memory.Mmio
 
@@ -158,6 +159,49 @@ object GpuService {
     var compute: VegaCompute? = null
         private set
 
+    var scanoutTarget: VramAlloc? = null
+        private set
+
+    fun drawScanoutDemo(): String {
+        val blitter = sdma ?: return "sdma not up"
+        val fb = BootInfo.framebuffer ?: return "no framebuffer"
+        if (scanoutOffset == ULong.MAX_VALUE) return "scanout not in vram bar"
+        val target = scanoutTarget ?: return "no prerendered frame at boot"
+
+        val bytes = fb.pitch.toULong() * fb.height.toULong()
+
+        DisplayContext.acquireGpu()
+        if (!blitter.blit(target.gpuAddress, carveoutBase + scanoutOffset, bytes)) {
+            DisplayContext.releaseGpu()
+            return "sdma present failed"
+        }
+        return "gpu drew ${fb.width}x${fb.height} to scanout"
+    }
+
+    fun endScanoutDemo() {
+        DisplayContext.releaseGpu()
+    }
+
+    fun diagnoseCompute(): List<String> {
+        val engine = compute ?: return listOf("compute not up")
+        val shader = VegaShaderLoader.load("gradient") ?: return listOf("gradient shader missing")
+        val fill = VegaShaderLoader.load("fill")
+        val lines = engine.diagnose(shader, fill).toMutableList()
+
+        val fb = BootInfo.framebuffer
+        if (fb != null && scanoutOffset != ULong.MAX_VALUE) {
+            val pitchPx = fb.pitch / 4u
+            val pxByte = (50UL * pitchPx.toULong() + 100UL) * 4UL
+            RawMemory.write32(vramWindow + scanoutOffset + pxByte, 0u)
+            Cpu.storeFence()
+            val ok = engine.drawFramebuffer(shader, carveoutBase + scanoutOffset, fb.width, fb.height, pitchPx)
+            regs?.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
+            val px = RawMemory.read32(vramWindow + scanoutOffset + pxByte)
+            lines.add("scanout(low-off +${GpuLog.hex(scanoutOffset)}) render ok=$ok px=${GpuLog.hex(px)}")
+        }
+        return lines
+    }
+
     private fun startCompute(mapped: VegaRegs, loader: VegaPsp) {
         val gfx = VegaGfx(mapped, smu)
         if (!gfx.disableGfxOff()) return
@@ -169,6 +213,7 @@ object GpuService {
         VegaVm.enableGfxhub(mapped)
 
         if (!gfx.startRlc()) return
+        GpuLog.step("gfx cg/pg off", true, gfx.disableClockAndPowerGating())
         if (!gfx.enableMec()) return
 
         val engine = VegaCompute(mapped, gfx, doorbellWindow)
@@ -179,7 +224,41 @@ object GpuService {
         val shader = VegaShaderLoader.load("fill")
         if (shader != null) engine.runKernel(shader)
 
+        val gradient = VegaShaderLoader.load("gradient")
+        if (gradient != null) engine.renderTest(gradient)
+
+        val fb = BootInfo.framebuffer
+        if (fb != null) GpuLog.info("fb ${fb.width}x${fb.height} pitch ${fb.pitch} (pitchpx ${fb.pitch / 4u}) shifts r${fb.redShift} g${fb.greenShift} b${fb.blueShift}")
+
         compute = engine
+
+        if (gradient != null && fb != null) prerenderScanout(engine, gradient, fb)
+    }
+
+    private var prerenderPx: UInt = 0u
+
+    private fun prerenderScanout(engine: VegaCompute, shader: Shader, fb: hal.FramebufferInfo) {
+        val pitchPx = fb.pitch / 4u
+        val bytes = fb.pitch.toULong() * fb.height.toULong()
+        val target = VegaVram.allocate(bytes) ?: return
+
+        val pxByte = (50UL * pitchPx.toULong() + 100UL) * 4UL
+
+        engine.drawFramebuffer(shader, target.gpuAddress, fb.width, fb.height, pitchPx)
+        regs?.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
+        val pass1 = target.readDword(pxByte)
+
+        val ok = engine.drawFramebuffer(shader, target.gpuAddress, fb.width, fb.height, pitchPx)
+        regs?.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
+        val pass2 = target.readDword(pxByte)
+
+        prerenderPx = pass2
+        scanoutTarget = target
+
+        GpuLog.step(
+            "scanout prerender", ok && pass2 != 0u,
+            "${fb.width}x${fb.height} pass1(zeroed)=${GpuLog.hex(pass1)} pass2(no-rezero)=${GpuLog.hex(pass2)}",
+        )
     }
 
     private fun trySmu(mapped: VegaRegs): Boolean {

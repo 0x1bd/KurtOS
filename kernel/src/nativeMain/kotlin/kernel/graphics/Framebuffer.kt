@@ -189,6 +189,7 @@ class Framebuffer(private val info: FramebufferInfo, private val backbuffer: ULo
     }
 
     fun frontBlit(x: UInt, y: UInt, width: UInt, height: UInt, source: ULong, sourceStride: ULong) {
+        if (!DisplayContext.consoleOwnsScanout) return
         if (x >= this.width || y >= this.height) return
 
         val pixels = minOf(width, this.width - x).toULong() * 4UL
@@ -210,12 +211,14 @@ class Framebuffer(private val info: FramebufferInfo, private val backbuffer: ULo
     }
 
     override fun present() {
+        if (!DisplayContext.consoleOwnsScanout) return
         if (dirtyMaxY <= dirtyMinY) return
         blit(dirtyMinY, dirtyMaxY)
         clearDirty()
     }
 
     override fun presentAll() {
+        if (!DisplayContext.consoleOwnsScanout) return
         blit(0u, height)
         clearDirty()
     }

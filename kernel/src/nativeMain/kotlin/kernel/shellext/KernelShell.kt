@@ -200,6 +200,24 @@ object KernelShell {
             Console.println("layout: ${Keyboard.layoutName}")
         }
 
+        registry.register("gpudemo", "GPU compute shader draws a gradient to the screen; any key restores") {
+            val result = GpuService.drawScanoutDemo()
+            if (!result.startsWith("gpu drew")) {
+                Console.println(result)
+                return@register
+            }
+            val deadline = Time.uptimeMillis() + 4000UL
+            while (Time.uptimeMillis() < deadline) {
+            }
+            GpuService.endScanoutDemo()
+            Console.clear()
+            Console.println(result)
+        }
+
+        registry.register("gpudiag", "run interactive compute + read gfx power state (root-cause the shell-compute blocker)") {
+            GpuService.diagnoseCompute().forEach { Console.println(it) }
+        }
+
         registry.register("gpu", "show gpu bring-up log; 'gpu regs' live sdma/mmhub; 'gpu gfx' probes gfx (may hang)") { args ->
             if (args.firstOrNull() == "regs") {
                 val regs = GpuService.regs

@@ -10,10 +10,22 @@ object VegaReg {
 
     const val RLC_CNTL: UInt = 0xEC00u
     const val RLC_SAFE_MODE: UInt = 0xEC05u
+    const val RLC_MEM_SLP_CNTL: UInt = 0xEC06u
+    const val RLC_PG_CNTL: UInt = 0xEC43u
+    const val RLC_CGTT_MGCG_OVERRIDE: UInt = 0xEC48u
     const val RLC_CGCG_CGLS_CTRL: UInt = 0xEC49u
     const val RLC_GPM_STAT: UInt = 0xEC40u
     const val RLC_GPM_UCODE_ADDR: UInt = 0xF83Cu
     const val RLC_GPM_UCODE_DATA: UInt = 0xF83Du
+    const val CP_MEM_SLP_CNTL: UInt = 0x3079u
+
+    const val RLC_SAFE_MODE_CMD: UInt = 0x1u
+    const val RLC_SAFE_MODE_MESSAGE: UInt = 0x2u
+    const val MGCG_OVERRIDE_DISABLE: UInt = 0x67u
+    const val CGCG_EN: UInt = 0x1u
+    const val CGLS_EN: UInt = 0x2u
+    const val RLC_PG_ENABLE_BITS: UInt = 0x1Du
+    const val MEM_LS_EN: UInt = 0x1u
 
     const val PWR_MISC_CNTL_STATUS: UInt = 0x16B83u
     const val PWR_GFXOFF_STATUS_MASK: UInt = 0x6u
@@ -139,6 +151,18 @@ object VegaReg {
     const val GFX_VM_CONTEXT0_CNTL: UInt = 0x2880u
     const val GFX_MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_LSB: UInt = 0x296Cu
     const val GFX_MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_MSB: UInt = 0x296Du
+    const val GFX_MC_VM_FB_LOCATION_BASE: UInt = 0x2980u
+    const val GFX_MC_VM_FB_LOCATION_TOP: UInt = 0x2981u
+    const val GFX_MC_VM_SYSTEM_APERTURE_LOW_ADDR: UInt = 0x2985u
+    const val GFX_MC_VM_SYSTEM_APERTURE_HIGH_ADDR: UInt = 0x2986u
+
+    const val GFX_VM_INVALIDATE_ENG17_REQ: UInt = 0x28B4u
+    const val GFX_VM_INVALIDATE_ENG17_ACK: UInt = 0x28C6u
+    const val GFX_VM_INVALIDATE_ENG17_ADDR_RANGE_LO32: UInt = 0x28E9u
+    const val GFX_VM_INVALIDATE_ENG17_ADDR_RANGE_HI32: UInt = 0x28EAu
+    const val VM_INVALIDATE_REQ_ALL: UInt = 0x7C0001u
+    const val GFX_VM_L2_PROTECTION_FAULT_CNTL: UInt = 0x2847u
+    const val GFX_VM_L2_PROTECTION_FAULT_STATUS: UInt = 0x284Bu
     const val GFX_VM_L2_PROTECTION_FAULT_DEFAULT_ADDR_LO32: UInt = 0x284Eu
     const val GFX_VM_L2_PROTECTION_FAULT_DEFAULT_ADDR_HI32: UInt = 0x284Fu
     const val GFX_VM_CONTEXT0_PAGE_TABLE_BASE_ADDR_LO32: UInt = 0x28EBu
@@ -148,9 +172,14 @@ object VegaReg {
     const val GFX_VM_CONTEXT0_PAGE_TABLE_END_ADDR_LO32: UInt = 0x292Bu
     const val GFX_VM_CONTEXT0_PAGE_TABLE_END_ADDR_HI32: UInt = 0x292Cu
 
+    const val PACKET3_ACQUIRE_MEM: UInt = 0x58u
+    const val ACQUIRE_MEM_COHER_CNTL: UInt = 0x28C40000u
+    const val ACQUIRE_MEM_POLL_INTERVAL: UInt = 0xAu
     const val PACKET3_SET_SH_REG: UInt = 0x76u
     const val PACKET3_DISPATCH_DIRECT: UInt = 0x15u
     const val PACKET3_RELEASE_MEM: UInt = 0x49u
+    const val PACKET3_EVENT_WRITE: UInt = 0x46u
+    const val EVENT_CS_PARTIAL_FLUSH: UInt = 0x407u
     const val PACKET3_INDIRECT_BUFFER: UInt = 0x3Fu
     const val PACKET3_WRITE_DATA: UInt = 0x37u
     const val PACKET3_NOP: UInt = 0x10u

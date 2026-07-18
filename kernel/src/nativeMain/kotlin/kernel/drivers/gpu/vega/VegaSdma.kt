@@ -158,6 +158,42 @@ class VegaSdma(
         return ok
     }
 
+    fun blit(srcGpu: ULong, dstGpu: ULong, bytes: ULong): Boolean {
+        var offset = 0UL
+        while (offset < bytes) {
+            val chunk = if (bytes - offset > MAX_COPY) MAX_COPY else bytes - offset
+            if (!copyChunk(srcGpu + offset, dstGpu + offset, chunk)) return false
+            offset += chunk
+        }
+        return true
+    }
+
+    private fun copyChunk(srcGpu: ULong, dstGpu: ULong, bytes: ULong): Boolean {
+        seq++
+        fence.writeDword(0UL, 0u)
+        Cpu.storeFence()
+
+        emit(VegaReg.SDMA_OP_COPY or (VegaReg.SDMA_SUBOP_COPY_LINEAR shl 8))
+        emit((bytes - 1UL).toUInt())
+        emit(0u)
+        emit((srcGpu and 0xFFFFFFFFUL).toUInt())
+        emit((srcGpu shr 32).toUInt())
+        emit((dstGpu and 0xFFFFFFFFUL).toUInt())
+        emit((dstGpu shr 32).toUInt())
+
+        emit(VegaReg.SDMA_OP_FENCE)
+        emit((fence.gpuAddress and 0xFFFFFFFFUL).toUInt())
+        emit((fence.gpuAddress shr 32).toUInt())
+        emit(seq)
+
+        commit()
+
+        var spins = FENCE_SPINS
+        while (spins > 0 && fence.readDword(0UL) != seq) spins--
+        regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
+        return fence.readDword(0UL) == seq
+    }
+
     fun copyTest(bytes: ULong): Boolean {
         val src = VegaVram.allocate(bytes) ?: return false
         val dst = VegaVram.allocate(bytes) ?: return false
@@ -225,5 +261,6 @@ class VegaSdma(
         const val ALIGN_MASK = 0xFF
         const val POLL_OFFSET = 0x100UL
         const val FENCE_SPINS = 20_000_000
+        const val MAX_COPY = 0x200000UL
     }
 }

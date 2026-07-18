@@ -53,6 +53,49 @@ class VegaGfx(private val regs: VegaRegs, private val smu: VegaSmu?) {
         return true
     }
 
+    private fun enterSafeMode() {
+        regs.write(VegaReg.RLC_SAFE_MODE, VegaReg.RLC_SAFE_MODE_CMD or VegaReg.RLC_SAFE_MODE_MESSAGE)
+        val deadline = Clock.uptimeMillis() + 5UL
+        while (Clock.uptimeMillis() < deadline) {
+            if (regs.read(VegaReg.RLC_SAFE_MODE) and VegaReg.RLC_SAFE_MODE_CMD == 0u) break
+        }
+    }
+
+    private fun exitSafeMode() {
+        regs.write(VegaReg.RLC_SAFE_MODE, VegaReg.RLC_SAFE_MODE_CMD)
+    }
+
+    fun disableClockAndPowerGating(): String {
+        enterSafeMode()
+
+        val mgcg = regs.read(VegaReg.RLC_CGTT_MGCG_OVERRIDE)
+        regs.write(VegaReg.RLC_CGTT_MGCG_OVERRIDE, mgcg or VegaReg.MGCG_OVERRIDE_DISABLE)
+
+        val rlcSlp = regs.read(VegaReg.RLC_MEM_SLP_CNTL)
+        if (rlcSlp and VegaReg.MEM_LS_EN != 0u) regs.write(VegaReg.RLC_MEM_SLP_CNTL, rlcSlp and VegaReg.MEM_LS_EN.inv())
+        val cpSlp = regs.read(VegaReg.CP_MEM_SLP_CNTL)
+        if (cpSlp and VegaReg.MEM_LS_EN != 0u) regs.write(VegaReg.CP_MEM_SLP_CNTL, cpSlp and VegaReg.MEM_LS_EN.inv())
+
+        val cgcg = regs.read(VegaReg.RLC_CGCG_CGLS_CTRL)
+        regs.write(VegaReg.RLC_CGCG_CGLS_CTRL, cgcg and (VegaReg.CGCG_EN or VegaReg.CGLS_EN).inv())
+
+        val pg = regs.read(VegaReg.RLC_PG_CNTL)
+        regs.write(VegaReg.RLC_PG_CNTL, pg and VegaReg.RLC_PG_ENABLE_BITS.inv())
+        regs.read(VegaReg.GB_ADDR_CONFIG)
+
+        exitSafeMode()
+
+        return "mgcg ${GpuLog.hex(regs.read(VegaReg.RLC_CGTT_MGCG_OVERRIDE))} " +
+            "cgcg ${GpuLog.hex(regs.read(VegaReg.RLC_CGCG_CGLS_CTRL))} " +
+            "pg ${GpuLog.hex(regs.read(VegaReg.RLC_PG_CNTL))}"
+    }
+
+    fun gatingState(): String =
+        "mgcg ${GpuLog.hex(regs.read(VegaReg.RLC_CGTT_MGCG_OVERRIDE))} " +
+            "cgcg ${GpuLog.hex(regs.read(VegaReg.RLC_CGCG_CGLS_CTRL))} " +
+            "pg ${GpuLog.hex(regs.read(VegaReg.RLC_PG_CNTL))} " +
+            "rlcslp ${GpuLog.hex(regs.read(VegaReg.RLC_MEM_SLP_CNTL))} cpslp ${GpuLog.hex(regs.read(VegaReg.CP_MEM_SLP_CNTL))}"
+
     fun grbmSelect(me: Int, pipe: Int, queue: Int) {
         val value = (pipe.toUInt() shl 0) or (me.toUInt() shl 2) or (queue.toUInt() shl 8)
         regs.write(VegaReg.GRBM_GFX_CNTL, value)

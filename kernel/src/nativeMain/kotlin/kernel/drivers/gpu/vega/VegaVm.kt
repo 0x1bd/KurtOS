@@ -55,8 +55,44 @@ object VegaVm {
 
     fun enableGfxhub(regs: VegaRegs): Boolean {
         gfxhubEnabled = enableHub(regs, GFXHUB, "gfxhub vm")
+        fixGfxhubAperture(regs)
+        invalidateGfxhubTlb(regs)
         return gfxhubEnabled
     }
+
+    fun invalidateGfxhubTlb(regs: VegaRegs): Boolean {
+        regs.write(VegaReg.GFX_VM_INVALIDATE_ENG17_ADDR_RANGE_LO32, 0xFFFFFFFFu)
+        regs.write(VegaReg.GFX_VM_INVALIDATE_ENG17_ADDR_RANGE_HI32, 0x1Fu)
+
+        regs.write(VegaReg.GFX_VM_INVALIDATE_ENG17_REQ, VegaReg.VM_INVALIDATE_REQ_ALL)
+        regs.read(VegaReg.GFX_VM_INVALIDATE_ENG17_REQ)
+
+        var spins = 200_000
+        while (spins > 0) {
+            if (regs.read(VegaReg.GFX_VM_INVALIDATE_ENG17_ACK) and 0x1u != 0u) return true
+            spins--
+        }
+        return false
+    }
+
+    fun fixGfxhubAperture(regs: VegaRegs) {
+        val fbBaseReg = regs.read(VegaReg.MC_VM_FB_LOCATION_BASE)
+        val fbTopReg = regs.read(VegaReg.MC_VM_FB_LOCATION_TOP)
+        val fbBase = (fbBaseReg and 0xFFFFFFu).toULong() shl 24
+        val fbTop = (fbTopReg and 0xFFFFFFu).toULong() shl 24
+
+        regs.write(VegaReg.GFX_MC_VM_FB_LOCATION_BASE, fbBaseReg)
+        regs.write(VegaReg.GFX_MC_VM_FB_LOCATION_TOP, fbTopReg)
+        regs.write(VegaReg.GFX_MC_VM_SYSTEM_APERTURE_LOW_ADDR, (fbBase shr 18).toUInt())
+        regs.write(VegaReg.GFX_MC_VM_SYSTEM_APERTURE_HIGH_ADDR, ((fbTop + 0x1000000UL) shr 18).toUInt())
+    }
+
+    fun gfxhubApertureState(regs: VegaRegs): String =
+        "fbbase ${GpuLog.hex(regs.read(VegaReg.GFX_MC_VM_FB_LOCATION_BASE))} " +
+            "fbtop ${GpuLog.hex(regs.read(VegaReg.GFX_MC_VM_FB_LOCATION_TOP))} " +
+            "syslo ${GpuLog.hex(regs.read(VegaReg.GFX_MC_VM_SYSTEM_APERTURE_LOW_ADDR))} " +
+            "syshi ${GpuLog.hex(regs.read(VegaReg.GFX_MC_VM_SYSTEM_APERTURE_HIGH_ADDR))} " +
+            "tlb ${GpuLog.hex(regs.read(VegaReg.GFX_MC_VM_MX_L1_TLB_CNTL))}"
 
     private fun enableHub(regs: VegaRegs, hub: HubRegs, label: String): Boolean {
         val pdb = VegaVram.allocate(0x1000UL) ?: return false
