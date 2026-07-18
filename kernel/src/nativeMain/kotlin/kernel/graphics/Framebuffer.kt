@@ -5,6 +5,7 @@ import hal.FramebufferInfo
 import hal.RawMemory
 import kapi.IndexedBitmap
 import kapi.Surface
+import kernel.KLog
 import kernel.memory.PageAllocator
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -250,6 +251,7 @@ class Framebuffer(private val info: FramebufferInfo, private val backbuffer: ULo
 object GraphicsService {
     private var framebuffer: Framebuffer? = null
     private var status: String = "not initialized"
+    private var reported = false
 
     fun initialize(): Boolean {
         if (framebuffer != null) return true
@@ -257,18 +259,27 @@ object GraphicsService {
         val info = BootInfo.framebuffer
         if (info == null) {
             status = "no framebuffer from bootloader"
+            report(false)
             return false
         }
 
         val buffer = PageAllocator.allocateBytes(info.width * info.height * 4u)
         if (buffer == null) {
             status = "not enough memory for a backbuffer"
+            report(false)
             return false
         }
 
         framebuffer = Framebuffer(info, buffer.address)
         status = "ready ${info.width}x${info.height}"
+        report(true)
         return true
+    }
+
+    private fun report(ok: Boolean) {
+        if (reported) return
+        reported = true
+        KLog.step("display", "framebuffer", ok, status)
     }
 
     fun framebuffer(): Framebuffer? = framebuffer

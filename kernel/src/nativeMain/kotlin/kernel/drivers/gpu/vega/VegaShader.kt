@@ -1,6 +1,6 @@
 package kernel.drivers.gpu.vega
 
-import kernel.drivers.gpu.GpuLog
+import kernel.KLog
 import kernel.fs.StorageService
 
 class Shader(
@@ -28,18 +28,18 @@ object VegaShaderLoader {
     fun load(name: String): Shader? {
         val volume = StorageService.system()
         if (volume == null) {
-            GpuLog.step("shader $name", false, "esp not mounted")
+            KLog.step("gpu", "shader $name", false, "esp not mounted")
             return null
         }
 
         val data = volume.read("/shaders/$name.kbin", MAX_BYTES)
         if (data == null || data.size < HEADER) {
-            GpuLog.step("shader $name", false, "not found")
+            KLog.step("gpu", "shader $name", false, "not found")
             return null
         }
 
         if (data[0].toInt() != 'K'.code || data[1].toInt() != 'S'.code || data[2].toInt() != 'H'.code) {
-            GpuLog.step("shader $name", false, "bad magic")
+            KLog.step("gpu", "shader $name", false, "bad magic")
             return null
         }
 
@@ -51,12 +51,12 @@ object VegaShaderLoader {
         val props = (data[24].toUInt() and 0xFFu) or ((data[25].toUInt() and 0xFFu) shl 8)
 
         if (HEADER + isaSize > data.size) {
-            GpuLog.step("shader $name", false, "isa out of range")
+            KLog.step("gpu", "shader $name", false, "isa out of range")
             return null
         }
 
         val isa = data.copyOfRange(HEADER, HEADER + isaSize)
-        GpuLog.step("shader $name", true, "rsrc1 ${GpuLog.hex(rsrc1)} rsrc2 ${GpuLog.hex(rsrc2)} karg ${kernargSize} isa ${isaSize}")
+        KLog.step("gpu", "shader $name", true, "rsrc1 ${KLog.hex(rsrc1)} rsrc2 ${KLog.hex(rsrc2)} karg ${kernargSize} isa ${isaSize}")
         return Shader(name, rsrc1, rsrc2, rsrc3, kernargSize, props, isa)
     }
 

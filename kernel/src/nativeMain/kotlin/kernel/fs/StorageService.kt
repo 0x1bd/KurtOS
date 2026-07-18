@@ -1,5 +1,6 @@
 package kernel.fs
 
+import kernel.KLog
 import kernel.drivers.usb.MassStorage
 import kernel.drivers.usb.USBDevice
 import kernel.drivers.usb.USBService
@@ -26,7 +27,10 @@ object StorageService {
         if (attempted) return ready
         attempted = true
 
-        return attach()
+        val ok = attach()
+        KLog.step("storage", "volume", ok, status)
+        KLog.step("storage", "esp", systemVolume != null, systemVolume?.status ?: "not mounted")
+        return ok
     }
 
     fun volume(): Fat32? {

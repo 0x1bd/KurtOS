@@ -1,12 +1,11 @@
 package kernel.drivers.gpu.vega
 
-import kernel.drivers.gpu.GpuLog
+import kernel.KLog
 import kernel.drivers.gpu.GpuPool
 
 import hal.BootInfo
 import hal.Clock
 import hal.Cpu
-import hal.PCIConfig
 import hal.RawMemory
 import kernel.drivers.PciDevice
 import kernel.graphics.DisplayContext
@@ -65,40 +64,42 @@ object GpuService {
     var rptrWriteback: VramAlloc? = null
         private set
 
+    var psp: VegaPsp? = null
+        private set
+
+    var compute: VegaCompute? = null
+        private set
+
+    var scanoutTarget: VramAlloc? = null
+        private set
+
     fun initialize() {
         val found = VegaProbe.find()
         if (found == null) {
-            GpuLog.info("absent, software path")
+            KLog.info("gpu", "absent, software path")
             return
         }
 
         val (candidate, name) = found
         chipName = name
 
-        GpuLog.info(
-            "found ${GpuLog.hex(candidate.vendorId.toUInt(), 4)}:${GpuLog.hex(candidate.deviceId.toUInt(), 4)} " +
-                "$name rev ${GpuLog.hex(candidate.revision.toUInt(), 2)} " +
+        KLog.info(
+            "gpu",
+            "found ${KLog.hex(candidate.vendorId.toUInt(), 4)}:${KLog.hex(candidate.deviceId.toUInt(), 4)} " +
+                "$name rev ${KLog.hex(candidate.revision.toUInt(), 2)} " +
                 "at ${candidate.bus}:${candidate.slot}.${candidate.function}"
         )
 
         val decoded = VegaProbe.bars(candidate)
         if (decoded == null) {
-            GpuLog.step("bar decode", false, "expected VRAM + register apertures")
+            KLog.step("gpu", "bar decode", false, "expected VRAM + register apertures")
             return
         }
-
-        GpuLog.info(
-            "bars vram ${GpuLog.hex(decoded.vramBase)}/${GpuLog.mib(decoded.vramSize)} " +
-                "db ${GpuLog.hex(decoded.doorbellBase)}/${GpuLog.hex(decoded.doorbellSize)} " +
-                "regs ${GpuLog.hex(decoded.registerBase)}/${GpuLog.hex(decoded.registerSize)}"
-        )
 
         if (!GpuPool.initialize()) {
-            GpuLog.step("dma pool", false, "boot carve missing")
+            KLog.step("gpu", "dma pool", false, "boot carve missing")
             return
         }
-
-        GpuLog.step("dma pool", true, GpuLog.mib(GpuPool.totalBytes))
 
         device = candidate
         bars = decoded
@@ -115,12 +116,27 @@ object GpuService {
             return
         }
 
-        probeFirmware()
         startSdma()
     }
 
-    var psp: VegaPsp? = null
-        private set
+    fun describe(): List<String> {
+        if (device == null) return listOf("gpu absent")
+        if (regs == null) return listOf("$chipName found, bring-up failed (see bootlog)")
+
+        val lines = mutableListOf<String>()
+        val at = device?.let { "${it.bus}:${it.slot}.${it.function}" } ?: "?"
+        lines.add("$chipName at $at")
+        lines.add("carveout ${KLog.mib(carveoutBytes)} at ${KLog.hex(carveoutBase)}, bar window ${KLog.mib(vramWindowBytes)}")
+        lines.add("sdma ${if (sdma != null) "ready" else "down"}, compute ${if (compute != null) "ready" else "down"}")
+        lines.add(
+            when {
+                scanoutOffset == ULong.MAX_VALUE -> "scanout outside vram bar"
+                scanoutTarget != null -> "scanout at vram +${KLog.hex(scanoutOffset)}, demo frame prerendered"
+                else -> "scanout at vram +${KLog.hex(scanoutOffset)}"
+            }
+        )
+        return lines
+    }
 
     private fun startSdma() {
         val mapped = regs ?: return
@@ -133,12 +149,12 @@ object GpuService {
         val mailbox = smu
         if (mailbox != null) {
             val up = mailbox.send(VegaReg.SMU_MSG_POWER_UP_SDMA)
-            GpuLog.step("smu sdma-up", up == VegaReg.SMU_RESULT_OK, "resp=${up?.let { GpuLog.hex(it) } ?: "timeout"}")
+            KLog.step("gpu", "smu sdma-up", up == VegaReg.SMU_RESULT_OK, "resp=${up?.let { KLog.hex(it) } ?: "timeout"}")
         }
 
         val loader = VegaPsp(mapped)
         if (!loader.initialize()) {
-            GpuLog.step("psp", false, "ring/tmr setup failed")
+            KLog.step("gpu", "psp", false, "ring/tmr setup failed")
             return
         }
         psp = loader
@@ -156,11 +172,49 @@ object GpuService {
         startCompute(mapped, loader)
     }
 
-    var compute: VegaCompute? = null
-        private set
+    private fun startCompute(mapped: VegaRegs, loader: VegaPsp) {
+        val gfx = VegaGfx(mapped, smu)
+        if (!gfx.disableGfxOff()) return
 
-    var scanoutTarget: VramAlloc? = null
-        private set
+        if (!loader.loadFirmware("picasso_rlc.bin", VegaReg.GFX_FW_TYPE_RLC_G)) return
+        if (!loader.loadFirmware("picasso_mec.bin", VegaReg.GFX_FW_TYPE_CP_MEC)) return
+        loader.loadMecJt(VegaReg.GFX_FW_TYPE_CP_MEC_ME1)
+
+        VegaVm.enableGfxhub(mapped)
+
+        if (!gfx.startRlc()) return
+        gfx.disableClockAndPowerGating()
+        if (!gfx.enableMec()) return
+
+        val engine = VegaCompute(mapped, gfx, doorbellWindow)
+        if (!engine.bringUp()) return
+        if (!engine.ringTest()) return
+
+        val fill = VegaShaderLoader.load("fill")
+        if (fill != null && !engine.runKernel(fill)) return
+
+        compute = engine
+
+        val gradient = VegaShaderLoader.load("gradient")
+        val fb = BootInfo.framebuffer
+        if (gradient != null && fb != null) prerenderScanout(engine, gradient, fb)
+    }
+
+    private fun prerenderScanout(engine: VegaCompute, shader: Shader, fb: hal.FramebufferInfo) {
+        val pitchPx = fb.pitch / 4u
+        val bytes = fb.pitch.toULong() * fb.height.toULong()
+        val target = VegaVram.allocate(bytes) ?: return
+
+        val pxByte = (50UL * pitchPx.toULong() + 100UL) * 4UL
+        val ok = engine.drawFramebuffer(shader, target.gpuAddress, fb.width, fb.height, pitchPx)
+        regs?.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
+        val px = target.readDword(pxByte)
+
+        val good = ok && px != 0u
+        if (good) scanoutTarget = target
+
+        KLog.step("gpu", "scanout prerender", good, "${fb.width}x${fb.height} px ${KLog.hex(px)}")
+    }
 
     fun drawScanoutDemo(): String {
         val blitter = sdma ?: return "sdma not up"
@@ -182,91 +236,12 @@ object GpuService {
         DisplayContext.releaseGpu()
     }
 
-    fun diagnoseCompute(): List<String> {
-        val engine = compute ?: return listOf("compute not up")
-        val shader = VegaShaderLoader.load("gradient") ?: return listOf("gradient shader missing")
-        val fill = VegaShaderLoader.load("fill")
-        val lines = engine.diagnose(shader, fill).toMutableList()
-
-        val fb = BootInfo.framebuffer
-        if (fb != null && scanoutOffset != ULong.MAX_VALUE) {
-            val pitchPx = fb.pitch / 4u
-            val pxByte = (50UL * pitchPx.toULong() + 100UL) * 4UL
-            RawMemory.write32(vramWindow + scanoutOffset + pxByte, 0u)
-            Cpu.storeFence()
-            val ok = engine.drawFramebuffer(shader, carveoutBase + scanoutOffset, fb.width, fb.height, pitchPx)
-            regs?.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
-            val px = RawMemory.read32(vramWindow + scanoutOffset + pxByte)
-            lines.add("scanout(low-off +${GpuLog.hex(scanoutOffset)}) render ok=$ok px=${GpuLog.hex(px)}")
-        }
-        return lines
-    }
-
-    private fun startCompute(mapped: VegaRegs, loader: VegaPsp) {
-        val gfx = VegaGfx(mapped, smu)
-        if (!gfx.disableGfxOff()) return
-
-        if (!loader.loadFirmware("picasso_rlc.bin", VegaReg.GFX_FW_TYPE_RLC_G)) return
-        if (!loader.loadFirmware("picasso_mec.bin", VegaReg.GFX_FW_TYPE_CP_MEC)) return
-        loader.loadMecJt(VegaReg.GFX_FW_TYPE_CP_MEC_ME1)
-
-        VegaVm.enableGfxhub(mapped)
-
-        if (!gfx.startRlc()) return
-        GpuLog.step("gfx cg/pg off", true, gfx.disableClockAndPowerGating())
-        if (!gfx.enableMec()) return
-
-        val engine = VegaCompute(mapped, gfx, doorbellWindow)
-        if (!engine.bringUp()) return
-        engine.ringTest()
-        engine.dispatch()
-
-        val shader = VegaShaderLoader.load("fill")
-        if (shader != null) engine.runKernel(shader)
-
-        val gradient = VegaShaderLoader.load("gradient")
-        if (gradient != null) engine.renderTest(gradient)
-
-        val fb = BootInfo.framebuffer
-        if (fb != null) GpuLog.info("fb ${fb.width}x${fb.height} pitch ${fb.pitch} (pitchpx ${fb.pitch / 4u}) shifts r${fb.redShift} g${fb.greenShift} b${fb.blueShift}")
-
-        compute = engine
-
-        if (gradient != null && fb != null) prerenderScanout(engine, gradient, fb)
-    }
-
-    private var prerenderPx: UInt = 0u
-
-    private fun prerenderScanout(engine: VegaCompute, shader: Shader, fb: hal.FramebufferInfo) {
-        val pitchPx = fb.pitch / 4u
-        val bytes = fb.pitch.toULong() * fb.height.toULong()
-        val target = VegaVram.allocate(bytes) ?: return
-
-        val pxByte = (50UL * pitchPx.toULong() + 100UL) * 4UL
-
-        engine.drawFramebuffer(shader, target.gpuAddress, fb.width, fb.height, pitchPx)
-        regs?.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
-        val pass1 = target.readDword(pxByte)
-
-        val ok = engine.drawFramebuffer(shader, target.gpuAddress, fb.width, fb.height, pitchPx)
-        regs?.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
-        val pass2 = target.readDword(pxByte)
-
-        prerenderPx = pass2
-        scanoutTarget = target
-
-        GpuLog.step(
-            "scanout prerender", ok && pass2 != 0u,
-            "${fb.width}x${fb.height} pass1(zeroed)=${GpuLog.hex(pass1)} pass2(no-rezero)=${GpuLog.hex(pass2)}",
-        )
-    }
-
     private fun trySmu(mapped: VegaRegs): Boolean {
         val direct = mapped.read(VegaReg.MP1_C2PMSG_90)
         val indirect = mapped.readIndirect(VegaReg.MP1_C2PMSG_90)
 
         if (direct == 0xFFFFFFFFu && indirect == 0xFFFFFFFFu) {
-            GpuLog.step("smu", false, "mp1 dark direct+indirect, gfxoff left as firmware set it")
+            KLog.step("gpu", "smu", false, "mp1 dark direct+indirect, gfxoff left as firmware set it")
             return false
         }
 
@@ -275,7 +250,7 @@ object GpuService {
 
         val test = mailbox.send(VegaReg.SMU_MSG_TEST, 1u)
         if (test != VegaReg.SMU_RESULT_OK) {
-            GpuLog.step("smu", false, "test resp=${test?.let { GpuLog.hex(it) } ?: "timeout"}")
+            KLog.step("gpu", "smu", false, "test resp=${test?.let { KLog.hex(it) } ?: "timeout"}")
             smu = null
             return false
         }
@@ -284,62 +259,13 @@ object GpuService {
         val gfxOff = mailbox.send(VegaReg.SMU_MSG_DISABLE_GFXOFF)
         settle(GFXOFF_SETTLE_MS)
 
-        GpuLog.step(
+        KLog.step(
+            "gpu",
             "smu",
             gfxOff == VegaReg.SMU_RESULT_OK,
-            "v${if (version == VegaReg.SMU_RESULT_OK) GpuLog.hex(mailbox.argument()) else "?"} gfxoff off",
+            "v${if (version == VegaReg.SMU_RESULT_OK) KLog.hex(mailbox.argument()) else "?"} gfxoff off",
         )
         return gfxOff == VegaReg.SMU_RESULT_OK
-    }
-
-    fun probeGfx(): String {
-        val mapped = regs ?: return "no register access"
-        mapped.write(VegaReg.SCRATCH_REG0, 0xCAFEBABEu)
-        val scratch = mapped.read(VegaReg.SCRATCH_REG0)
-        return "scratch ${GpuLog.hex(scratch)} grbm ${GpuLog.hex(mapped.read(VegaReg.GRBM_STATUS))} " +
-            "cp ${GpuLog.hex(mapped.read(VegaReg.CP_STAT))} rlc ${GpuLog.hex(mapped.read(VegaReg.RLC_GPM_STAT))} " +
-            "gbcfg ${GpuLog.hex(mapped.read(VegaReg.GB_ADDR_CONFIG))}"
-    }
-
-    private fun probeSmn(mapped: VegaRegs) {
-        val pcie = mapped.smnRead(0x11180070u)
-        val fwFlags = mapped.smnRead(0x3010028u)
-        val fwFlags2 = mapped.smnRead(0x3010024u)
-        val mp1_c2p90 = mapped.smnRead(0x3B10000u + 0x29Au * 4u)
-
-        GpuLog.step(
-            "smn", pcie != 0xFFFFFFFFu,
-            "pcie ${GpuLog.hex(pcie)} mp1fw ${GpuLog.hex(fwFlags)} fw2 ${GpuLog.hex(fwFlags2)} c2p90 ${GpuLog.hex(mp1_c2p90)}",
-        )
-    }
-
-    private fun probePsp(mapped: VegaRegs) {
-        val c64 = mapped.read(VegaReg.MP0_C2PMSG_64)
-        val c67 = mapped.read(VegaReg.MP0_C2PMSG_67)
-        val c81 = mapped.read(VegaReg.MP0_C2PMSG_81)
-        val c35 = mapped.read(VegaReg.MP0_C2PMSG_35)
-        val i64 = mapped.readIndirect(VegaReg.MP0_C2PMSG_64)
-
-        val reachable = c64 != 0xFFFFFFFFu || i64 != 0xFFFFFFFFu
-        GpuLog.step(
-            "psp", reachable,
-            "c64 ${GpuLog.hex(c64)} i64 ${GpuLog.hex(i64)} c67 ${GpuLog.hex(c67)} c81 ${GpuLog.hex(c81)} c35 ${GpuLog.hex(c35)}",
-        )
-    }
-
-    private fun probeAperture(mapped: VegaRegs) {
-        val command = device?.let { PCIConfig.read16(it.bus, it.slot, it.function, 0x04).toUInt() } ?: 0u
-        GpuLog.info("pci command ${GpuLog.hex(command, 4)}")
-
-        val builder = StringBuilder("decode")
-        for (reg in APERTURE_PROBE) {
-            builder.append(" +${GpuLog.hex(reg.toULong() shl 2)}=${GpuLog.hex(mapped.read(reg))}")
-        }
-        GpuLog.info(builder.toString())
-    }
-
-    private fun probeFirmware() {
-        for (name in FIRMWARE) GpuFirmware.load(name)
     }
 
     private fun settle(millis: ULong) {
@@ -350,15 +276,15 @@ object GpuService {
 
     private fun memoryReady(decoded: VegaBars): Boolean {
         if (!VegaVram.initialize()) {
-            GpuLog.step("vram rgn", false)
+            KLog.step("gpu", "vram rgn", false)
             return false
         }
 
         if (decoded.doorbellBase != 0UL && decoded.doorbellSize != 0UL) {
             doorbellWindow = Mmio.map(decoded.doorbellBase, decoded.doorbellSize)
-            GpuLog.step("doorbell", doorbellWindow != 0UL, "+${GpuLog.hex(decoded.doorbellSize)}")
+            if (doorbellWindow == 0UL) KLog.step("gpu", "doorbell", false)
         } else {
-            GpuLog.info("doorbell aperture missing, mmio wptr only")
+            KLog.info("gpu", "doorbell aperture missing, mmio wptr only")
         }
 
         val ring = VegaVram.allocate(RING_BYTES, RING_BYTES)
@@ -366,7 +292,7 @@ object GpuService {
         val rptr = VegaVram.allocate(0x1000UL)
 
         if (ring == null || fence == null || rptr == null) {
-            GpuLog.step("ring alloc", false, "carveout region exhausted")
+            KLog.step("gpu", "ring alloc", false, "carveout region exhausted")
             return false
         }
 
@@ -379,8 +305,10 @@ object GpuService {
             ring.readDword(RING_BYTES - 4UL) == 0x9ABCDEF0u &&
             fence.readDword(0UL) == 0u
 
-        GpuLog.step("ring rw", ok, "ring ${GpuLog.hex(ring.gpuAddress)} fence ${GpuLog.hex(fence.gpuAddress)}")
-        if (!ok) return false
+        if (!ok) {
+            KLog.step("gpu", "ring rw", false, "ring ${KLog.hex(ring.gpuAddress)}")
+            return false
+        }
 
         ring.zero()
         sdmaRing = ring
@@ -395,21 +323,16 @@ object GpuService {
         val regBytes = if (decoded.registerSize < VegaReg.REGISTER_APERTURE_BYTES) decoded.registerSize else VegaReg.REGISTER_APERTURE_BYTES
         val regBase = Mmio.map(decoded.registerBase, regBytes)
         if (regBase == 0UL) {
-            GpuLog.step("regs", false)
+            KLog.step("gpu", "regs", false)
             return false
         }
 
         val mapped = VegaRegs(regBase)
         regs = mapped
-        GpuLog.step("regs", true, "size ${decoded.registerSize / 1024UL} KiB, mapped ${regBytes / 1024UL} KiB")
 
         mapped.write(VegaReg.REMAP_HDP_MEM_FLUSH_CNTL, VegaReg.HDP_FLUSH_BAR_OFFSET)
 
-        probeAperture(mapped)
-
-        probeSmn(mapped)
         smuReady = trySmu(mapped)
-        probePsp(mapped)
 
         return discoverCarveout(mapped, decoded)
     }
@@ -420,25 +343,20 @@ object GpuService {
         val fbOffset = (mapped.read(VegaReg.MC_VM_FB_OFFSET) and 0xFFFFFFu).toULong() shl 24
 
         if (fbTop <= fbBase) {
-            GpuLog.step("carveout", false, "fb base=${GpuLog.hex(fbBase)} top=${GpuLog.hex(fbTop)}")
+            KLog.step("gpu", "carveout", false, "fb base=${KLog.hex(fbBase)} top=${KLog.hex(fbTop)}")
             return false
         }
 
         carveoutBase = fbBase
         carveoutBytes = fbTop + 0x1000000UL - fbBase
+        carveoutSysBase = fbOffset
 
-        GpuLog.info("carveout gpu ${GpuLog.hex(fbBase)}..${GpuLog.hex(fbTop)} (${GpuLog.mib(carveoutBytes)}) sysoffset ${GpuLog.hex(fbOffset)}")
-        GpuLog.info(
-            "sys aperture ${GpuLog.hex(mapped.read(VegaReg.MC_VM_SYSTEM_APERTURE_LOW_ADDR).toULong() shl 18)}.." +
-                "${GpuLog.hex(mapped.read(VegaReg.MC_VM_SYSTEM_APERTURE_HIGH_ADDR).toULong() shl 18)} " +
-                "agp ${GpuLog.hex(mapped.read(VegaReg.MC_VM_AGP_BOT).toULong() shl 24)}.." +
-                GpuLog.hex(mapped.read(VegaReg.MC_VM_AGP_TOP).toULong() shl 24)
-        )
+        KLog.info("gpu", "carveout ${KLog.hex(fbBase)}..${KLog.hex(fbTop)} (${KLog.mib(carveoutBytes)}) sysoffset ${KLog.hex(fbOffset)}")
 
         val windowBytes = if (decoded.vramSize < MAX_VRAM_WINDOW) decoded.vramSize else MAX_VRAM_WINDOW
         val window = Mmio.map(decoded.vramBase, windowBytes, MemType.WriteCombining)
         if (window == 0UL) {
-            GpuLog.step("vram map", false)
+            KLog.step("gpu", "vram map", false)
             return false
         }
 
@@ -461,16 +379,7 @@ object GpuService {
         Cpu.storeFence()
 
         val ok = readBack0 == 0x4B75727452697073UL && readBack1 == 0x1BD1BD1BD1BD1BDUL
-        GpuLog.step("vram rw", ok, "window ${GpuLog.hex(decoded.vramBase)} +${GpuLog.mib(windowBytes)}")
-
-        carveoutSysBase = fbOffset
-
-        GpuLog.info(
-            "vm ctx0 ${GpuLog.hex(mapped.read(VegaReg.VM_CONTEXT0_CNTL))} " +
-                "l2 ${GpuLog.hex(mapped.read(VegaReg.VM_L2_CNTL))} " +
-                "ptb ${GpuLog.hex(mapped.read(VegaReg.VM_CONTEXT0_PAGE_TABLE_BASE_ADDR_LO32))} " +
-                "dflt ${GpuLog.hex(mapped.read(VegaReg.MC_VM_SYSTEM_APERTURE_DEFAULT_ADDR_LSB))}"
-        )
+        KLog.step("gpu", "vram rw", ok, "window ${KLog.hex(decoded.vramBase)} +${KLog.mib(windowBytes)}")
 
         val fb = BootInfo.framebuffer
         if (fb != null) {
@@ -478,9 +387,10 @@ object GpuService {
             if (scanoutPhys >= decoded.vramBase && scanoutPhys < decoded.vramBase + decoded.vramSize) {
                 scanoutOffset = scanoutPhys - decoded.vramBase
             }
-            GpuLog.info(
-                "scanout ${GpuLog.hex(scanoutPhys)} ${fb.width}x${fb.height} " +
-                    if (scanoutOffset == ULong.MAX_VALUE) "outside vram bar" else "at vram +${GpuLog.hex(scanoutOffset)}"
+            KLog.info(
+                "gpu",
+                "scanout ${KLog.hex(scanoutPhys)} ${fb.width}x${fb.height} " +
+                    if (scanoutOffset == ULong.MAX_VALUE) "outside vram bar" else "at vram +${KLog.hex(scanoutOffset)}"
             )
         }
 
@@ -490,13 +400,4 @@ object GpuService {
     private const val MAX_VRAM_WINDOW: ULong = 0x10000000UL
     private const val GFXOFF_SETTLE_MS: ULong = 10UL
     private const val RING_BYTES: ULong = 0x1000UL
-
-    private val FIRMWARE = listOf("picasso_rlc.bin", "picasso_mec.bin")
-
-    private val APERTURE_PROBE = listOf(
-        0x0u,
-        VegaReg.SDMA0_STATUS_REG,
-        VegaReg.MP1_C2PMSG_90,
-        VegaReg.MC_VM_FB_LOCATION_BASE,
-    )
 }

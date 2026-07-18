@@ -1,6 +1,6 @@
 package kernel.drivers.gpu.vega
 
-import kernel.drivers.gpu.GpuLog
+import kernel.KLog
 
 import kernel.fs.StorageService
 
@@ -38,18 +38,18 @@ object GpuFirmware {
 
         val volume = StorageService.system()
         if (volume == null) {
-            GpuLog.step(label, false, "esp not mounted")
+            KLog.step("gpu", label, false, "esp not mounted")
             return null
         }
 
         val data = volume.read("/firmware/$name", MAX_BYTES)
         if (data == null) {
-            GpuLog.step(label, false, "not found")
+            KLog.step("gpu", label, false, "not found")
             return null
         }
 
         if (data.size < 0x30) {
-            GpuLog.step(label, false, "truncated (${data.size} bytes)")
+            KLog.step("gpu", label, false, "truncated (${data.size} bytes)")
             return null
         }
 
@@ -61,16 +61,16 @@ object GpuFirmware {
         val featureVersion = dword(data, 0x20)
 
         if (sizeBytes.toInt() != data.size || headerMajor !in 1u..2u) {
-            GpuLog.step(label, false, "bad header size=${GpuLog.hex(sizeBytes)} ver=$headerMajor")
+            KLog.step("gpu", label, false, "bad header size=${KLog.hex(sizeBytes)} ver=$headerMajor")
             return null
         }
 
         if (ucodeOffset.toInt() + ucodeSize.toInt() > data.size) {
-            GpuLog.step(label, false, "payload out of range")
+            KLog.step("gpu", label, false, "payload out of range")
             return null
         }
 
-        GpuLog.step(label, true, "v${GpuLog.hex(ucodeVersion)} ${ucodeSize} bytes")
+        KLog.step("gpu", label, true, "v${KLog.hex(ucodeVersion)} ${ucodeSize} bytes")
         val ucode = Ucode(name, ucodeVersion, featureVersion, data, ucodeOffset.toInt(), ucodeSize.toInt())
         cache[name] = ucode
         return ucode

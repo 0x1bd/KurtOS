@@ -64,6 +64,7 @@ fun main() {
 
     AudioService.initialize()
     GamepadService.initialize()
+    KLog.info("input", GamepadService.summary())
     StorageService.initialize()
     GpuService.initialize()
     USBService.armInterrupts(Idt.VECTOR_USB, Apic.localId())
@@ -93,15 +94,20 @@ private fun startInterrupts() {
     Pic.disable()
 
     Acpi.initialize()
+    KLog.step("acpi", "madt", Acpi.available, if (Acpi.available) "ioapic at ${KLog.hex(Acpi.ioApicAddress)}" else "unavailable")
 
     Cpu.requestMaxPerformance()
 
     Apic.initialize()
     PerfMonitor.initialize()
+    KLog.info("apic", "timer ${Apic.timerHz} Hz via ${Apic.calibrationSource}")
 
     Smp.initialize()
+    KLog.info("smp", "${Smp.cpus} cpu(s)")
 
-    if (I8042.initialize()) {
+    val ps2 = I8042.initialize()
+    KLog.step("input", "ps/2 keyboard", ps2, if (ps2) "" else "controller absent")
+    if (ps2) {
         IoApic.route(IRQ_KEYBOARD, Idt.VECTOR_KEYBOARD, Apic.localId())
         hal.Arch.enableKeyboardPoll()
     }

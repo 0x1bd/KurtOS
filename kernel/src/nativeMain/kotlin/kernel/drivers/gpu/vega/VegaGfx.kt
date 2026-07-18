@@ -1,19 +1,19 @@
 package kernel.drivers.gpu.vega
 
 import hal.Clock
-import kernel.drivers.gpu.GpuLog
+import kernel.KLog
 
 class VegaGfx(private val regs: VegaRegs, private val smu: VegaSmu?) {
     fun disableGfxOff(): Boolean {
         val mailbox = smu
         if (mailbox == null) {
-            GpuLog.step("gfxoff off", false, "no smu")
+            KLog.step("gpu", "gfxoff off", false, "no smu")
             return false
         }
 
         val resp = mailbox.send(VegaReg.SMU_MSG_DISABLE_GFXOFF)
         if (resp != VegaReg.SMU_RESULT_OK) {
-            GpuLog.step("gfxoff off", false, "resp=${resp?.let { GpuLog.hex(it) } ?: "timeout"}")
+            KLog.step("gpu", "gfxoff off", false, "resp=${resp?.let { KLog.hex(it) } ?: "timeout"}")
             return false
         }
 
@@ -21,12 +21,12 @@ class VegaGfx(private val regs: VegaRegs, private val smu: VegaSmu?) {
         while (Clock.uptimeMillis() < deadline) {
             val status = regs.read(VegaReg.PWR_MISC_CNTL_STATUS)
             if (status and VegaReg.PWR_GFXOFF_STATUS_MASK == VegaReg.PWR_GFXOFF_STATUS_ON) {
-                GpuLog.step("gfxoff off", true, "pwr ${GpuLog.hex(status)}")
+                KLog.step("gpu", "gfxoff off", true, "pwr ${KLog.hex(status)}")
                 return true
             }
         }
 
-        GpuLog.step("gfxoff off", false, "pwr ${GpuLog.hex(regs.read(VegaReg.PWR_MISC_CNTL_STATUS))} not on")
+        KLog.step("gpu", "gfxoff off", false, "pwr ${KLog.hex(regs.read(VegaReg.PWR_MISC_CNTL_STATUS))} not on")
         return false
     }
 
@@ -39,7 +39,7 @@ class VegaGfx(private val regs: VegaRegs, private val smu: VegaSmu?) {
 
         val cntl = regs.read(VegaReg.RLC_CNTL)
         val stat = regs.read(VegaReg.RLC_GPM_STAT)
-        GpuLog.step("rlc start", cntl and 0x1u != 0u, "cntl ${GpuLog.hex(cntl)} stat ${GpuLog.hex(stat)}")
+        KLog.step("gpu", "rlc start", cntl and 0x1u != 0u, "cntl ${KLog.hex(cntl)} stat ${KLog.hex(stat)}")
         return cntl and 0x1u != 0u
     }
 
@@ -49,7 +49,7 @@ class VegaGfx(private val regs: VegaRegs, private val smu: VegaSmu?) {
 
         val cntl = regs.read(VegaReg.CP_MEC_CNTL)
         val cp = regs.read(VegaReg.CP_STAT)
-        GpuLog.step("mec enable", true, "mec_cntl ${GpuLog.hex(cntl)} cp ${GpuLog.hex(cp)}")
+        KLog.step("gpu", "mec enable", true, "mec_cntl ${KLog.hex(cntl)} cp ${KLog.hex(cp)}")
         return true
     }
 
@@ -65,7 +65,7 @@ class VegaGfx(private val regs: VegaRegs, private val smu: VegaSmu?) {
         regs.write(VegaReg.RLC_SAFE_MODE, VegaReg.RLC_SAFE_MODE_CMD)
     }
 
-    fun disableClockAndPowerGating(): String {
+    fun disableClockAndPowerGating() {
         enterSafeMode()
 
         val mgcg = regs.read(VegaReg.RLC_CGTT_MGCG_OVERRIDE)
@@ -84,17 +84,7 @@ class VegaGfx(private val regs: VegaRegs, private val smu: VegaSmu?) {
         regs.read(VegaReg.GB_ADDR_CONFIG)
 
         exitSafeMode()
-
-        return "mgcg ${GpuLog.hex(regs.read(VegaReg.RLC_CGTT_MGCG_OVERRIDE))} " +
-            "cgcg ${GpuLog.hex(regs.read(VegaReg.RLC_CGCG_CGLS_CTRL))} " +
-            "pg ${GpuLog.hex(regs.read(VegaReg.RLC_PG_CNTL))}"
     }
-
-    fun gatingState(): String =
-        "mgcg ${GpuLog.hex(regs.read(VegaReg.RLC_CGTT_MGCG_OVERRIDE))} " +
-            "cgcg ${GpuLog.hex(regs.read(VegaReg.RLC_CGCG_CGLS_CTRL))} " +
-            "pg ${GpuLog.hex(regs.read(VegaReg.RLC_PG_CNTL))} " +
-            "rlcslp ${GpuLog.hex(regs.read(VegaReg.RLC_MEM_SLP_CNTL))} cpslp ${GpuLog.hex(regs.read(VegaReg.CP_MEM_SLP_CNTL))}"
 
     fun grbmSelect(me: Int, pipe: Int, queue: Int) {
         val value = (pipe.toUInt() shl 0) or (me.toUInt() shl 2) or (queue.toUInt() shl 8)

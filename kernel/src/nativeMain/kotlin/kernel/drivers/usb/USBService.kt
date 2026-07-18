@@ -1,12 +1,14 @@
 package kernel.drivers.usb
 
 import hal.Arch
+import kernel.KLog
 import kernel.drivers.Pci
 
 object USBService {
     private val controllers = mutableListOf<Xhci>()
     private val devices = mutableListOf<USBDevice>()
     private val notes = mutableListOf<String>()
+    private var reported = false
 
     var status: String = "not initialized"
         private set
@@ -37,6 +39,7 @@ object USBService {
         val found = Pci.findAll(CLASS_SERIAL_BUS, SUBCLASS_USB)
         if (found.isEmpty()) {
             status = "no usb controller"
+            report(false)
             return false
         }
 
@@ -49,20 +52,33 @@ object USBService {
             val xhci = Xhci(device)
             if (!xhci.initialize()) {
                 notes.add("controller: ${xhci.status}")
+                if (!reported) KLog.step("xhci", "controller", false, xhci.status)
                 continue
             }
 
+            if (!reported) KLog.step("xhci", "controller", true, xhci.status)
             controllers.add(xhci)
             enumerate(xhci)
         }
 
         if (controllers.isEmpty()) {
             status = "no usable xhci controller"
+            report(false)
             return false
         }
 
         status = "${controllers.size} xhci controller(s), ${devices.size} device(s)"
+        if (!reported) {
+            for (line in describe().drop(1)) KLog.info("usb", line)
+        }
+        report(true)
         return true
+    }
+
+    private fun report(ok: Boolean) {
+        if (reported) return
+        reported = true
+        KLog.step("usb", "usb", ok, status)
     }
 
     fun rescan(): Boolean {

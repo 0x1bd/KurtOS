@@ -1,6 +1,6 @@
 package kernel.drivers.gpu.vega
 
-import kernel.drivers.gpu.GpuLog
+import kernel.KLog
 
 import hal.Cpu
 import hal.RawMemory
@@ -18,12 +18,6 @@ class VegaSdma(
     private val doorbellByte: ULong = (VegaReg.SDMA0_DOORBELL_INDEX shl 2).toULong()
 
     fun start(): Boolean {
-        val f32 = regs.read(VegaReg.SDMA0_F32_CNTL)
-        val status = regs.read(VegaReg.SDMA0_STATUS_REG)
-        val posted = f32 and VegaReg.SDMA_F32_HALT == 0u
-
-        GpuLog.info("sdma f32 ${GpuLog.hex(f32)} status ${GpuLog.hex(status)} ${if (posted) "posted by firmware" else "halted"}")
-
         regs.write(VegaReg.RCC_DOORBELL_APER_EN, regs.read(VegaReg.RCC_DOORBELL_APER_EN) or 0x1u)
         regs.write(VegaReg.BIF_SDMA0_DOORBELL_RANGE, (VegaReg.SDMA0_DOORBELL_INDEX shl 2) or (0x2u shl 16))
 
@@ -34,16 +28,9 @@ class VegaSdma(
 
         regs.write(VegaReg.SDMA0_CNTL, regs.read(VegaReg.SDMA0_CNTL) or VegaReg.SDMA_UTC_L1_ENABLE)
         unhalt()
-        GpuLog.info("sdma f32 after unhalt ${GpuLog.hex(regs.read(VegaReg.SDMA0_F32_CNTL))} cntl ${GpuLog.hex(regs.read(VegaReg.SDMA0_CNTL))}")
-
-        GpuLog.info(
-            "sdma base ${GpuLog.hex(regs.read(VegaReg.SDMA0_GFX_RB_BASE))}/${GpuLog.hex(regs.read(VegaReg.SDMA0_GFX_RB_BASE_HI))} " +
-                "poll ${GpuLog.hex(regs.read(VegaReg.SDMA0_GFX_RB_WPTR_POLL_CNTL))} " +
-                "cntl ${GpuLog.hex(regs.read(VegaReg.SDMA0_CNTL))} f32 ${GpuLog.hex(regs.read(VegaReg.SDMA0_F32_CNTL))}"
-        )
 
         val running = regs.read(VegaReg.SDMA0_STATUS_REG)
-        GpuLog.step("sdma ring", running and 0x1u != 0u, "status ${GpuLog.hex(running)} rb ${GpuLog.hex(regs.read(VegaReg.SDMA0_GFX_RB_CNTL))}")
+        KLog.step("gpu", "sdma ring", running and 0x1u != 0u, "status ${KLog.hex(running)}")
         return running and 0x1u != 0u
     }
 
@@ -150,11 +137,7 @@ class VegaSdma(
         }
 
         val ok = target.readDword(0UL) == 0xDEADBEEFu
-        GpuLog.step(
-            "sdma ringtest", ok,
-            "target ${GpuLog.hex(target.readDword(0UL))} rptr ${GpuLog.hex(regs.read(VegaReg.SDMA0_GFX_RB_RPTR))} " +
-                "rptr_wb ${GpuLog.hex(rptr.readDword(0UL))} status ${GpuLog.hex(regs.read(VegaReg.SDMA0_STATUS_REG))}",
-        )
+        KLog.step("gpu", "sdma ringtest", ok, "val ${KLog.hex(target.readDword(0UL))}")
         return ok
     }
 
@@ -226,17 +209,20 @@ class VegaSdma(
 
         val signalled = fence.readDword(0UL) == seq
         if (!signalled) {
-            GpuLog.step(
-                "sdma copy", false,
-                "fence ${GpuLog.hex(fence.readDword(0UL))} rptr ${GpuLog.hex(regs.read(VegaReg.SDMA0_GFX_RB_RPTR))} " +
-                    "wptr ${GpuLog.hex(regs.read(VegaReg.SDMA0_GFX_RB_WPTR))} " +
-                    "status ${GpuLog.hex(regs.read(VegaReg.SDMA0_STATUS_REG))}",
+            KLog.step(
+                "gpu",
+                "sdma copy",
+                false,
+                "fence ${KLog.hex(fence.readDword(0UL))} rptr ${KLog.hex(regs.read(VegaReg.SDMA0_GFX_RB_RPTR))} " +
+                    "wptr ${KLog.hex(regs.read(VegaReg.SDMA0_GFX_RB_WPTR))} " +
+                    "status ${KLog.hex(regs.read(VegaReg.SDMA0_STATUS_REG))}",
             )
             regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
-            GpuLog.info(
-                "vm fault ${GpuLog.hex(regs.read(VegaReg.VM_L2_PROTECTION_FAULT_STATUS))} " +
-                    "rptr_wb ${GpuLog.hex(rptr.readDword(0UL))} " +
-                    "dst0 ${GpuLog.hex(dst.readDword(0UL))} ring0 ${GpuLog.hex(ring.readDword(0UL))}"
+            KLog.info(
+                "gpu",
+                "vm fault ${KLog.hex(regs.read(VegaReg.VM_L2_PROTECTION_FAULT_STATUS))} " +
+                    "rptr_wb ${KLog.hex(rptr.readDword(0UL))} " +
+                    "dst0 ${KLog.hex(dst.readDword(0UL))} ring0 ${KLog.hex(ring.readDword(0UL))}",
             )
             return false
         }
@@ -251,7 +237,7 @@ class VegaSdma(
             }
         }
 
-        GpuLog.step("sdma copy", mismatch < 0, if (mismatch < 0) "$bytes bytes verified" else "dword $mismatch differs")
+        KLog.step("gpu", "sdma copy", mismatch < 0, if (mismatch < 0) "$bytes bytes verified" else "dword $mismatch differs")
         return mismatch < 0
     }
 

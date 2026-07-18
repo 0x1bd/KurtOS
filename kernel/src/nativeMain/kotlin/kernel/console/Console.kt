@@ -4,6 +4,7 @@ import hal.Cpu
 import hal.Serial
 import kapi.ConsoleBackend
 import kapi.Gamepad
+import kapi.Keys
 import kernel.drivers.Keyboard
 import kernel.graphics.Framebuffer
 import kernel.graphics.GraphicsService
@@ -15,6 +16,8 @@ private const val MARGIN = 8u
 
 private const val COLOR_BACKGROUND: UInt = 0x00F6F4EFu
 private const val COLOR_TEXT: UInt = 0x001E2430u
+
+private const val SCROLLBACK_LINES = 400
 
 class FramebufferConsole(private val fb: Framebuffer, private val background: UInt = COLOR_BACKGROUND) {
     private val glyphWidth = Font.ADVANCE.toUInt() * SCALE
@@ -28,10 +31,17 @@ class FramebufferConsole(private val fb: Framebuffer, private val background: UI
     private var column = 0
     private var row = 0
 
+    private val scrollback = ArrayDeque<String>()
+    private val partial = StringBuilder()
+    private var viewOffset = 0
+
     fun clear() {
         fb.clear(background)
         column = 0
         row = 0
+        scrollback.clear()
+        partial.setLength(0)
+        viewOffset = 0
         fb.presentAll()
     }
 
@@ -41,13 +51,21 @@ class FramebufferConsole(private val fb: Framebuffer, private val background: UI
     }
 
     fun putChar(c: Char) {
+        if (viewOffset != 0) {
+            viewOffset = 0
+            redraw()
+        }
         when (c) {
             '\n' -> newline()
-            '\r' -> column = 0
+            '\r' -> {
+                column = 0
+                partial.setLength(0)
+            }
             '\b' -> backspace()
             else -> {
                 if (c.code < 0x20) return
-                drawGlyph(c)
+                drawGlyph(column, row, c)
+                partial.append(c)
                 column++
                 if (column >= columns) newline()
             }
@@ -59,13 +77,47 @@ class FramebufferConsole(private val fb: Framebuffer, private val background: UI
         fb.present()
     }
 
+    fun scroll(lines: Int) {
+        val maxOffset = maxOf(0, scrollback.size + 1 - rows)
+        val next = (viewOffset + lines).coerceIn(0, maxOffset)
+        if (next == viewOffset) return
+        viewOffset = next
+        redraw()
+    }
+
+    private fun redraw() {
+        fb.clear(background)
+
+        val total = scrollback.size + 1
+        val first = maxOf(0, total - rows - viewOffset)
+        var line = 0
+
+        for (i in first until total - viewOffset) {
+            val text = if (i < scrollback.size) scrollback[i] else partial.toString()
+            for (col in text.indices) drawGlyph(col, line, text[col])
+            line++
+        }
+
+        if (viewOffset == 0) {
+            row = if (line > 0) line - 1 else 0
+            column = partial.length
+        }
+
+        fb.presentAll()
+    }
+
     private fun backspace() {
         if (column == 0) return
         column--
+        if (partial.isNotEmpty()) partial.deleteAt(partial.length - 1)
         fillCell(column, row, background)
     }
 
     private fun newline() {
+        scrollback.addLast(partial.toString())
+        if (scrollback.size > SCROLLBACK_LINES) scrollback.removeFirst()
+        partial.setLength(0)
+
         column = 0
         row++
         if (row >= rows) {
@@ -84,12 +136,12 @@ class FramebufferConsole(private val fb: Framebuffer, private val background: UI
         )
     }
 
-    private fun drawGlyph(c: Char) {
-        fillCell(column, row, background)
+    private fun drawGlyph(col: Int, line: Int, c: Char) {
+        fillCell(col, line, background)
 
         val glyph = Font.glyph(c)
-        val originX = MARGIN + column.toUInt() * glyphWidth
-        val originY = top + MARGIN + row.toUInt() * glyphHeight
+        val originX = MARGIN + col.toUInt() * glyphWidth
+        val originY = top + MARGIN + line.toUInt() * glyphHeight
 
         for (gy in 0 until Font.HEIGHT) {
             val bits = glyph[gy].toInt() and 0xFF
@@ -108,6 +160,8 @@ class FramebufferConsole(private val fb: Framebuffer, private val background: UI
 }
 
 object SystemConsole : ConsoleBackend {
+    private const val SCROLL_STEP = 4
+
     private var fbConsole: FramebufferConsole? = null
 
     fun attachFramebuffer() {
@@ -140,8 +194,15 @@ object SystemConsole : ConsoleBackend {
 
     override fun tryReadChar(): Char? {
         Keyboard.poll()
+        pumpScroll()
         Keyboard.nextChar()?.let { return it }
         return Serial.tryReadChar()
+    }
+
+    private fun pumpScroll() {
+        if (!Keyboard.shiftDown) return
+        if (Keyboard.consumePress(Keys.UP)) fbConsole?.scroll(SCROLL_STEP)
+        if (Keyboard.consumePress(Keys.DOWN)) fbConsole?.scroll(-SCROLL_STEP)
     }
 
     override fun readLine(): String {

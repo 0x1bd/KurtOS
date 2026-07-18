@@ -2,6 +2,7 @@ package kernel.audio
 
 import hal.Clock
 import hal.RawMemory
+import kernel.KLog
 import kernel.drivers.HDAController
 import kernel.drivers.Pci
 
@@ -29,6 +30,7 @@ object AudioService {
         val devices = Pci.findAll(CLASS_MULTIMEDIA, SUBCLASS_HD_AUDIO)
         if (devices.isEmpty()) {
             status = "no hd audio controller"
+            report(false)
             return false
         }
 
@@ -38,13 +40,23 @@ object AudioService {
             if (hda.initialize()) {
                 controller = hda
                 status = hda.status
+                report(true)
                 return true
             }
             lastStatus = hda.status
         }
 
         status = lastStatus
+        report(false)
         return false
+    }
+
+    private var reported = false
+
+    private fun report(ok: Boolean) {
+        if (reported) return
+        reported = true
+        KLog.step("audio", "hda", ok, status)
     }
 
     fun describe(): List<String> = controller?.describeCodecs() ?: listOf(status)

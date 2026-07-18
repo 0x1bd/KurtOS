@@ -1,6 +1,6 @@
 package kernel.drivers.gpu.vega
 
-import kernel.drivers.gpu.GpuLog
+import kernel.KLog
 
 import hal.RawMemory
 
@@ -27,7 +27,7 @@ object VegaVram {
 
         val scanout = GpuService.scanoutOffset
         if (scanout != ULong.MAX_VALUE && scanout < usable && scanout >= usable - DRIVER_RESERVE) {
-            GpuLog.info("vram driver region moved below scanout at +${GpuLog.hex(scanout)}")
+            KLog.info("gpu", "vram driver region moved below scanout at +${KLog.hex(scanout)}")
             usable = scanout and 0xFFFUL.inv()
         }
 
@@ -38,7 +38,7 @@ object VegaVram {
         regionGpu = GpuService.carveoutBase + usable - DRIVER_RESERVE
         cursor = 0UL
 
-        GpuLog.info("vram driver region gpu ${GpuLog.hex(regionGpu)} cpu window +${GpuLog.hex(usable - DRIVER_RESERVE)} (${GpuLog.mib(regionBytes)})")
+        KLog.info("gpu", "vram driver region gpu ${KLog.hex(regionGpu)} cpu window +${KLog.hex(usable - DRIVER_RESERVE)} (${KLog.mib(regionBytes)})")
         return true
     }
 

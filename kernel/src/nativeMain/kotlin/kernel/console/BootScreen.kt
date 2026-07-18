@@ -12,8 +12,7 @@ import kernel.arch.Acpi
 import kernel.audio.AudioService
 import kernel.drivers.I8042
 import kernel.drivers.Keyboard
-import kernel.drivers.gpu.GpuLog
-import kernel.drivers.gpu.vega.GpuService
+import kernel.KLog
 import kernel.drivers.usb.GamepadService
 import kernel.drivers.usb.USBService
 import kernel.fs.StorageService
@@ -66,14 +65,15 @@ object BootScreen {
         lines += statusLine(GraphicsService.framebuffer() != null, "display", GraphicsService.status())
         lines += statusLine(Acpi.available, "acpi", if (Acpi.available) "madt parsed, apic routing active" else "no madt")
 
-        if (GpuLog.history.isNotEmpty()) {
+        val gpu = KLog.entriesFor("gpu")
+        if (gpu.isNotEmpty()) {
             lines += Line(Status.HEAD, "GPU", "")
-            for (entry in GpuLog.history.take(GPU_LINES)) {
+            for (entry in gpu.take(GPU_LINES)) {
                 if (entry.ok == null) {
                     lines += Line(Status.INFO, "", entry.detail)
                     continue
                 }
-                lines += Line(if (entry.ok) Status.OK else Status.FAIL, entry.name, entry.detail)
+                lines += Line(if (entry.ok) Status.OK else Status.FAIL, entry.label, entry.detail)
             }
         }
 

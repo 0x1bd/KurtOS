@@ -1,6 +1,6 @@
 package kernel.drivers.gpu.vega
 
-import kernel.drivers.gpu.GpuLog
+import kernel.KLog
 
 class HubRegs(
     val tlbCntl: UInt,
@@ -87,13 +87,6 @@ object VegaVm {
         regs.write(VegaReg.GFX_MC_VM_SYSTEM_APERTURE_HIGH_ADDR, ((fbTop + 0x1000000UL) shr 18).toUInt())
     }
 
-    fun gfxhubApertureState(regs: VegaRegs): String =
-        "fbbase ${GpuLog.hex(regs.read(VegaReg.GFX_MC_VM_FB_LOCATION_BASE))} " +
-            "fbtop ${GpuLog.hex(regs.read(VegaReg.GFX_MC_VM_FB_LOCATION_TOP))} " +
-            "syslo ${GpuLog.hex(regs.read(VegaReg.GFX_MC_VM_SYSTEM_APERTURE_LOW_ADDR))} " +
-            "syshi ${GpuLog.hex(regs.read(VegaReg.GFX_MC_VM_SYSTEM_APERTURE_HIGH_ADDR))} " +
-            "tlb ${GpuLog.hex(regs.read(VegaReg.GFX_MC_VM_MX_L1_TLB_CNTL))}"
-
     private fun enableHub(regs: VegaRegs, hub: HubRegs, label: String): Boolean {
         val pdb = VegaVram.allocate(0x1000UL) ?: return false
         pdb.zero()
@@ -126,7 +119,7 @@ object VegaVm {
         val tlb = regs.read(hub.tlbCntl)
 
         val ok = ctx and 0x1u != 0u && l2 and 0x1u != 0u
-        GpuLog.step(label, ok, "ctx0 ${GpuLog.hex(ctx)} l2 ${GpuLog.hex(l2)} tlb ${GpuLog.hex(tlb)} pdb ${GpuLog.hex(pdbPa)}")
+        KLog.step("gpu", label, ok, "ctx0 ${KLog.hex(ctx)} l2 ${KLog.hex(l2)} tlb ${KLog.hex(tlb)} pdb ${KLog.hex(pdbPa)}")
         return ok
     }
 

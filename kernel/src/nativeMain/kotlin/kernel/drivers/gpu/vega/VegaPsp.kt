@@ -1,6 +1,6 @@
 package kernel.drivers.gpu.vega
 
-import kernel.drivers.gpu.GpuLog
+import kernel.KLog
 
 import hal.Cpu
 
@@ -35,7 +35,7 @@ class VegaPsp(private val regs: VegaRegs) {
         regs.write(VegaReg.MP0_C2PMSG_64, VegaReg.PSP_RING_TYPE_KM shl 16)
 
         val ok = regs.poll(VegaReg.MP0_C2PMSG_64, 0x80000000u, 0x80000000u, 5_000_000)
-        GpuLog.step("psp ring", ok, "resp ${GpuLog.hex(regs.read(VegaReg.MP0_C2PMSG_64))}")
+        KLog.step("gpu", "psp ring", ok, "resp ${KLog.hex(regs.read(VegaReg.MP0_C2PMSG_64))}")
         return ok
     }
 
@@ -54,7 +54,7 @@ class VegaPsp(private val regs: VegaRegs) {
         c.writeDword(48UL, (pa shr 32).toUInt())
 
         val status = submit()
-        GpuLog.step("psp tmr", status == 0u, "status ${GpuLog.hex(status)}")
+        KLog.step("gpu", "psp tmr", status == 0u, "status ${KLog.hex(status)}")
         return status == 0u
     }
 
@@ -74,7 +74,7 @@ class VegaPsp(private val regs: VegaRegs) {
         val b = fw ?: return false
 
         if (byteSize.toULong() > FW_BYTES || byteOffset + byteSize > ucode.data.size) {
-            GpuLog.step("psp $label", false, "region ${GpuLog.hex(byteOffset.toUInt())}+$byteSize out of range")
+            KLog.step("gpu", "psp $label", false, "region ${KLog.hex(byteOffset.toUInt())}+$byteSize out of range")
             return false
         }
 
@@ -91,7 +91,7 @@ class VegaPsp(private val regs: VegaRegs) {
         c.writeDword(40UL, fwType)
 
         val status = submit()
-        GpuLog.step("psp $label", status == 0u, "status ${GpuLog.hex(status)} ${byteSize}b")
+        KLog.step("gpu", "psp $label", status == 0u, "status ${KLog.hex(status)} ${byteSize}b")
         return status == 0u
     }
 

@@ -19,6 +19,8 @@ object Keyboard {
     private var extended = false
     private var shift = false
 
+    val shiftDown: Boolean get() = shift
+
     private var layout = KeyboardLayout.DE
 
     var received = 0

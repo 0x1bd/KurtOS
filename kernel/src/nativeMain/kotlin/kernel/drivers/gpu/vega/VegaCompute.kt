@@ -2,7 +2,7 @@ package kernel.drivers.gpu.vega
 
 import hal.Cpu
 import hal.RawMemory
-import kernel.drivers.gpu.GpuLog
+import kernel.KLog
 
 class VegaCompute(
     private val regs: VegaRegs,
@@ -14,7 +14,6 @@ class VegaCompute(
 
     private var ring: VramAlloc? = null
     private var fence: VramAlloc? = null
-    private var shader: VramAlloc? = null
     private var mqdBuf: VramAlloc? = null
     private var eopBuf: VramAlloc? = null
     private var rptrBuf: VramAlloc? = null
@@ -27,18 +26,13 @@ class VegaCompute(
         val pq = VegaVram.allocate(RING_BYTES) ?: return false
         val rptr = VegaVram.allocate(0x1000UL) ?: return false
         val fenceMem = VegaVram.allocate(0x1000UL) ?: return false
-        val shaderMem = VegaVram.allocate(0x1000UL) ?: return false
 
         ring = pq
         fence = fenceMem
-        shader = shaderMem
         mqdBuf = mqd
         eopBuf = eop
         rptrBuf = rptr
 
-        shaderMem.writeDword(0UL, VegaReg.S_ENDPGM)
-        Cpu.storeFence()
-
         regs.write(VegaReg.RCC_DOORBELL_APER_EN, regs.read(VegaReg.RCC_DOORBELL_APER_EN) or 0x1u)
 
         gfx.grbmSelect(1, 0, 0)
@@ -47,36 +41,9 @@ class VegaCompute(
 
         gfx.grbmSelect(1, 0, 0)
         val active = regs.read(VegaReg.CP_HQD_ACTIVE)
-        val pqBase = regs.read(VegaReg.CP_HQD_PQ_BASE)
         gfx.grbmDeselect()
 
-        GpuLog.step("mec hqd", active and 0x1u != 0u, "active ${GpuLog.hex(active)} pqbase ${GpuLog.hex(pqBase)}")
-        return active and 0x1u != 0u
-    }
-
-    fun rearm(): Boolean {
-        val mqd = mqdBuf ?: return false
-        val eop = eopBuf ?: return false
-        val pq = ring ?: return false
-        val rptr = rptrBuf ?: return false
-
-        gfx.disableGfxOff()
-        gfx.disableClockAndPowerGating()
-        VegaVm.enableGfxhub(regs)
-
-        regs.write(VegaReg.RCC_DOORBELL_APER_EN, regs.read(VegaReg.RCC_DOORBELL_APER_EN) or 0x1u)
-
-        gfx.grbmSelect(1, 0, 0)
-        programHqd(mqd, eop, pq, rptr)
-        gfx.grbmDeselect()
-
-        wptr = 0
-
-        gfx.grbmSelect(1, 0, 0)
-        val active = regs.read(VegaReg.CP_HQD_ACTIVE)
-        gfx.grbmDeselect()
-
-        GpuLog.step("mec rearm", active and 0x1u != 0u, "active ${GpuLog.hex(active)}")
+        KLog.step("gpu", "mec hqd", active and 0x1u != 0u, "active ${KLog.hex(active)}")
         return active and 0x1u != 0u
     }
 
@@ -144,12 +111,8 @@ class VegaCompute(
             spins--
         }
 
-        gfx.grbmSelect(1, 0, 0)
-        val rptr = regs.read(VegaReg.CP_HQD_PQ_RPTR)
-        gfx.grbmDeselect()
-
         val ok = target.readDword(0UL) == 0xD00Du
-        GpuLog.step("mec ringtest", ok, "val ${GpuLog.hex(target.readDword(0UL))} rptr ${GpuLog.hex(rptr)}")
+        KLog.step("gpu", "mec ringtest", ok, "val ${KLog.hex(target.readDword(0UL))}")
         return ok
     }
 
@@ -158,63 +121,6 @@ class VegaCompute(
         regs.write(VegaReg.HDP_FLUSH_REG, 0u)
         RawMemory.write64(doorbellBase + doorbellByte, wptr.toULong())
         Cpu.storeFence()
-    }
-
-    fun dispatch(): Boolean {
-        val pq = ring ?: return false
-        val fenceMem = fence ?: return false
-        val shaderMem = shader ?: return false
-
-        seq++
-        fenceMem.writeDword(0UL, 0u)
-        Cpu.storeFence()
-
-        val pgm = shaderMem.gpuAddress shr 8
-
-        emitAcquireMem()
-        setShReg(VegaReg.COMPUTE_PGM_LO, (pgm and 0xFFFFFFFFUL).toUInt(), (pgm shr 32).toUInt())
-        setShReg(VegaReg.COMPUTE_PGM_RSRC1, VegaReg.COMPUTE_RSRC1_ENDPGM, 0u)
-        setShReg3(VegaReg.COMPUTE_NUM_THREAD_X, 1u, 1u, 1u)
-        setShReg1(VegaReg.COMPUTE_RESOURCE_LIMITS, 0u)
-        setShReg(VegaReg.COMPUTE_STATIC_THREAD_MGMT_SE0, 0xFFFFFFFFu, 0xFFFFFFFFu)
-        setShReg(VegaReg.COMPUTE_STATIC_THREAD_MGMT_SE2, 0xFFFFFFFFu, 0xFFFFFFFFu)
-
-        emit(VegaReg.packet3(VegaReg.PACKET3_DISPATCH_DIRECT, 3))
-        emit(1u)
-        emit(1u)
-        emit(1u)
-        emit(VegaReg.COMPUTE_SHADER_EN)
-
-        emit(VegaReg.packet3(VegaReg.PACKET3_RELEASE_MEM, 6))
-        emit(RELEASE_EVENT)
-        emit(RELEASE_DATA_SEL)
-        emit((fenceMem.gpuAddress and 0xFFFFFFFFUL).toUInt())
-        emit((fenceMem.gpuAddress shr 32).toUInt())
-        emit(seq)
-        emit(0u)
-        emit(0u)
-
-        ringDoorbell()
-
-        var spins = FENCE_SPINS
-        while (spins > 0) {
-            regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
-            if (fenceMem.readDword(0UL) == seq) break
-            spins--
-        }
-
-        gfx.grbmSelect(1, 0, 0)
-        val rptr = regs.read(VegaReg.CP_HQD_PQ_RPTR)
-        val active = regs.read(VegaReg.CP_HQD_ACTIVE)
-        gfx.grbmDeselect()
-
-        regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
-        val ok = fenceMem.readDword(0UL) == seq
-        GpuLog.step(
-            "mec dispatch", ok,
-            "fence ${GpuLog.hex(fenceMem.readDword(0UL))} rptr ${GpuLog.hex(rptr)} active ${GpuLog.hex(active)} cp ${GpuLog.hex(regs.read(VegaReg.CP_STAT))}",
-        )
-        return ok
     }
 
     private val isaCache = mutableMapOf<String, VramAlloc>()
@@ -311,111 +217,8 @@ class VegaCompute(
         regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
         val result = output.readDword(0UL)
         val ok = result == 0xCA11AB1Eu
-        GpuLog.step("mec kernel", ok, "${shader.name} out ${GpuLog.hex(result)} fence ${if (fenceOk) "ok" else "timeout"}")
+        KLog.step("gpu", "mec kernel", ok, "${shader.name} out ${KLog.hex(result)} fence ${if (fenceOk) "ok" else "timeout"}")
         return ok
-    }
-
-    fun renderTest(shader: Shader): Boolean {
-        val scratch = VegaVram.allocate(0x40000UL) ?: return false
-        scratch.zero()
-        Cpu.storeFence()
-
-        val ok = drawFramebuffer(shader, scratch.gpuAddress, 256u, 256u, 256u)
-        regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
-
-        val x = 100u
-        val y = 50u
-        val px = scratch.readDword(((y * 256u + x) * 4u).toULong())
-        val r = x * 255u / 256u
-        val g = y * 255u / 256u
-        val expected = (r shl 16) or (g shl 8) or 0x60u
-        val match = px == expected
-
-        val px0 = scratch.readDword(0UL)
-        val px1 = scratch.readDword((256u * 4u).toULong())
-        GpuLog.step("mec render", match, "px(100,50)=${GpuLog.hex(px)} exp=${GpuLog.hex(expected)} row0=${GpuLog.hex(px0)} row1=${GpuLog.hex(px1)}")
-        return match && ok
-    }
-
-    private fun renderProbe(shader: Shader): Triple<Boolean, UInt, UInt> {
-        val scratch = VegaVram.allocate(0x40000UL) ?: return Triple(false, 0u, 0u)
-        scratch.zero()
-        Cpu.storeFence()
-        val ok = drawFramebuffer(shader, scratch.gpuAddress, 256u, 256u, 256u)
-        regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
-        val offset = ((50u * 256u + 100u) * 4u).toULong()
-        val px = scratch.readDword(offset)
-        var spins = 4_000_000
-        while (spins > 0) spins--
-        regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
-        return Triple(ok, px, scratch.readDword(offset))
-    }
-
-    private fun fillProbe(shader: Shader): UInt {
-        if (kernargBuf == null) kernargBuf = VegaVram.allocate(0x1000UL)
-        val kernarg = kernargBuf ?: return 0xDEAD0000u
-        val output = VegaVram.allocate(0x1000UL) ?: return 0xDEAD0001u
-        output.writeDword(0UL, 0u)
-        kernarg.writeDword(0UL, (output.gpuAddress and 0xFFFFFFFFUL).toUInt())
-        kernarg.writeDword(4UL, (output.gpuAddress shr 32).toUInt())
-        Cpu.storeFence()
-        dispatchKernel(shader, kernarg, 1u, 1u, 1u, 1u)
-        regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
-        return output.readDword(0UL)
-    }
-
-    fun diagnose(shader: Shader, fill: Shader?): List<String> {
-        val out = mutableListOf<String>()
-
-        val pwr0 = regs.read(VegaReg.PWR_MISC_CNTL_STATUS)
-        val gfxOn0 = pwr0 and VegaReg.PWR_GFXOFF_STATUS_MASK == VegaReg.PWR_GFXOFF_STATUS_ON
-        out.add("pwr ${GpuLog.hex(pwr0)} gfx ${if (gfxOn0) "ON" else "GATED"}")
-        out.add("gating(idle) ${gfx.gatingState()}")
-        out.add("vm(idle) ${VegaVm.gfxhubApertureState(regs)}")
-        out.add(
-            "vmfault gfx ${GpuLog.hex(regs.read(VegaReg.GFX_VM_L2_PROTECTION_FAULT_STATUS))} " +
-                "mm ${GpuLog.hex(regs.read(VegaReg.VM_L2_PROTECTION_FAULT_STATUS))}",
-        )
-        out.add("tlbflush acked=${VegaVm.invalidateGfxhubTlb(regs)}")
-
-        val (okA, pxA, pxA2) = renderProbe(shader)
-        val pwrA = regs.read(VegaReg.PWR_MISC_CNTL_STATUS)
-        out.add("render(no rearm) ${if (okA) "OK" else "FAIL"} px=${GpuLog.hex(pxA)} recheck=${GpuLog.hex(pxA2)} pwr=${GpuLog.hex(pwrA)}")
-
-        val rearmed = rearm()
-        out.add("rearm ${if (rearmed) "active" else "failed"}")
-        out.add("gating(rearm) ${gfx.gatingState()}")
-        out.add("vm(rearm) ${VegaVm.gfxhubApertureState(regs)}")
-
-        val (okB, pxB, pxB2) = renderProbe(shader)
-        val pwrB = regs.read(VegaReg.PWR_MISC_CNTL_STATUS)
-        out.add("render(rearm) ${if (okB) "OK" else "FAIL"} px=${GpuLog.hex(pxB)} recheck=${GpuLog.hex(pxB2)} pwr=${GpuLog.hex(pwrB)}")
-
-        if (fill != null) {
-            val fillOut = fillProbe(fill)
-            out.add("fill(rearm) out=${GpuLog.hex(fillOut)} exp=0xca11ab1e ${if (fillOut == 0xCA11AB1Eu) "OK" else "FAIL"}")
-        }
-
-        out.add(
-            "vmfault(post) gfx ${GpuLog.hex(regs.read(VegaReg.GFX_VM_L2_PROTECTION_FAULT_STATUS))} " +
-                "mm ${GpuLog.hex(regs.read(VegaReg.VM_L2_PROTECTION_FAULT_STATUS))}",
-        )
-
-        val gfxOnB = pwrB and VegaReg.PWR_GFXOFF_STATUS_MASK == VegaReg.PWR_GFXOFF_STATUS_ON
-        if (gfxOnB) {
-            out.add(
-                "rlc ${GpuLog.hex(regs.read(VegaReg.RLC_CNTL))} rlcstat ${GpuLog.hex(regs.read(VegaReg.RLC_GPM_STAT))} " +
-                    "mec ${GpuLog.hex(regs.read(VegaReg.CP_MEC_CNTL))} cp ${GpuLog.hex(regs.read(VegaReg.CP_STAT))}",
-            )
-            gfx.grbmSelect(1, 0, 0)
-            val active = regs.read(VegaReg.CP_HQD_ACTIVE)
-            val rptr = regs.read(VegaReg.CP_HQD_PQ_RPTR)
-            gfx.grbmDeselect()
-            out.add("hqd active ${GpuLog.hex(active)} rptr ${GpuLog.hex(rptr)}")
-        } else {
-            out.add("gfx gated -> skipping gfx-domain reads (would hang)")
-        }
-        return out
     }
 
     fun drawFramebuffer(shader: Shader, fbGpuAddr: ULong, width: UInt, height: UInt, pitchPx: UInt): Boolean {
@@ -431,9 +234,7 @@ class VegaCompute(
         Cpu.storeFence()
 
         val groups = (total + 63u) / 64u
-        val ok = dispatchKernel(shader, kernarg, groups, 1u, 64u, 1u)
-        GpuLog.step("mec fbdraw", ok, "${shader.name} ${width}x${height} groups $groups")
-        return ok
+        return dispatchKernel(shader, kernarg, groups, 1u, 64u, 1u)
     }
 
     private fun emitAcquireMem() {
