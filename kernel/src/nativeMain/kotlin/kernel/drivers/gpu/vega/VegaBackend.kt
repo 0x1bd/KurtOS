@@ -1,6 +1,7 @@
 package kernel.drivers.gpu.vega
 
 import hal.Cpu
+import hal.RawMemory
 import kapi.gpu.GpuBackend
 import kapi.gpu.GpuBuffer
 import kapi.gpu.GpuKernel
@@ -18,21 +19,13 @@ private class VegaGpuBuffer(val alloc: VramAlloc, private val regs: VegaRegs) : 
     }
 
     override fun write(dstWord: Int, src: IntArray, srcWord: Int, count: Int) {
-        var i = 0
-        while (i < count) {
-            alloc.writeDword((dstWord + i).toULong() * 4UL, src[srcWord + i].toUInt())
-            i++
-        }
+        RawMemory.copyInWords(alloc.cpuAddress + dstWord.toULong() * 4UL, src, srcWord, count)
         Cpu.storeFence()
     }
 
     override fun read(srcWord: Int, dst: IntArray, dstWord: Int, count: Int) {
         regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
-        var i = 0
-        while (i < count) {
-            dst[dstWord + i] = alloc.readDword((srcWord + i).toULong() * 4UL).toInt()
-            i++
-        }
+        RawMemory.copyOutWords(alloc.cpuAddress + srcWord.toULong() * 4UL, dst, dstWord, count)
     }
 
     override fun zero() = alloc.zero()

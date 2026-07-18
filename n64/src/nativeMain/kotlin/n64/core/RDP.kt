@@ -81,6 +81,12 @@ class Rdp(private val n64: N64) {
     private val deltazLut = IntArray(0x10000)
     private val bldivTable = IntArray(0x8000)
 
+    private val spanAccel = RdpSpanAccel(n64.rdram, n64.hidden, tmem, zComTable, zDecTable, deltazLut, tcdivTable) { lo, hi ->
+        n64.rdpInvalidateWords(lo, hi)
+    }
+    private val spanUniforms = IntArray(RdpSpanAccel.UNIFORM_WORDS)
+    private var tmemGeneration = 0
+
     private var spanDzPix = 0
     private var spanDzPixEnc = 0
     private var primDz = 0
@@ -288,9 +294,9 @@ class Rdp(private val n64: N64) {
         private set
     val debugOpcodes = IntArray(64)
 
-    val gpuDispatches: Long get() = accel.dispatched
-    val gpuPixels: Long get() = accel.offloadedPixels
-    val gpuActive: Boolean get() = !accel.disabled
+    val gpuDispatches: Long get() = accel.dispatched + spanAccel.dispatched
+    val gpuPixels: Long get() = accel.offloadedPixels + spanAccel.offloadedPixels
+    val gpuActive: Boolean get() = !accel.disabled || !spanAccel.disabled
 
     fun reset() {
         accel.reset()
@@ -424,6 +430,7 @@ class Rdp(private val n64: N64) {
             current += length
         }
 
+        spanAccel.flush()
         accel.flush()
 
         regsDpc[DPC_CURRENT] = current
@@ -527,12 +534,18 @@ class Rdp(private val n64: N64) {
                 textureImage = commands[1] and 0xFFFFFF
             }
 
-            0x3E -> zImage = commands[1] and 0xFFFFFF
+            0x3E -> {
+                val next = commands[1] and 0xFFFFFF
+                if (next != zImage) spanAccel.flush()
+                zImage = next
+            }
             0x3F -> {
                 colorFormat = (commands[0] ushr 21) and 7
                 colorSize = (commands[0] ushr 19) and 3
                 colorWidth = (commands[0] and 0x3FF) + 1
-                colorImage = commands[1] and 0xFFFFFF
+                val next = commands[1] and 0xFFFFFF
+                if (next != colorImage) spanAccel.flush()
+                colorImage = next
             }
         }
     }
@@ -738,6 +751,7 @@ class Rdp(private val n64: N64) {
         var at = offset
         if (row and 1 != 0) at = at xor 4
         tmem[at and 0xFFF] = value.toByte()
+        tmemGeneration++
     }
 
     private fun writeTmem32(offset: Int, row: Int, high: Int, low: Int) {
@@ -745,6 +759,7 @@ class Rdp(private val n64: N64) {
         if (row and 1 != 0) at = at xor 4
         tmem[at and 0x7FF] = high.toByte()
         tmem[(at and 0x7FF) or 0x800] = low.toByte()
+        tmemGeneration++
     }
 
     private fun loadBlock() {
@@ -837,6 +852,7 @@ class Rdp(private val n64: N64) {
     }
 
     private fun fillRectangle() {
+        spanAccel.flush()
         rectangles++
 
         val xl = ((commands[0] ushr 12) and 0xFFF) shr 2
@@ -891,6 +907,7 @@ class Rdp(private val n64: N64) {
     }
 
     private fun textureRectangle(flip: Boolean) {
+        spanAccel.flush()
         accel.flush()
         rectangles++
 
@@ -1345,11 +1362,29 @@ class Rdp(private val n64: N64) {
         texture: Boolean,
         depth: Boolean,
     ) {
-        if (texture) prepareTileCache(tile)
-
         val first = maxOf(start, 0)
         val last = minOf(end, SPANS - 1)
         if (last < first) return
+
+        if (spanEligible()) {
+            buildSpanUniforms(flip, shade, texture, depth, tile)
+            val drawn = spanAccel.render(
+                first, last, spanUniforms,
+                spanValid, spanLx, spanRx, spanUnscrx,
+                spanR, spanG, spanB, spanA,
+                spanZ, spanS, spanT, spanW,
+                spanMinorX, spanMajorX, spanInvalY,
+                tmemGeneration,
+            )
+            if (drawn >= 0) {
+                pixels += drawn
+                workPixels += drawn
+                return
+            }
+        }
+
+        spanAccel.flush()
+        if (texture) prepareTileCache(tile)
 
         val pool = pool
         if (pool != null && !diagEnabled && last - first >= PARALLEL_MIN_ROWS) {
@@ -1372,6 +1407,104 @@ class Rdp(private val n64: N64) {
         }
         pixels += total
         workPixels += total
+    }
+
+    private fun spanEligible(): Boolean =
+        cycleType == CYCLE_1 && (colorSize == 2 || colorSize == 3)
+
+    private fun buildSpanUniforms(flip: Boolean, shade: Boolean, texture: Boolean, depth: Boolean, tile: Tile) {
+        val u = spanUniforms
+        u[RdpSpanAccel.U_FLIP] = if (flip) 1 else 0
+        u[RdpSpanAccel.U_SPANS_DR] = spansDr
+        u[RdpSpanAccel.U_SPANS_DG] = spansDg
+        u[RdpSpanAccel.U_SPANS_DB] = spansDb
+        u[RdpSpanAccel.U_SPANS_DA] = spansDa
+        u[RdpSpanAccel.U_SPANS_DZ] = spansDz
+        u[RdpSpanAccel.U_SPANS_DS] = spansDs
+        u[RdpSpanAccel.U_SPANS_DT] = spansDt
+        u[RdpSpanAccel.U_SPANS_DW] = spansDw
+        u[RdpSpanAccel.U_SPANDZPIX] = spanDzPix
+        u[RdpSpanAccel.U_SPANDZPIXENC] = spanDzPixEnc
+        u[RdpSpanAccel.U_SCISSOR_XH] = scissorXh
+        u[RdpSpanAccel.U_SCISSOR_XL] = scissorXl
+        u[RdpSpanAccel.U_COLORSIZE] = colorSize
+        u[RdpSpanAccel.U_COLORIMAGE] = colorImage
+        u[RdpSpanAccel.U_COLORWIDTH] = colorWidth
+        u[RdpSpanAccel.U_PRIM] = primPacked
+        u[RdpSpanAccel.U_ENV] = envPacked
+        u[RdpSpanAccel.U_BLEND] = blendPacked
+        u[RdpSpanAccel.U_FOG] = fogPacked
+        u[RdpSpanAccel.U_PRIMLOD] = primLodFrac
+        u[RdpSpanAccel.U_ZIMAGE] = zImage
+        u[RdpSpanAccel.U_ZMODE] = zMode
+        u[RdpSpanAccel.U_ZCOMPARE] = if (zCompare) 1 else 0
+        u[RdpSpanAccel.U_ZUPDATE] = if (zUpdate) 1 else 0
+        u[RdpSpanAccel.U_ZSOURCE] = if (zSourceSelect) 1 else 0
+        u[RdpSpanAccel.U_ALPHACOMPARE] = if (alphaCompare) 1 else 0
+        u[RdpSpanAccel.U_CTA] = if (coverageTimesAlpha) 1 else 0
+        u[RdpSpanAccel.U_ACS] = if (alphaCoverageSelect) 1 else 0
+        u[RdpSpanAccel.U_FORCEBLEND] = if (forceBlend) 1 else 0
+        u[RdpSpanAccel.U_PRIMDEPTH] = primDepth
+        u[RdpSpanAccel.U_PRIMDZ] = primDz
+        u[RdpSpanAccel.U_PRIMDZENC] = primDzEnc
+        u[RdpSpanAccel.U_USEDEPTH] = if (depth) 1 else 0
+        val c = RdpSpanAccel.U_CRGB
+        u[c + 0] = combineRgbA[0]
+        u[c + 1] = combineRgbA[1]
+        u[c + 2] = combineRgbB[0]
+        u[c + 3] = combineRgbB[1]
+        u[c + 4] = combineRgbC[0]
+        u[c + 5] = combineRgbC[1]
+        u[c + 6] = combineRgbD[0]
+        u[c + 7] = combineRgbD[1]
+        val al = RdpSpanAccel.U_CALPHA
+        u[al + 0] = combineAlphaA[0]
+        u[al + 1] = combineAlphaA[1]
+        u[al + 2] = combineAlphaB[0]
+        u[al + 3] = combineAlphaB[1]
+        u[al + 4] = combineAlphaC[0]
+        u[al + 5] = combineAlphaC[1]
+        u[al + 6] = combineAlphaD[0]
+        u[al + 7] = combineAlphaD[1]
+        val bl = RdpSpanAccel.U_BLENDSEL
+        u[bl + 0] = blendA[0]
+        u[bl + 1] = blendA[1]
+        u[bl + 2] = blendB[0]
+        u[bl + 3] = blendB[1]
+        u[bl + 4] = blendC[0]
+        u[bl + 5] = blendC[1]
+        u[bl + 6] = blendD[0]
+        u[bl + 7] = blendD[1]
+        u[RdpSpanAccel.U_SHADE] = if (shade) 1 else 0
+        u[RdpSpanAccel.U_TEXTURE] = if (texture) 1 else 0
+        u[RdpSpanAccel.U_PERSP] = if (perspective) 1 else 0
+        u[RdpSpanAccel.U_SAMPLETYPE] = sampleType
+        u[RdpSpanAccel.U_TLUTEN] = if (tlutEnable) 1 else 0
+        u[RdpSpanAccel.U_TLUTTYPE] = tlutType
+        u[RdpSpanAccel.U_MIDTEXEL] = if (midTexel) 1 else 0
+        u[RdpSpanAccel.T_FORMAT] = tile.format
+        u[RdpSpanAccel.T_SIZE] = tile.size
+        u[RdpSpanAccel.T_LINE] = tile.line
+        u[RdpSpanAccel.T_TMEM] = tile.tmem
+        u[RdpSpanAccel.T_PALETTE] = tile.palette
+        u[RdpSpanAccel.T_CLAMPS] = tile.clampS
+        u[RdpSpanAccel.T_MIRRORS] = tile.mirrorS
+        u[RdpSpanAccel.T_MASKS] = tile.maskS
+        u[RdpSpanAccel.T_SHIFTS] = tile.shiftS
+        u[RdpSpanAccel.T_CLAMPT] = tile.clampT
+        u[RdpSpanAccel.T_MIRRORT] = tile.mirrorT
+        u[RdpSpanAccel.T_MASKT] = tile.maskT
+        u[RdpSpanAccel.T_SHIFTT] = tile.shiftT
+        u[RdpSpanAccel.T_SL] = tile.sl
+        u[RdpSpanAccel.T_TL] = tile.tl
+        u[RdpSpanAccel.T_SH] = tile.sh
+        u[RdpSpanAccel.T_TH] = tile.th
+        u[RdpSpanAccel.T_CLAMPDIFFS] = tile.clampDiffS
+        u[RdpSpanAccel.T_CLAMPDIFFT] = tile.clampDiffT
+        u[RdpSpanAccel.T_CLAMPENS] = if (tile.clampEnS) 1 else 0
+        u[RdpSpanAccel.T_CLAMPENT] = if (tile.clampEnT) 1 else 0
+        u[RdpSpanAccel.T_MASKSCLAMPED] = tile.maskSClamped
+        u[RdpSpanAccel.T_MASKTCLAMPED] = tile.maskTClamped
     }
 
     private fun renderSpanRange(

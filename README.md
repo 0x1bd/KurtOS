@@ -20,9 +20,15 @@ Currently supported:
 #### Known issues
 
 - **SNES** has no support for additional coprocessors (SuperFX, SA-1), making some games unplayable (e.g. *Super Mario World 2: Yoshi's Island*).
-- **N64** has visual glitches and performance problems (Ryzen 7 3700U, ~40–50 avg FPS in *SM64*).
+- **N64** has visual glitches (1076 known failures. Will be fixed later).
 - Audio scaling behaves incorrectly on some systems.
 - No multi-monitor support yet, and no HDMI or DisplayPort output.
+
+### GPU
+
+KurtOS ships a custom GPU driver written from scratch, targeting the integrated Vega graphics in the **Ryzen 7 3700U** (Picasso APU). No other GPUs are supported at this time.
+
+Only the **N64** emulator uses hardware-accelerated rendering. All other emulators render on the CPU.
 
 ### Peripherals
 
