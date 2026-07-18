@@ -99,4 +99,18 @@ object RawMemory {
             raw_copy(address, pinned.addressOf(offset).toLong().toULong(), length.toULong())
         }
     }
+
+    fun copyOutWords(address: ULong, target: IntArray, offset: Int, count: Int) {
+        if (count <= 0) return
+        target.usePinned { pinned ->
+            raw_copy(pinned.addressOf(offset).toLong().toULong(), address, (count.toULong()) * 4UL)
+        }
+    }
+
+    fun copyInWords(address: ULong, source: IntArray, offset: Int, count: Int) {
+        if (count <= 0) return
+        source.usePinned { pinned ->
+            raw_copy(address, pinned.addressOf(offset).toLong().toULong(), (count.toULong()) * 4UL)
+        }
+    }
 }
