@@ -726,8 +726,10 @@ static void write_pixel(u32 *rdram, u8 *hidden, u32 *zcom, u32 *zdec, u32 *delta
     write_color(rdram, u, x, y, blend_pixel(rdram, u, x, y, recolor, shadeAlpha));
 }
 
-static void rdpspan_core(u32 gid, u32 lane, u32 *rdram, u8 *hidden, u32 *spans, u32 *u, u32 *zcom, u32 *zdec, u32 *deltaz, u8 *tmem, u32 *tcdiv)
+static void rdpspan_core(u32 gid, u32 lane, u32 *rdram, u8 *hidden, u32 *spans, u32 *u, u32 *zcom, u32 *zdec, u32 *deltaz, u8 *tmem, u32 *tcdiv, u32 spanCount)
 {
+    if (gid >= spanCount) return;
+
     u32 *rec = spans + gid * SPAN_STRIDE;
     i32 row = (i32)rec[SPAN_ROW];
     i32 xstart = (i32)rec[SPAN_LX];
@@ -879,18 +881,10 @@ static void rdpspan_core(u32 gid, u32 lane, u32 *rdram, u8 *hidden, u32 *spans, 
 
 #ifdef __AMDGCN__
 __attribute__((amdgpu_kernel))
-void rdpspan(u32 *rdram, u8 *hidden, u32 *spans, u32 *uniforms, u32 *zcom, u32 *zdec, u32 *deltaz, u8 *tmem, u32 *tcdiv, u32 *rowStart, u32 rowCount)
+void rdpspan(u32 *rdram, u8 *hidden, u32 *spans, u32 *uniforms, u32 *zcom, u32 *zdec, u32 *deltaz, u8 *tmem, u32 *tcdiv, u32 spanCount)
 {
-    u32 g = __builtin_amdgcn_workgroup_id_x();
-    if (g >= rowCount) return;
-
+    u32 gid = __builtin_amdgcn_workgroup_id_x();
     u32 lane = __builtin_amdgcn_workitem_id_x();
-    u32 begin = rowStart[g];
-    u32 end = rowStart[g + 1];
-
-    for (u32 i = begin; i < end; i++) {
-        rdpspan_core(i, lane, rdram, hidden, spans, uniforms, zcom, zdec, deltaz, tmem, tcdiv);
-        __builtin_amdgcn_s_waitcnt(0);
-    }
+    rdpspan_core(gid, lane, rdram, hidden, spans, uniforms, zcom, zdec, deltaz, tmem, tcdiv, spanCount);
 }
 #endif

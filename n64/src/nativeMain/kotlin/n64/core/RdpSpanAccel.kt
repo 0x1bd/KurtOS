@@ -26,7 +26,6 @@ class RdpSpanAccel(
     private val spansBufs = arrayOfNulls<GpuBuffer>(SLOTS)
     private val uniformBufs = arrayOfNulls<GpuBuffer>(SLOTS)
     private val kernargBufs = arrayOfNulls<GpuBuffer>(SLOTS)
-    private val rowStartBufs = arrayOfNulls<GpuBuffer>(SLOTS)
     private var zcomBuf: GpuBuffer? = null
     private var zdecBuf: GpuBuffer? = null
     private var deltazBuf: GpuBuffer? = null
@@ -37,9 +36,6 @@ class RdpSpanAccel(
     private var probed = false
 
     private val spans = IntArray(SPANS * SPAN_STRIDE)
-    private val spansByRow = IntArray(SPANS * SPAN_STRIDE)
-    private val rowStart = IntArray(MAX_ROWS + 1)
-    private val rowCursor = IntArray(MAX_ROWS + 1)
     private val tmemScratch = IntArray(TMEM_WORDS)
 
     private var accActive = false
@@ -96,7 +92,6 @@ class RdpSpanAccel(
             uniformBufs[i] = GfxPool.buffer("n64.uniform.$i", UNIFORM_WORDS) ?: return false
             kernargBufs[i] = GfxPool.buffer("n64.kernarg.$i", KERNARG_WORDS) ?: return false
             tmemBufs[i] = GfxPool.buffer("n64.tmem.$i", TMEM_WORDS) ?: return false
-            rowStartBufs[i] = GfxPool.buffer("n64.rowstart.$i", MAX_ROWS + 1) ?: return false
         }
         val zc = GfxPool.buffer("n64.zcom", zcom.size) ?: return false
         failReason = 5
@@ -119,25 +114,6 @@ class RdpSpanAccel(
         return true
     }
 
-    private fun groupByRow(spanCount: Int, lo: Int, hi: Int): Int {
-        val rows = hi - lo + 1
-        for (i in 0..rows) rowStart[i] = 0
-        for (i in 0 until spanCount) rowStart[spans[i * SPAN_STRIDE + SPAN_ROW] - lo]++
-        var sum = 0
-        for (i in 0 until rows) {
-            val count = rowStart[i]
-            rowStart[i] = sum
-            rowCursor[i] = sum
-            sum += count
-        }
-        rowStart[rows] = sum
-        for (i in 0 until spanCount) {
-            val at = rowCursor[spans[i * SPAN_STRIDE + SPAN_ROW] - lo]++
-            spans.copyInto(spansByRow, at * SPAN_STRIDE, i * SPAN_STRIDE, (i + 1) * SPAN_STRIDE)
-        }
-        return rows
-    }
-
     private fun dispatchSlot(uniform: IntArray, spanCount: Int, tmemGen: Int): Boolean {
         val krn = kernel ?: return false
         if (slot == 0) Gpu.backend?.sync()
@@ -146,20 +122,17 @@ class RdpSpanAccel(
         val un = uniformBufs[s] ?: return false
         val ka = kernargBufs[s] ?: return false
         val tm = tmemBufs[s] ?: return false
-        val rs = rowStartBufs[s] ?: return false
 
-        val rows = groupByRow(spanCount, accRowLo, accRowHi)
         un.write(0, uniform, 0, UNIFORM_WORDS)
-        sp.write(0, spansByRow, 0, spanCount * SPAN_STRIDE)
-        rs.write(0, rowStart, 0, rows + 1)
+        sp.write(0, spans, 0, spanCount * SPAN_STRIDE)
         if (uniform[U_TEXTURE] != 0 && tmemGens[s] != tmemGen) {
             packTmem()
             tm.write(0, tmemScratch, 0, TMEM_WORDS)
             tmemGens[s] = tmemGen
         }
-        writeKernarg(ka, sp, un, tm, rs, rows)
+        writeKernarg(ka, sp, un, tm, spanCount)
 
-        val ok = Gpu.backend?.dispatch(krn, ka, rows, 64) ?: false
+        val ok = Gpu.backend?.dispatch(krn, ka, spanCount, 64) ?: false
         if (!ok) {
             disabled = true
             return false
@@ -365,7 +338,7 @@ class RdpSpanAccel(
         return false
     }
 
-    private fun writeKernarg(ka: GpuBuffer, sp: GpuBuffer, un: GpuBuffer, tm: GpuBuffer, rs: GpuBuffer, rows: Int) {
+    private fun writeKernarg(ka: GpuBuffer, sp: GpuBuffer, un: GpuBuffer, tm: GpuBuffer, count: Int) {
         putPtr(ka, 0, rdramBuf!!)
         putPtr(ka, 2, hiddenBuf!!)
         putPtr(ka, 4, sp)
@@ -375,8 +348,7 @@ class RdpSpanAccel(
         putPtr(ka, 12, deltazBuf!!)
         putPtr(ka, 14, tm)
         putPtr(ka, 16, tcdivBuf!!)
-        putPtr(ka, 18, rs)
-        ka.writeWord(20, rows)
+        ka.writeWord(18, count)
     }
 
     private fun putPtr(ka: GpuBuffer, word: Int, buf: GpuBuffer) {
@@ -529,8 +501,7 @@ class RdpSpanAccel(
 
         private const val SPANS = 4096
         private const val TMEM_WORDS = 1024
-        private const val KERNARG_WORDS = 22
-        private const val MAX_ROWS = 1024
+        private const val KERNARG_WORDS = 20
         private const val SLOTS = 8
     }
 }
