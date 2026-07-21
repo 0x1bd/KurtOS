@@ -723,8 +723,7 @@ private class SpanFakeBackend : GpuBackend {
         val un = find(addr(ka, 6, 7))
         val tm = find(addr(ka, 14, 15))
         val tcd = find(addr(ka, 16, 17))
-        val rowStart = find(addr(ka, 18, 19))
-        val rows = ka.data[20]
+        val count = ka.data[18]
         val hget = { j: Int -> (hd.data[j ushr 2] ushr ((j and 3) shl 3)) and 0xFF }
         val hset = { j: Int, v: Int ->
             val wi = j ushr 2; val sh = (j and 3) shl 3
@@ -732,11 +731,8 @@ private class SpanFakeBackend : GpuBackend {
         }
         val tget = { j: Int -> (tm.data[j ushr 2] ushr ((j and 3) shl 3)) and 0xFF }
         val stride = RdpSpanAccel.SPAN_STRIDE
-        val order = ArrayList<Int>()
-        for (g in 0 until rows) {
-            for (i in rowStart.data[g] until rowStart.data[g + 1]) order.add(i)
-        }
-        for (gid in order) {
+        for (gid in 0 until groups) {
+            if (gid >= count) break
             val base = gid * stride
             if (un.data[RdpSpanAccel.U_FILL] != 0)
                 SpanMath.runFillSpan(rd.data, hset, un.data, sp.data, base)
