@@ -102,6 +102,7 @@ class VI(private val n64: N64) {
     fun verticalInterrupt() {
         field = field xor ((regs[VI_STATUS] shr 6) and 1)
 
+        n64.rdp.flushDisplay()
         scanout()
 
         n64.mi.setInterrupt(MI_INTR_VI)
@@ -129,29 +130,44 @@ class VI(private val n64: N64) {
         if (lines > 480) lines = 480
 
         val height = lines
+        val bytes = if (type == 3) 4 else 2
+
+        if (width != columnWidth || bytes != columnBytes) {
+            for (x in 0 until WIDTH) columnOffset[x] = (x * width / WIDTH) * bytes
+            columnWidth = width
+            columnBytes = bytes
+        }
+
+        val rdram = n64.rdram
+        val stride = width * bytes
 
         for (y in 0 until HEIGHT) {
-            val sy = y * height / HEIGHT
-            val rowBase = origin + sy * width * (if (type == 3) 4 else 2)
+            val rowBase = origin + (y * height / HEIGHT) * stride
             val out = y * WIDTH
-            for (x in 0 until WIDTH) {
-                val sx = x * width / WIDTH
-                frame[out + x] = if (type == 3) {
-                    val pixel = n64.ramRead32(rowBase + sx * 4)
+            if (type == 3) {
+                for (x in 0 until WIDTH) {
+                    val pixel = rdram[((rowBase + columnOffset[x]) and RDRAM_MASK) ushr 2]
                     val r = (pixel ushr 27) and 0x1F
                     val g = (pixel ushr 19) and 0x1F
                     val b = (pixel ushr 11) and 0x1F
-                    ((b shl 10) or (g shl 5) or r).toShort()
-                } else {
-                    val pixel = n64.ramRead16(rowBase + sx * 2)
+                    frame[out + x] = ((b shl 10) or (g shl 5) or r).toShort()
+                }
+            } else {
+                for (x in 0 until WIDTH) {
+                    val at = (rowBase + columnOffset[x]) and RDRAM_MASK
+                    val pixel = (rdram[at ushr 2] ushr (16 - ((at and 2) shl 3))) and 0xFFFF
                     val r = (pixel ushr 11) and 0x1F
                     val g = (pixel ushr 6) and 0x1F
                     val b = (pixel ushr 1) and 0x1F
-                    ((b shl 10) or (g shl 5) or r).toShort()
+                    frame[out + x] = ((b shl 10) or (g shl 5) or r).toShort()
                 }
             }
         }
     }
+
+    private val columnOffset = IntArray(WIDTH)
+    private var columnWidth = -1
+    private var columnBytes = 0
 
     companion object {
         const val WIDTH = 320

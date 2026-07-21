@@ -7,6 +7,7 @@ import kotlinx.cinterop.usePinned
 import mmio.raw_blit_high
 import mmio.raw_blit_indexed
 import mmio.raw_copy
+import mmio.raw_copy_stream
 import mmio.raw_fill32
 import mmio.raw_read16
 import mmio.raw_read32
@@ -103,7 +104,7 @@ object RawMemory {
     fun copyOutWords(address: ULong, target: IntArray, offset: Int, count: Int) {
         if (count <= 0) return
         target.usePinned { pinned ->
-            raw_copy(pinned.addressOf(offset).toLong().toULong(), address, (count.toULong()) * 4UL)
+            raw_copy_stream(pinned.addressOf(offset).toLong().toULong(), address, (count.toULong()) * 4UL)
         }
     }
 

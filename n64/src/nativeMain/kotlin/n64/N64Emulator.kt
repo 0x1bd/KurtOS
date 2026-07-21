@@ -3,6 +3,7 @@ package n64
 import kapi.emu.Emulator
 import kapi.emu.EmulatorSession
 import kapi.emu.Video
+import kapi.gpu.Gpu
 import n64.core.N64
 import n64.core.VI_ORIGIN
 import n64.core.VI
@@ -36,10 +37,18 @@ object N64Emulator : Emulator {
         private var snapTotalPx = 0L
         private var snapDisp = 0L
         private var snapFrame = 0
+        private var snapBusy = 0L
+        private var snapNow = 0L
+        private var snapWriteCycles = 0L
+        private var snapReadCycles = 0L
+        private var snapWriteWords = 0L
+        private var snapReadWords = 0L
+        private var snapFlush = 0
+        private var snapRebind = 0
+        private var snapSpans = 0L
         private var diagLine: String? = null
 
         override fun diagnostics(): String? {
-            if (!console.rdp.gpuActive) return null
             val frame = console.frameCount
             if (frame - snapFrame >= DIAG_FRAMES) {
                 val gpuPx = console.rdp.gpuPixels
@@ -56,7 +65,45 @@ object N64Emulator : Emulator {
                 snapFrame = frame
 
                 val pct = if (dTotal > 0) (dGpu * 100 / dTotal).toInt() else 0
-                diagLine = "G${dGpu / 1000}K C${(dTotal - dGpu) / 1000}K D$dDisp $pct%"
+                val backend = Gpu.backend
+                val busy = backend?.busyCycles() ?: 0L
+                val dBusy = (busy - snapBusy) / 1000 / DIAG_FRAMES
+                snapBusy = busy
+
+                val now = backend?.nowCycles() ?: 0L
+                val wc = backend?.writeCycles() ?: 0L
+                val rc = backend?.readCycles() ?: 0L
+                val ww = backend?.writeWords() ?: 0L
+                val rw = backend?.readWords() ?: 0L
+                val dWall = now - snapNow
+                val dWc = wc - snapWriteCycles
+                val dRc = rc - snapReadCycles
+                val dWw = ww - snapWriteWords
+                val dRw = rw - snapReadWords
+                snapNow = now
+                snapWriteCycles = wc
+                snapReadCycles = rc
+                snapWriteWords = ww
+                snapReadWords = rw
+
+                val wallK = dWall / 1000 / DIAG_FRAMES
+                val wK = dWc / 1000 / DIAG_FRAMES
+                val rK = dRc / 1000 / DIAG_FRAMES
+                val wKb = dWw / 256 / DIAG_FRAMES
+                val rKb = dRw / 256 / DIAG_FRAMES
+                val r2 = console.rdp
+                val dFlush = (r2.spanFlushes - snapFlush) / DIAG_FRAMES
+                val dRebind = (r2.spanRebinds - snapRebind) / DIAG_FRAMES
+                snapFlush = r2.spanFlushes
+                snapRebind = r2.spanRebinds
+                val dispPer = dDisp / DIAG_FRAMES
+                val dSpans = r2.spanSubmitted - snapSpans
+                snapSpans = r2.spanSubmitted
+                val perDisp = if (dDisp > 0) dSpans / dDisp else 0
+
+                val state = if (console.rdp.gpuActive) r2.spanFail.toString() else "X"
+                diagLine = "w$wallK B$dBusy up$wK/${wKb}K rd$rK/${rKb}K " +
+                    "f$dFlush b$dRebind D$dispPer x$perDisp g$pct% F$state"
             }
             return diagLine
         }

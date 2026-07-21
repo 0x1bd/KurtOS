@@ -23,6 +23,14 @@ interface GpuBackend {
     fun alloc(words: Int): GpuBuffer?
     fun free(buffer: GpuBuffer)
     fun dispatch(kernel: GpuKernel, kernargs: GpuBuffer, groups: Int, threadsPerGroup: Int): Boolean
+    fun sync() {}
+    fun busyCycles(): Long = 0
+    fun syncCount(): Long = 0
+    fun nowCycles(): Long = 0
+    fun writeCycles(): Long = 0
+    fun readCycles(): Long = 0
+    fun writeWords(): Long = 0
+    fun readWords(): Long = 0
 }
 
 object Gpu {

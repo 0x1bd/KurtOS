@@ -372,23 +372,28 @@ private object SpanMath {
         else -> 0
     }
     fun combine(texel0: Int, texel1: Int, shade: Int, shadeAlpha: Int, u: IntArray): Int {
-        val combined = 0
-        var result = 0
+        var combined = 0
+        var combinedAlpha = 0
         val c = RdpSpanAccel.U_CRGB
-        for (index in 0 until 3) {
-            val a = csrc(u[c + 0], index, texel0, texel1, shade, combined, u, true)
-            val b = csrc(u[c + 2], index, texel0, texel1, shade, combined, u, false)
-            val m = cmul(u[c + 4], index, texel0, texel1, shade, shadeAlpha, combined, 0, u)
-            val d = cadd(u[c + 6], index, texel0, texel1, shade, combined, u)
-            result = result or (clamp255((((a - b) * m) shr 8) + d) shl (index * 8))
-        }
         val al = RdpSpanAccel.U_CALPHA
-        val aa = asrc(u[al + 0], texel0, texel1, shadeAlpha, 0, u)
-        val ab = asrc(u[al + 2], texel0, texel1, shadeAlpha, 0, u)
-        val ac = amul(u[al + 4], texel0, texel1, shadeAlpha, u)
-        val ad = asrc(u[al + 6], texel0, texel1, shadeAlpha, 0, u)
-        val combinedAlpha = clamp255((((aa - ab) * ac) shr 8) + ad)
-        return (result and 0xFFFFFF) or ((combinedAlpha and 0xFF) shl 24)
+        val cycles = if (u[RdpSpanAccel.U_CYCLE2] != 0) 2 else 1
+        for (cycle in 0 until cycles) {
+            var result = 0
+            for (index in 0 until 3) {
+                val a = csrc(u[c + 0 + cycle], index, texel0, texel1, shade, combined, u, true)
+                val b = csrc(u[c + 2 + cycle], index, texel0, texel1, shade, combined, u, false)
+                val m = cmul(u[c + 4 + cycle], index, texel0, texel1, shade, shadeAlpha, combined, combinedAlpha, u)
+                val d = cadd(u[c + 6 + cycle], index, texel0, texel1, shade, combined, u)
+                result = result or (clamp255((((a - b) * m) shr 8) + d) shl (index * 8))
+            }
+            val aa = asrc(u[al + 0 + cycle], texel0, texel1, shadeAlpha, combinedAlpha, u)
+            val ab = asrc(u[al + 2 + cycle], texel0, texel1, shadeAlpha, combinedAlpha, u)
+            val ac = amul(u[al + 4 + cycle], texel0, texel1, shadeAlpha, u)
+            val ad = asrc(u[al + 6 + cycle], texel0, texel1, shadeAlpha, combinedAlpha, u)
+            combinedAlpha = clamp255((((aa - ab) * ac) shr 8) + ad)
+            combined = result
+        }
+        return (combined and 0xFFFFFF) or ((combinedAlpha and 0xFF) shl 24)
     }
 
     private fun blendSelect(code: Int, chained: Int, rd: IntArray, u: IntArray, x: Int, y: Int): Int = when (code) {
@@ -397,9 +402,9 @@ private object SpanMath {
         2 -> u[RdpSpanAccel.U_BLEND]
         else -> u[RdpSpanAccel.U_FOG]
     }
-    private fun blendEquation(chained: Int, pixelAlpha: Int, rd: IntArray, u: IntArray, x: Int, y: Int, shadeAlpha: Int): Int {
+    private fun blendEquation(cycle: Int, chained: Int, pixelAlpha: Int, rd: IntArray, u: IntArray, x: Int, y: Int, shadeAlpha: Int): Int {
         val bl = RdpSpanAccel.U_BLENDSEL
-        val bA = u[bl + 0]; val bB = u[bl + 2]; val bC = u[bl + 4]; val bD = u[bl + 6]
+        val bA = u[bl + 0 + cycle]; val bB = u[bl + 2 + cycle]; val bC = u[bl + 4 + cycle]; val bD = u[bl + 6 + cycle]
         val aMul = when (bB) { 0 -> pixelAlpha; 1 -> (u[RdpSpanAccel.U_FOG] ushr 24) and 0xFF; 2 -> shadeAlpha; else -> 0 }
         val bMul = when (bD) { 0 -> aMul.inv() and 0xFF; 1 -> 0xE0; 2 -> 0xFF; else -> 0 }
         val blend1a = aMul shr 3
@@ -419,10 +424,15 @@ private object SpanMath {
         var alpha = (color ushr 24) and 0xFF
         if (alpha == 0xFF) alpha = 0x100
         val bl = RdpSpanAccel.U_BLENDSEL
-        val partialReject = u[bl + 2] == 0 && u[bl + 6] == 0
+        var chained = color
+        if (u[RdpSpanAccel.U_CYCLE2] != 0) {
+            chained = (blendEquation(0, color, alpha, rd, u, x, y, shadeAlpha) and 0xFFFFFF) or (color and 0xFF000000.toInt())
+        }
+        val cycle = if (u[RdpSpanAccel.U_CYCLE2] != 0) 1 else 0
+        val partialReject = u[bl + 2 + cycle] == 0 && u[bl + 6 + cycle] == 0
         val result = if (u[RdpSpanAccel.U_FORCEBLEND] == 0 || (partialReject && alpha >= 0xFF)) {
-            blendSelect(u[bl + 0], color, rd, u, x, y)
-        } else blendEquation(color, alpha, rd, u, x, y, shadeAlpha)
+            blendSelect(u[bl + 0 + cycle], chained, rd, u, x, y)
+        } else blendEquation(cycle, chained, alpha, rd, u, x, y, shadeAlpha)
         return (result and 0xFFFFFF) or (((color ushr 24) and 0xFF) shl 24)
     }
 
@@ -511,6 +521,7 @@ private object SpanMath {
     fun writePixel(
         rd: IntArray, hget: (Int) -> Int, hset: (Int, Int) -> Unit, u: IntArray,
         x: Int, y: Int, color: Int, z: Int, shadeAlpha: Int, cvg: Int,
+        spanDzPix: Int, spanDzEnc: Int,
     ) {
         var alpha = (color ushr 24) and 0xFF
         if (u[RdpSpanAccel.U_CTA] != 0) {
@@ -527,14 +538,93 @@ private object SpanMath {
         val recolor = (color and 0xFFFFFF) or (alpha shl 24)
         if (u[RdpSpanAccel.U_USEDEPTH] != 0 && u[RdpSpanAccel.U_ZIMAGE] != 0) {
             val src = u[RdpSpanAccel.U_ZSOURCE] != 0
-            val dzPix = if (src) u[RdpSpanAccel.U_PRIMDZ] else u[RdpSpanAccel.U_SPANDZPIX]
-            val dzEnc = if (src) u[RdpSpanAccel.U_PRIMDZENC] else u[RdpSpanAccel.U_SPANDZPIXENC]
+            val dzPix = if (src) u[RdpSpanAccel.U_PRIMDZ] else spanDzPix
+            val dzEnc = if (src) u[RdpSpanAccel.U_PRIMDZENC] else spanDzEnc
             if (u[RdpSpanAccel.U_ZCOMPARE] != 0 && !zpass(rd, hget, u, x, y, z, dzPix)) return
             writeColor(rd, u, x, y, blendPixel(rd, u, x, y, recolor, shadeAlpha))
             if (u[RdpSpanAccel.U_ZUPDATE] != 0) zstore(rd, hset, u, x, y, z, dzEnc)
             return
         }
         writeColor(rd, u, x, y, blendPixel(rd, u, x, y, recolor, shadeAlpha))
+    }
+
+    private fun samplePoint(u: IntArray, tget: (Int) -> Int, rawS: Int, rawT: Int): Int {
+        var s = tcShift(rawS, u[RdpSpanAccel.T_SHIFTS])
+        val maxS = (s shr 3) >= u[RdpSpanAccel.T_SH]
+        var t = tcShift(rawT, u[RdpSpanAccel.T_SHIFTT])
+        val maxT = (t shr 3) >= u[RdpSpanAccel.T_TH]
+        s -= u[RdpSpanAccel.T_SL] shl 3
+        t -= u[RdpSpanAccel.T_TL] shl 3
+        val clampEnS = u[RdpSpanAccel.T_CLAMPENS] != 0
+        val clampEnT = u[RdpSpanAccel.T_CLAMPENT] != 0
+        s = if (clampEnS) { if (maxS) u[RdpSpanAccel.T_CLAMPDIFFS] else if (s and 0x10000 != 0) 0 else s shr 5 } else s shr 5
+        t = if (clampEnT) { if (maxT) u[RdpSpanAccel.T_CLAMPDIFFT] else if (t and 0x10000 != 0) 0 else t shr 5 } else t shr 5
+        val maskS = u[RdpSpanAccel.T_MASKS]
+        val maskT = u[RdpSpanAccel.T_MASKT]
+        if (maskS != 0) {
+            if (u[RdpSpanAccel.T_MIRRORS] != 0 && (s shr u[RdpSpanAccel.T_MASKSCLAMPED]) and 1 != 0) s = s.inv()
+            s = s and maskbits(maskS)
+        }
+        if (maskT != 0) {
+            if (u[RdpSpanAccel.T_MIRRORT] != 0 && (t shr u[RdpSpanAccel.T_MASKTCLAMPED]) and 1 != 0) t = t.inv()
+            t = t and maskbits(maskT)
+        }
+        return fetch(u, tget, s, t)
+    }
+
+    fun runFillSpan(rd: IntArray, hset: (Int, Int) -> Unit, u: IntArray, rec: IntArray, base: Int) {
+        val row = rec[base + RdpSpanAccel.SPAN_ROW]
+        val left = rec[base + RdpSpanAccel.SPAN_LX]
+        val right = rec[base + RdpSpanAccel.SPAN_RX]
+        val fillColor = u[RdpSpanAccel.U_FILLCOLOR]
+        val size = u[RdpSpanAccel.U_COLORSIZE]
+        val image = u[RdpSpanAccel.U_COLORIMAGE]
+        val width = u[RdpSpanAccel.U_COLORWIDTH]
+        for (x in left..right) {
+            if (size == 2) {
+                val value = if (x and 1 == 0) (fillColor ushr 16) and 0xFFFF else fillColor and 0xFFFF
+                val at = image + (row * width + x) * 2
+                store16(rd, at, value)
+                hset((at and RDRAM_MASK) ushr 1, if (value and 1 != 0) 3 else 0)
+            } else if (size == 3) {
+                rd[((image + (row * width + x) * 4) and RDRAM_MASK) ushr 2] = fillColor
+            }
+        }
+    }
+
+    fun runTexrectSpan(rd: IntArray, hget: (Int) -> Int, hset: (Int, Int) -> Unit, tget: (Int) -> Int, u: IntArray, rec: IntArray, base: Int) {
+        val row = rec[base + RdpSpanAccel.SPAN_ROW]
+        val left = rec[base + RdpSpanAccel.SPAN_LX]
+        val right = rec[base + RdpSpanAccel.SPAN_RX]
+        val copy = u[RdpSpanAccel.U_COPY] != 0
+        val trX0 = rec[base + RdpSpanAccel.SPAN_TR_X0]; val trY0 = rec[base + RdpSpanAccel.SPAN_TR_Y0]
+        val trS = rec[base + RdpSpanAccel.SPAN_TR_S]; val trT = rec[base + RdpSpanAccel.SPAN_TR_T]
+        val trDsdx = rec[base + RdpSpanAccel.SPAN_TR_DSDX]; val trDtdy = rec[base + RdpSpanAccel.SPAN_TR_DTDY]
+        val trShift = rec[base + RdpSpanAccel.SPAN_TR_SHIFT]
+        val trFlip = rec[base + RdpSpanAccel.SPAN_TR_FLIP] != 0
+        val spanDzPix = rec[base + RdpSpanAccel.SPAN_DZPIX]
+        val spanDzEnc = rec[base + RdpSpanAccel.SPAN_DZPIXENC]
+        val scXh = u[RdpSpanAccel.U_SCISSOR_XH]; val scXl = u[RdpSpanAccel.U_SCISSOR_XL]
+        for (x in left..right) {
+            if (x < scXh || x >= scXl) continue
+            val dx = x - trX0; val dy = row - trY0
+            val texS: Int; val texT: Int
+            if (trFlip) {
+                texS = trS + ((dy * trDsdx) shr trShift)
+                texT = trT + ((dx * trDtdy) shr trShift)
+            } else {
+                texS = trS + ((dx * trDsdx) shr trShift)
+                texT = trT + ((dy * trDtdy) shr trShift)
+            }
+            if (copy) {
+                val texel = samplePoint(u, tget, texS, texT)
+                if (u[RdpSpanAccel.U_ALPHACOMPARE] == 0 || (texel ushr 24) and 0xFF != 0) writeColor(rd, u, x, row, texel)
+            } else {
+                val texel = if (u[RdpSpanAccel.U_TEXTURE] != 0) fetchSampled(u, tget, texS, texT) else 0
+                val color = combine(texel, texel, u[RdpSpanAccel.U_RECTSHADE], 0xFF, u)
+                writePixel(rd, hget, hset, u, x, row, color, 0, 0, 8, spanDzPix, spanDzEnc)
+            }
+        }
     }
 
     fun runSpan(rd: IntArray, hget: (Int) -> Int, hset: (Int, Int) -> Unit, tget: (Int) -> Int, tcdiv: IntArray, u: IntArray, rec: IntArray, base: Int) {
@@ -551,17 +641,19 @@ private object SpanMath {
         var t = rec[base + RdpSpanAccel.SPAN_T]
         var w = rec[base + RdpSpanAccel.SPAN_W]
 
-        val flip = u[RdpSpanAccel.U_FLIP] != 0
+        val flip = rec[base + RdpSpanAccel.SPAN_FLIP] != 0
+        val spanDzPix = rec[base + RdpSpanAccel.SPAN_DZPIX]
+        val spanDzEnc = rec[base + RdpSpanAccel.SPAN_DZPIXENC]
         val scXh = u[RdpSpanAccel.U_SCISSOR_XH]
         val scXl = u[RdpSpanAccel.U_SCISSOR_XL]
-        val drinc = if (flip) u[RdpSpanAccel.U_SPANS_DR] else -u[RdpSpanAccel.U_SPANS_DR]
-        val dginc = if (flip) u[RdpSpanAccel.U_SPANS_DG] else -u[RdpSpanAccel.U_SPANS_DG]
-        val dbinc = if (flip) u[RdpSpanAccel.U_SPANS_DB] else -u[RdpSpanAccel.U_SPANS_DB]
-        val dainc = if (flip) u[RdpSpanAccel.U_SPANS_DA] else -u[RdpSpanAccel.U_SPANS_DA]
-        val dzinc = if (flip) u[RdpSpanAccel.U_SPANS_DZ] else -u[RdpSpanAccel.U_SPANS_DZ]
-        val dsinc = if (flip) u[RdpSpanAccel.U_SPANS_DS] else -u[RdpSpanAccel.U_SPANS_DS]
-        val dtinc = if (flip) u[RdpSpanAccel.U_SPANS_DT] else -u[RdpSpanAccel.U_SPANS_DT]
-        val dwinc = if (flip) u[RdpSpanAccel.U_SPANS_DW] else -u[RdpSpanAccel.U_SPANS_DW]
+        val drinc = if (flip) rec[base + RdpSpanAccel.SPAN_DR] else -rec[base + RdpSpanAccel.SPAN_DR]
+        val dginc = if (flip) rec[base + RdpSpanAccel.SPAN_DG] else -rec[base + RdpSpanAccel.SPAN_DG]
+        val dbinc = if (flip) rec[base + RdpSpanAccel.SPAN_DB] else -rec[base + RdpSpanAccel.SPAN_DB]
+        val dainc = if (flip) rec[base + RdpSpanAccel.SPAN_DA] else -rec[base + RdpSpanAccel.SPAN_DA]
+        val dzinc = if (flip) rec[base + RdpSpanAccel.SPAN_DZ] else -rec[base + RdpSpanAccel.SPAN_DZ]
+        val dsinc = if (flip) rec[base + RdpSpanAccel.SPAN_DS] else -rec[base + RdpSpanAccel.SPAN_DS]
+        val dtinc = if (flip) rec[base + RdpSpanAccel.SPAN_DT] else -rec[base + RdpSpanAccel.SPAN_DT]
+        val dwinc = if (flip) rec[base + RdpSpanAccel.SPAN_DW] else -rec[base + RdpSpanAccel.SPAN_DW]
         val xinc = if (flip) 1 else -1
 
         val length = if (flip) xstart - xendsc else xendsc - xstart
@@ -599,7 +691,7 @@ private object SpanMath {
                     val texel = if (textureOn) sampleTex(u, tget, tcdiv, s, t, w) else 0
                     val color = combine(texel, texel, shade, shadeAlpha, u)
                     val pixelZ = zcorrect(if (zSource) u[RdpSpanAccel.U_PRIMDEPTH] shl 16 else z)
-                    writePixel(rd, hget, hset, u, x, row, color, pixelZ, shadeAlpha, drawCvg)
+                    writePixel(rd, hget, hset, u, x, row, color, pixelZ, shadeAlpha, drawCvg, spanDzPix, spanDzEnc)
                 }
             }
             r += drinc; g += dginc; b += dbinc; a += dainc
@@ -631,7 +723,8 @@ private class SpanFakeBackend : GpuBackend {
         val un = find(addr(ka, 6, 7))
         val tm = find(addr(ka, 14, 15))
         val tcd = find(addr(ka, 16, 17))
-        val count = ka.data[18]
+        val rowStart = find(addr(ka, 18, 19))
+        val rows = ka.data[20]
         val hget = { j: Int -> (hd.data[j ushr 2] ushr ((j and 3) shl 3)) and 0xFF }
         val hset = { j: Int, v: Int ->
             val wi = j ushr 2; val sh = (j and 3) shl 3
@@ -639,9 +732,17 @@ private class SpanFakeBackend : GpuBackend {
         }
         val tget = { j: Int -> (tm.data[j ushr 2] ushr ((j and 3) shl 3)) and 0xFF }
         val stride = RdpSpanAccel.SPAN_STRIDE
-        for (gid in 0 until groups * threadsPerGroup) {
-            if (gid >= count) break
-            SpanMath.runSpan(rd.data, hget, hset, tget, tcd.data, un.data, sp.data, gid * stride)
+        val order = ArrayList<Int>()
+        for (g in 0 until rows) {
+            for (i in rowStart.data[g] until rowStart.data[g + 1]) order.add(i)
+        }
+        for (gid in order) {
+            val base = gid * stride
+            if (un.data[RdpSpanAccel.U_FILL] != 0)
+                SpanMath.runFillSpan(rd.data, hset, un.data, sp.data, base)
+            else if (sp.data[base + RdpSpanAccel.SPAN_TEXRECT] != 0)
+                SpanMath.runTexrectSpan(rd.data, hget, hset, tget, un.data, sp.data, base)
+            else SpanMath.runSpan(rd.data, hget, hset, tget, tcd.data, un.data, sp.data, base)
         }
         return true
     }
@@ -649,6 +750,29 @@ private class SpanFakeBackend : GpuBackend {
     private fun addr(ka: SpanBuffer, lo: Int, hi: Int): Long =
         (ka.data[lo].toLong() and 0xFFFFFFFFL) or (ka.data[hi].toLong() shl 32)
     private fun find(a: Long): SpanBuffer = buffers.first { it.gpuAddress == a }
+}
+
+private fun primInto(rec: IntArray, u: IntArray) {
+    rec[RdpSpanAccel.SPAN_FLIP] = u[RdpSpanAccel.U_FLIP]
+    rec[RdpSpanAccel.SPAN_DR] = u[RdpSpanAccel.U_SPANS_DR]
+    rec[RdpSpanAccel.SPAN_DG] = u[RdpSpanAccel.U_SPANS_DG]
+    rec[RdpSpanAccel.SPAN_DB] = u[RdpSpanAccel.U_SPANS_DB]
+    rec[RdpSpanAccel.SPAN_DA] = u[RdpSpanAccel.U_SPANS_DA]
+    rec[RdpSpanAccel.SPAN_DZ] = u[RdpSpanAccel.U_SPANS_DZ]
+    rec[RdpSpanAccel.SPAN_DS] = u[RdpSpanAccel.U_SPANS_DS]
+    rec[RdpSpanAccel.SPAN_DT] = u[RdpSpanAccel.U_SPANS_DT]
+    rec[RdpSpanAccel.SPAN_DW] = u[RdpSpanAccel.U_SPANS_DW]
+    rec[RdpSpanAccel.SPAN_DZPIX] = u[RdpSpanAccel.U_SPANDZPIX]
+    rec[RdpSpanAccel.SPAN_DZPIXENC] = u[RdpSpanAccel.U_SPANDZPIXENC]
+    rec[RdpSpanAccel.SPAN_TEXRECT] = u[RdpSpanAccel.U_TEXRECT]
+    rec[RdpSpanAccel.SPAN_TR_X0] = u[RdpSpanAccel.U_TR_X0]
+    rec[RdpSpanAccel.SPAN_TR_Y0] = u[RdpSpanAccel.U_TR_Y0]
+    rec[RdpSpanAccel.SPAN_TR_S] = u[RdpSpanAccel.U_TR_S]
+    rec[RdpSpanAccel.SPAN_TR_T] = u[RdpSpanAccel.U_TR_T]
+    rec[RdpSpanAccel.SPAN_TR_DSDX] = u[RdpSpanAccel.U_TR_DSDX]
+    rec[RdpSpanAccel.SPAN_TR_DTDY] = u[RdpSpanAccel.U_TR_DTDY]
+    rec[RdpSpanAccel.SPAN_TR_SHIFT] = u[RdpSpanAccel.U_TR_SHIFT]
+    rec[RdpSpanAccel.SPAN_TR_FLIP] = u[RdpSpanAccel.U_TR_FLIP]
 }
 
 private class SpanScene {
@@ -664,6 +788,16 @@ private class TriDraw(
     val minorX: IntArray, val majorX: IntArray, val invalY: IntArray,
 )
 
+private class FillDraw(
+    val u: IntArray,
+    val top: Int, val bottom: Int, val left: Int, val right: Int,
+)
+
+private class RectDraw(
+    val u: IntArray, val tmem: ByteArray, val tmemGen: Int,
+    val top: Int, val bottom: Int, val left: Int, val right: Int,
+)
+
 class RdpSpanAccelTest {
     private val width = 320
     private val image = 0x100000
@@ -677,12 +811,7 @@ class RdpSpanAccelTest {
         }
     }
 
-    private fun makeTri(next: () -> Int, colorSize: Int, depth: Boolean, pool: Array<ByteArray>): TriDraw {
-        val flip = next() and 1 == 0
-        val first = next() % 40
-        val rows = 4 + next() % 24
-        val last = first + rows
-
+    private fun baseUniform(next: () -> Int, flip: Boolean, colorSize: Int, depth: Boolean): IntArray {
         val u = IntArray(RdpSpanAccel.UNIFORM_WORDS)
         u[RdpSpanAccel.U_FLIP] = if (flip) 1 else 0
         u[RdpSpanAccel.U_SCISSOR_XH] = 0
@@ -725,6 +854,7 @@ class RdpSpanAccelTest {
         u[RdpSpanAccel.U_TLUTEN] = next() % 3 / 2
         u[RdpSpanAccel.U_TLUTTYPE] = next() and 1
         u[RdpSpanAccel.U_MIDTEXEL] = next() and 1
+        u[RdpSpanAccel.U_CYCLE2] = next() and 1
         u[RdpSpanAccel.T_FORMAT] = next() % 5
         u[RdpSpanAccel.T_SIZE] = next() % 4
         u[RdpSpanAccel.T_LINE] = next() % 32
@@ -762,9 +892,21 @@ class RdpSpanAccelTest {
         for (k in 0 until 8) u[al + k] = if (k and 1 == 0) acfg[k / 2] else 0
         val bl = RdpSpanAccel.U_BLENDSEL
         for (k in 0 until 8) u[bl + k] = next() % 4
+        return u
+    }
 
+    private fun makeTri(next: () -> Int, colorSize: Int, depth: Boolean, pool: Array<ByteArray>): TriDraw {
+        val flip = next() and 1 == 0
+        val u = baseUniform(next, flip, colorSize, depth)
         val tmemGen = next() % pool.size
-        val tmem = pool[tmemGen]
+        return triGeometry(next, u, pool[tmemGen], tmemGen)
+    }
+
+    private fun triGeometry(next: () -> Int, u: IntArray, tmem: ByteArray, tmemGen: Int): TriDraw {
+        val flip = u[RdpSpanAccel.U_FLIP] != 0
+        val first = next() % 40
+        val rows = 4 + next() % 24
+        val last = first + rows
 
         val size = 1024
         val valid = BooleanArray(size)
@@ -796,20 +938,104 @@ class RdpSpanAccelTest {
         return TriDraw(first, last, u, tmem, tmemGen, valid, lx, rx, unscrx, r, gg, bb, aa, z, ss, tt, ww, minorX, majorX, invalY)
     }
 
-    private fun makeScene(seed: Long): List<TriDraw> {
+    private fun makeRect(next: () -> Int, colorSize: Int, pool: Array<ByteArray>): RectDraw {
+        val copy = next() and 1 == 0
+        val u = baseUniform(next, false, colorSize, false)
+        u[RdpSpanAccel.U_FLIP] = 0
+        u[RdpSpanAccel.U_SHADE] = 0
+        u[RdpSpanAccel.U_TEXTURE] = 1
+        u[RdpSpanAccel.U_USEDEPTH] = 0
+        u[RdpSpanAccel.U_TEXRECT] = 1
+        u[RdpSpanAccel.U_RECTSHADE] = -1
+        u[RdpSpanAccel.U_COPY] = if (copy) 1 else 0
+        if (!copy && next() % 4 == 0) {
+            u[RdpSpanAccel.U_TEXTURE] = 0
+            u[RdpSpanAccel.U_RECTSHADE] = 0
+        }
+        u[RdpSpanAccel.U_CYCLE2] = if (!copy) next() and 1 else 0
+
+        val left = next() % (width - 40)
+        val w = 4 + next() % 60
+        val right = minOf(left + w, width - 1)
+        val top = next() % 200
+        val h = 4 + next() % 40
+        val bottom = top + h
+        u[RdpSpanAccel.U_TR_X0] = left - next() % 4
+        u[RdpSpanAccel.U_TR_Y0] = top - next() % 4
+        u[RdpSpanAccel.U_TR_S] = next() % 0x8000
+        u[RdpSpanAccel.U_TR_T] = next() % 0x8000
+        u[RdpSpanAccel.U_TR_DSDX] = (next() % 0x800) - 0x400
+        u[RdpSpanAccel.U_TR_DTDY] = (next() % 0x800) - 0x400
+        u[RdpSpanAccel.U_TR_SHIFT] = if (copy) 0 else 5
+        u[RdpSpanAccel.U_TR_FLIP] = next() and 1
+
+        val tmemGen = next() % pool.size
+        return RectDraw(u, pool[tmemGen], tmemGen, top, bottom, left, right)
+    }
+
+    private fun makeFill(next: () -> Int, colorSize: Int): FillDraw {
+        val u = IntArray(RdpSpanAccel.UNIFORM_WORDS)
+        u[RdpSpanAccel.U_FILL] = 1
+        u[RdpSpanAccel.U_FILLCOLOR] = next() or (next() shl 1)
+        u[RdpSpanAccel.U_COLORSIZE] = colorSize
+        u[RdpSpanAccel.U_COLORIMAGE] = image
+        u[RdpSpanAccel.U_COLORWIDTH] = width
+        u[RdpSpanAccel.U_SCISSOR_XH] = 0
+        u[RdpSpanAccel.U_SCISSOR_XL] = width
+        val left = next() % (width - 40)
+        val right = minOf(left + 4 + next() % 60, width - 1)
+        val top = next() % 200
+        return FillDraw(u, top, top + 4 + next() % 40, left, right)
+    }
+
+    private fun makeScene(seed: Long): List<Any> {
         val next = rng(seed)
         val colorSize = if (next() and 1 == 0) 2 else 3
         val depth = next() % 3 != 0
         val pool = Array(3) { ByteArray(4096) { next().toByte() } }
-        val count = 1 + next() % 6
-        return List(count) { makeTri(next, colorSize, depth, pool) }
+        val groups = 1 + next() % 6
+        val draws = ArrayList<Any>()
+        repeat(groups) {
+            if (next() % 5 == 0) {
+                draws.add(makeFill(next, colorSize))
+            } else if (next() % 3 == 0) {
+                draws.add(makeRect(next, colorSize, pool))
+            } else {
+                val d = makeTri(next, colorSize, depth, pool)
+                draws.add(d)
+                repeat(next() % 4) { draws.add(triGeometry(next, d.u, d.tmem, d.tmemGen)) }
+            }
+        }
+        return draws
     }
 
-    private fun reference(scene: SpanScene, draws: List<TriDraw>) {
+    private fun reference(scene: SpanScene, draws: List<Any>) {
         val hget = { j: Int -> scene.hidden[j].toInt() and 0xFF }
         val hset = { j: Int, v: Int -> scene.hidden[j] = v.toByte() }
         val rec = IntArray(RdpSpanAccel.SPAN_STRIDE)
         for (d in draws) {
+            if (d is FillDraw) {
+                for (row in d.top..d.bottom) {
+                    rec[RdpSpanAccel.SPAN_ROW] = row
+                    rec[RdpSpanAccel.SPAN_LX] = d.left
+                    rec[RdpSpanAccel.SPAN_RX] = d.right
+                    SpanMath.runFillSpan(scene.rdram, hset, d.u, rec, 0)
+                }
+                continue
+            }
+            if (d is RectDraw) {
+                val tget = { j: Int -> d.tmem[j].toInt() and 0xFF }
+                for (row in d.top..d.bottom) {
+                    rec[RdpSpanAccel.SPAN_ROW] = row
+                    rec[RdpSpanAccel.SPAN_LX] = d.left
+                    rec[RdpSpanAccel.SPAN_RX] = d.right
+                    rec[RdpSpanAccel.SPAN_UNSCRX] = d.right
+                    primInto(rec, d.u)
+                    SpanMath.runTexrectSpan(scene.rdram, hget, hset, tget, d.u, rec, 0)
+                }
+                continue
+            }
+            d as TriDraw
             val tmem = d.tmem
             val tget = { j: Int -> tmem[j].toInt() and 0xFF }
             for (i in d.first..d.last) {
@@ -833,15 +1059,26 @@ class RdpSpanAccelTest {
                     rec[RdpSpanAccel.SPAN_MAJORX0 + k] = d.majorX[i * 4 + k]
                     rec[RdpSpanAccel.SPAN_INVALY0 + k] = d.invalY[i * 4 + k]
                 }
+                primInto(rec, d.u)
                 SpanMath.runSpan(scene.rdram, hget, hset, tget, Luts.tcdiv, d.u, rec, 0)
             }
         }
     }
 
-    private fun accel(scene: SpanScene, draws: List<TriDraw>) {
+    private fun accel(scene: SpanScene, draws: List<Any>) {
         val accelTmem = ByteArray(4096)
         val sa = RdpSpanAccel(scene.rdram, scene.hidden, accelTmem, Luts.zcom, Luts.zdec, Luts.deltaz, Luts.tcdiv) { _, _ -> }
         for (d in draws) {
+            if (d is FillDraw) {
+                sa.renderFill(d.u, d.top, d.bottom, d.left, d.right, 0)
+                continue
+            }
+            if (d is RectDraw) {
+                d.tmem.copyInto(accelTmem)
+                sa.renderTexrect(d.u, d.top, d.bottom, d.left, d.right, d.tmemGen)
+                continue
+            }
+            d as TriDraw
             d.tmem.copyInto(accelTmem)
             sa.render(
                 d.first, d.last, d.u, d.valid, d.lx, d.rx, d.unscrx,

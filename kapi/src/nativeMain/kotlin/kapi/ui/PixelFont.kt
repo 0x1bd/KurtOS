@@ -11,7 +11,12 @@ object PixelFont {
     fun draw(sink: PixelSink, x: Int, y: Int, text: String, color: UInt, scale: Int, shadow: UInt = NO_SHADOW) {
         var penX = x
         for (c in text) {
-            val glyph = glyphs[c] ?: glyphs[c.uppercaseChar()]
+            val code = c.code
+            var glyph = if (code < TABLE) table[code] else null
+            if (glyph == null) {
+                val upper = c.uppercaseChar().code
+                if (upper < TABLE) glyph = table[upper]
+            }
             if (glyph != null) {
                 if (shadow != NO_SHADOW) drawGlyph(sink, penX + scale, y + scale, glyph, shadow, scale)
                 drawGlyph(sink, penX, y, glyph, color, scale)
@@ -21,21 +26,28 @@ object PixelFont {
     }
 
     private fun drawGlyph(sink: PixelSink, x: Int, y: Int, glyph: ByteArray, color: UInt, scale: Int) {
-        for (gy in 0 until HEIGHT) {
+        var gy = 0
+        while (gy < HEIGHT) {
             val bits = glyph[gy].toInt() and 0xFF
-            var gx = 0
-            while (gx < WIDTH) {
-                if ((bits shr (7 - gx)) and 1 == 1) {
-                    var run = 1
-                    while (gx + run < WIDTH && (bits shr (7 - gx - run)) and 1 == 1) run++
-                    sink.fill(x + gx * scale, y + gy * scale, run * scale, scale, color)
-                    gx += run
-                } else {
-                    gx++
+            var rows = 1
+            while (gy + rows < HEIGHT && (glyph[gy + rows].toInt() and 0xFF) == bits) rows++
+            if (bits != 0) {
+                var gx = 0
+                while (gx < WIDTH) {
+                    if ((bits shr (7 - gx)) and 1 == 1) {
+                        var run = 1
+                        while (gx + run < WIDTH && (bits shr (7 - gx - run)) and 1 == 1) run++
+                        sink.fill(x + gx * scale, y + gy * scale, run * scale, rows * scale, color)
+                        gx += run
+                    } else {
+                        gx++
+                    }
                 }
             }
+            gy += rows
         }
     }
+
 
     private fun rows(vararg lines: String): ByteArray {
         val glyph = ByteArray(HEIGHT)
@@ -753,4 +765,14 @@ object PixelFont {
             ".......",
         ),
     )
+
+    private const val TABLE = 128
+
+    private val table: Array<ByteArray?> = arrayOfNulls<ByteArray>(TABLE).also { t ->
+        for (entry in glyphs) {
+            val code = entry.key.code
+            if (code < TABLE) t[code] = entry.value
+        }
+    }
+
 }

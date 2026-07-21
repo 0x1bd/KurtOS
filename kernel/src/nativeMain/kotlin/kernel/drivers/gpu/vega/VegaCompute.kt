@@ -12,6 +12,8 @@ class VegaCompute(
 ) {
     private var wptr = 0
     private var seq = 0u
+    private var pending = false
+    private var tlbReady = false
 
     private var ring: VramAlloc? = null
     private var fence: VramAlloc? = null
@@ -130,7 +132,8 @@ class VegaCompute(
 
     private fun isaFor(shader: Shader): VramAlloc? {
         isaCache[shader.name]?.let { return it }
-        val buf = VegaVram.allocate(0x1000UL) ?: return null
+        val need = (shader.isa.size.toULong() + 0xFFFUL) and 0xFFFUL.inv()
+        val buf = VegaVram.allocate(if (need < 0x1000UL) 0x1000UL else need) ?: return null
         for (i in 0 until shader.isa.size / 4) {
             val at = i * 4
             val word = (shader.isa[at].toUInt() and 0xFFu) or
@@ -144,14 +147,14 @@ class VegaCompute(
         return buf
     }
 
-    private fun dispatchKernel(shader: Shader, kernarg: VramAlloc, gridX: UInt, gridY: UInt, tx: UInt, ty: UInt): Boolean {
-        val fenceMem = fence ?: return false
+    private fun emitDispatch(shader: Shader, kernarg: VramAlloc, gridX: UInt, gridY: UInt, tx: UInt, ty: UInt): Boolean {
         val isaBuf = isaFor(shader) ?: return false
 
-        VegaVm.invalidateGfxhubTlb(regs)
+        if (!tlbReady) {
+            VegaVm.invalidateGfxhubTlb(regs)
+            tlbReady = true
+        }
 
-        seq++
-        fenceMem.writeDword(0UL, 0u)
         Cpu.storeFence()
 
         val pgm = (isaBuf.gpuAddress + shader.entryOffset) shr 8
@@ -183,27 +186,50 @@ class VegaCompute(
         emit(VegaReg.packet3(VegaReg.PACKET3_EVENT_WRITE, 0))
         emit(VegaReg.EVENT_CS_PARTIAL_FLUSH)
 
+        ringDoorbell()
+
+        pending = true
+        return true
+    }
+
+    fun sync(): Boolean {
+        if (!pending) return true
+        val fenceMem = fence ?: return false
+        seq++
+        val target = seq
+
         emit(VegaReg.packet3(VegaReg.PACKET3_RELEASE_MEM, 6))
         emit(RELEASE_EVENT)
         emit(RELEASE_DATA_SEL)
         emit((fenceMem.gpuAddress and 0xFFFFFFFFUL).toUInt())
         emit((fenceMem.gpuAddress shr 32).toUInt())
-        emit(seq)
+        emit(target)
         emit(0u)
         emit(0u)
-
         ringDoorbell()
 
-        val deadline = Clock.uptimeMillis() + FENCE_TIMEOUT_MS
+        val startCycles = Clock.timestamp()
+        val deadline = Clock.uptimeMillis() + SYNC_TIMEOUT_MS
         while (Clock.uptimeMillis() < deadline) {
             regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
-            if (fenceMem.readDword(0UL) == seq) break
+            if (fenceMem.readDword(0UL) == target) break
         }
-        return fenceMem.readDword(0UL) == seq
+        busyCycles += (Clock.timestamp() - startCycles).toLong()
+        syncCount++
+        pending = false
+        return fenceMem.readDword(0UL) == target
+    }
+
+    var busyCycles = 0L
+    var syncCount = 0L
+
+    private fun dispatchKernel(shader: Shader, kernarg: VramAlloc, gridX: UInt, gridY: UInt, tx: UInt, ty: UInt): Boolean {
+        if (!emitDispatch(shader, kernarg, gridX, gridY, tx, ty)) return false
+        return sync()
     }
 
     fun dispatch(shader: Shader, kernarg: VramAlloc, groups: UInt, threads: UInt): Boolean =
-        dispatchKernel(shader, kernarg, groups, 1u, threads, 1u)
+        emitDispatch(shader, kernarg, groups, 1u, threads, 1u)
 
     fun runKernel(shader: Shader): Boolean {
         if (kernargBuf == null) kernargBuf = VegaVram.allocate(0x1000UL)
@@ -285,6 +311,7 @@ class VegaCompute(
         const val RING_DWORDS = 1024
         const val FENCE_SPINS = 40_000_002
         const val FENCE_TIMEOUT_MS: ULong = 100UL
+        const val SYNC_TIMEOUT_MS: ULong = 2000UL
         const val RELEASE_EVENT: UInt = 0x238514u
         const val RELEASE_DATA_SEL: UInt = 0x20000000u
     }

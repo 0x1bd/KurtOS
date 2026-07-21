@@ -134,6 +134,37 @@ static inline void raw_copy(uint64_t dst, uint64_t src, uint64_t bytes) {
     __builtin_memcpy((void*)dst, (const void*)src, bytes);
 }
 
+static inline void raw_copy_stream(uint64_t dst, uint64_t src, uint64_t bytes) {
+    unsigned char *d = (unsigned char *)dst;
+    const unsigned char *s = (const unsigned char *)src;
+
+    uint64_t head = (uint64_t)(-(long)(uintptr_t)s) & 15u;
+    if (head > bytes) head = bytes;
+    if (head) {
+        __builtin_memcpy(d, s, head);
+        d += head; s += head; bytes -= head;
+    }
+
+    if (bytes >= 64) __asm__ volatile("mfence" ::: "memory");
+    while (bytes >= 64) {
+        __asm__ volatile(
+            "movntdqa   (%1), %%xmm0\n\t"
+            "movntdqa 16(%1), %%xmm1\n\t"
+            "movntdqa 32(%1), %%xmm2\n\t"
+            "movntdqa 48(%1), %%xmm3\n\t"
+            "movdqu %%xmm0,   (%0)\n\t"
+            "movdqu %%xmm1, 16(%0)\n\t"
+            "movdqu %%xmm2, 32(%0)\n\t"
+            "movdqu %%xmm3, 48(%0)\n\t"
+            :
+            : "r"(d), "r"(s)
+            : "memory", "xmm0", "xmm1", "xmm2", "xmm3");
+        d += 64; s += 64; bytes -= 64;
+    }
+
+    if (bytes) __builtin_memcpy(d, s, bytes);
+}
+
 static inline void raw_blit_indexed(uint64_t dst, uint64_t dst_stride, uint64_t src,
                                     uint32_t src_w, uint32_t src_h,
                                     uint64_t palette, uint32_t scale) {

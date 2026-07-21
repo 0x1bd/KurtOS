@@ -1,5 +1,6 @@
 package kernel.drivers.gpu.vega
 
+import hal.Clock
 import hal.Cpu
 import hal.RawMemory
 import kapi.gpu.GpuBackend
@@ -7,28 +8,43 @@ import kapi.gpu.GpuBuffer
 import kapi.gpu.GpuKernel
 import kernel.KLog
 
-private class VegaGpuBuffer(val alloc: VramAlloc, private val regs: VegaRegs) : GpuBuffer {
+private class VegaGpuBuffer(val alloc: VramAlloc, private val regs: VegaRegs, private val compute: VegaCompute) : GpuBuffer {
     override val gpuAddress: Long get() = alloc.gpuAddress.toLong()
     override val words: Int get() = (alloc.bytes / 4UL).toInt()
 
     override fun writeWord(word: Int, value: Int) = alloc.writeDword(word.toULong() * 4UL, value.toUInt())
 
     override fun readWord(word: Int): Int {
+        compute.sync()
         regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
         return alloc.readDword(word.toULong() * 4UL).toInt()
     }
 
     override fun write(dstWord: Int, src: IntArray, srcWord: Int, count: Int) {
+        val start = Clock.timestamp()
         RawMemory.copyInWords(alloc.cpuAddress + dstWord.toULong() * 4UL, src, srcWord, count)
         Cpu.storeFence()
+        VegaTransfer.writeCycles += (Clock.timestamp() - start).toLong()
+        VegaTransfer.writeWords += count.toLong()
     }
 
     override fun read(srcWord: Int, dst: IntArray, dstWord: Int, count: Int) {
+        compute.sync()
         regs.write(VegaReg.HDP_READ_CACHE_INVALIDATE, 1u)
+        val start = Clock.timestamp()
         RawMemory.copyOutWords(alloc.cpuAddress + srcWord.toULong() * 4UL, dst, dstWord, count)
+        VegaTransfer.readCycles += (Clock.timestamp() - start).toLong()
+        VegaTransfer.readWords += count.toLong()
     }
 
     override fun zero() = alloc.zero()
+}
+
+internal object VegaTransfer {
+    var writeCycles = 0L
+    var readCycles = 0L
+    var writeWords = 0L
+    var readWords = 0L
 }
 
 private class VegaGpuKernel(val shader: Shader) : GpuKernel {
@@ -46,10 +62,22 @@ class VegaBackend(private val compute: VegaCompute, private val regs: VegaRegs) 
         kernels.getOrPut(name) { VegaShaderLoader.load(name)?.let { VegaGpuKernel(it) } }
 
     override fun alloc(words: Int): GpuBuffer? =
-        VegaVram.allocate(words.toULong() * 4UL)?.let { VegaGpuBuffer(it, regs) }
+        VegaVram.allocate(words.toULong() * 4UL)?.let { VegaGpuBuffer(it, regs, compute) }
 
     override fun free(buffer: GpuBuffer) {
     }
+
+    override fun sync() {
+        compute.sync()
+    }
+
+    override fun busyCycles(): Long = compute.busyCycles
+    override fun syncCount(): Long = compute.syncCount
+    override fun nowCycles(): Long = Clock.timestamp().toLong()
+    override fun writeCycles(): Long = VegaTransfer.writeCycles
+    override fun readCycles(): Long = VegaTransfer.readCycles
+    override fun writeWords(): Long = VegaTransfer.writeWords
+    override fun readWords(): Long = VegaTransfer.readWords
 
     private var loggedDispatch = false
     private var loggedFailure = false

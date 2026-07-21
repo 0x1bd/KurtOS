@@ -5,7 +5,7 @@ typedef int i32;
 
 #define RDRAM_MASK 0x7FFFFF
 
-#define SPAN_STRIDE 24
+#define SPAN_STRIDE 44
 #define SPAN_ROW 0
 #define SPAN_LX 1
 #define SPAN_RX 2
@@ -21,6 +21,26 @@ typedef int i32;
 #define SPAN_S 21
 #define SPAN_T 22
 #define SPAN_W 23
+#define SPAN_FLIP 24
+#define SPAN_DR 25
+#define SPAN_DG 26
+#define SPAN_DB 27
+#define SPAN_DA 28
+#define SPAN_DZ 29
+#define SPAN_DS 30
+#define SPAN_DT 31
+#define SPAN_DW 32
+#define SPAN_DZPIX 33
+#define SPAN_DZPIXENC 34
+#define SPAN_TEXRECT 35
+#define SPAN_TR_X0 36
+#define SPAN_TR_Y0 37
+#define SPAN_TR_S 38
+#define SPAN_TR_T 39
+#define SPAN_TR_DSDX 40
+#define SPAN_TR_DTDY 41
+#define SPAN_TR_SHIFT 42
+#define SPAN_TR_FLIP 43
 
 #define U_FLIP 0
 #define U_SCISSOR_XH 1
@@ -87,6 +107,20 @@ typedef int i32;
 #define T_CLAMPENT 85
 #define T_MASKSCLAMPED 86
 #define T_MASKTCLAMPED 87
+#define U_CYCLE2 88
+#define U_TEXRECT 89
+#define U_COPY 90
+#define U_TR_X0 91
+#define U_TR_Y0 92
+#define U_TR_S 93
+#define U_TR_T 94
+#define U_TR_DSDX 95
+#define U_TR_DTDY 96
+#define U_TR_SHIFT 97
+#define U_TR_FLIP 98
+#define U_FILL 99
+#define U_FILLCOLOR 100
+#define U_RECTSHADE 101
 
 static i32 clamp255(i32 v) { return v < 0 ? 0 : (v > 255 ? 255 : v); }
 static i32 channel(u32 color, i32 index) { return (i32)((color >> (index * 8)) & 0xFFu); }
@@ -284,6 +318,30 @@ static void divide(i32 s, i32 t, i32 w, u32 *tcdiv, i32 persp, i32 *outS, i32 *o
     *outT = tclod_clamp(sst);
 }
 
+static u32 sample_point(u32 *u, u8 *tmem, i32 rawS, i32 rawT)
+{
+    i32 s = tc_shift(rawS, (i32)u[T_SHIFTS]);
+    i32 maxS = (s >> 3) >= (i32)u[T_SH];
+    i32 t = tc_shift(rawT, (i32)u[T_SHIFTT]);
+    i32 maxT = (t >> 3) >= (i32)u[T_TH];
+    s -= (i32)u[T_SL] << 3;
+    t -= (i32)u[T_TL] << 3;
+    if ((i32)u[T_CLAMPENS]) s = maxS ? (i32)u[T_CLAMPDIFFS] : ((s & 0x10000) ? 0 : (s >> 5));
+    else s >>= 5;
+    if ((i32)u[T_CLAMPENT]) t = maxT ? (i32)u[T_CLAMPDIFFT] : ((t & 0x10000) ? 0 : (t >> 5));
+    else t >>= 5;
+    i32 maskS = (i32)u[T_MASKS], maskT = (i32)u[T_MASKT];
+    if (maskS) {
+        if ((i32)u[T_MIRRORS] && ((s >> (i32)u[T_MASKSCLAMPED]) & 1)) s = ~s;
+        s &= maskbits(maskS);
+    }
+    if (maskT) {
+        if ((i32)u[T_MIRRORT] && ((t >> (i32)u[T_MASKTCLAMPED]) & 1)) t = ~t;
+        t &= maskbits(maskT);
+    }
+    return fetch(u, tmem, s, t);
+}
+
 static u32 sample_tex(u32 *u, u8 *tmem, i32 rawS, i32 rawT)
 {
     i32 s = tc_shift(rawS, (i32)u[T_SHIFTS]);
@@ -457,20 +515,24 @@ static u32 combine(u32 texel0, u32 texel1, u32 shade, i32 shadeAlpha, u32 *u)
 {
     u32 combined = 0;
     i32 combinedAlpha = 0;
-    i32 result = 0;
-    for (i32 index = 0; index < 3; index++) {
-        i32 a = csrc((i32)u[U_CRGB + 0], index, texel0, texel1, shade, combined, u, 1);
-        i32 b = csrc((i32)u[U_CRGB + 2], index, texel0, texel1, shade, combined, u, 0);
-        i32 c = cmul((i32)u[U_CRGB + 4], index, texel0, texel1, shade, shadeAlpha, combined, combinedAlpha, u);
-        i32 d = cadd((i32)u[U_CRGB + 6], index, texel0, texel1, shade, combined, u);
-        result |= clamp255((((a - b) * c) >> 8) + d) << (index * 8);
+    i32 cycles = (i32)u[U_CYCLE2] ? 2 : 1;
+    for (i32 cycle = 0; cycle < cycles; cycle++) {
+        i32 result = 0;
+        for (i32 index = 0; index < 3; index++) {
+            i32 a = csrc((i32)u[U_CRGB + 0 + cycle], index, texel0, texel1, shade, combined, u, 1);
+            i32 b = csrc((i32)u[U_CRGB + 2 + cycle], index, texel0, texel1, shade, combined, u, 0);
+            i32 c = cmul((i32)u[U_CRGB + 4 + cycle], index, texel0, texel1, shade, shadeAlpha, combined, combinedAlpha, u);
+            i32 d = cadd((i32)u[U_CRGB + 6 + cycle], index, texel0, texel1, shade, combined, u);
+            result |= clamp255((((a - b) * c) >> 8) + d) << (index * 8);
+        }
+        i32 aa = asrc((i32)u[U_CALPHA + 0 + cycle], texel0, texel1, shadeAlpha, combinedAlpha, u);
+        i32 ab = asrc((i32)u[U_CALPHA + 2 + cycle], texel0, texel1, shadeAlpha, combinedAlpha, u);
+        i32 ac = amul((i32)u[U_CALPHA + 4 + cycle], texel0, texel1, shadeAlpha, u);
+        i32 ad = asrc((i32)u[U_CALPHA + 6 + cycle], texel0, texel1, shadeAlpha, combinedAlpha, u);
+        combinedAlpha = clamp255((((aa - ab) * ac) >> 8) + ad);
+        combined = (u32)result;
     }
-    i32 aa = asrc((i32)u[U_CALPHA + 0], texel0, texel1, shadeAlpha, combinedAlpha, u);
-    i32 ab = asrc((i32)u[U_CALPHA + 2], texel0, texel1, shadeAlpha, combinedAlpha, u);
-    i32 ac = amul((i32)u[U_CALPHA + 4], texel0, texel1, shadeAlpha, u);
-    i32 ad = asrc((i32)u[U_CALPHA + 6], texel0, texel1, shadeAlpha, combinedAlpha, u);
-    combinedAlpha = clamp255((((aa - ab) * ac) >> 8) + ad);
-    return ((u32)result & 0xFFFFFFu) | (((u32)combinedAlpha & 0xFFu) << 24);
+    return (combined & 0xFFFFFFu) | (((u32)combinedAlpha & 0xFFu) << 24);
 }
 
 static u32 blend_select(i32 code, u32 chained, u32 *rdram, u32 *u, i32 x, i32 y)
@@ -483,9 +545,9 @@ static u32 blend_select(i32 code, u32 chained, u32 *rdram, u32 *u, i32 x, i32 y)
     }
 }
 
-static u32 blend_equation(u32 chained, i32 pixelAlpha, u32 *rdram, u32 *u, i32 x, i32 y, i32 shadeAlpha)
+static u32 blend_equation(i32 cycle, u32 chained, i32 pixelAlpha, u32 *rdram, u32 *u, i32 x, i32 y, i32 shadeAlpha)
 {
-    i32 bA = (i32)u[U_BLENDSEL + 0], bB = (i32)u[U_BLENDSEL + 2], bC = (i32)u[U_BLENDSEL + 4], bD = (i32)u[U_BLENDSEL + 6];
+    i32 bA = (i32)u[U_BLENDSEL + 0 + cycle], bB = (i32)u[U_BLENDSEL + 2 + cycle], bC = (i32)u[U_BLENDSEL + 4 + cycle], bD = (i32)u[U_BLENDSEL + 6 + cycle];
     i32 aMul = bB == 0 ? pixelAlpha : (bB == 1 ? ((i32)(u[U_FOG] >> 24) & 0xFF) : (bB == 2 ? shadeAlpha : 0));
     i32 bMul = bD == 0 ? ((~aMul) & 0xFF) : (bD == 1 ? 0xE0 : (bD == 2 ? 0xFF : 0));
     i32 blend1a = aMul >> 3;
@@ -506,13 +568,18 @@ static u32 blend_pixel(u32 *rdram, u32 *u, i32 x, i32 y, u32 color, i32 shadeAlp
 {
     i32 alpha = (i32)(color >> 24) & 0xFF;
     if (alpha == 0xFF) alpha = 0x100;
-    i32 bB = (i32)u[U_BLENDSEL + 2], bD = (i32)u[U_BLENDSEL + 6];
+    u32 chained = color;
+    if ((i32)u[U_CYCLE2]) {
+        chained = (blend_equation(0, color, alpha, rdram, u, x, y, shadeAlpha) & 0xFFFFFFu) | (color & 0xFF000000u);
+    }
+    i32 cycle = (i32)u[U_CYCLE2] ? 1 : 0;
+    i32 bB = (i32)u[U_BLENDSEL + 2 + cycle], bD = (i32)u[U_BLENDSEL + 6 + cycle];
     i32 partialReject = (bB == 0) && (bD == 0);
     u32 result;
     if (!(i32)u[U_FORCEBLEND] || (partialReject && alpha >= 0xFF))
-        result = blend_select((i32)u[U_BLENDSEL + 0], color, rdram, u, x, y);
+        result = blend_select((i32)u[U_BLENDSEL + 0 + cycle], chained, rdram, u, x, y);
     else
-        result = blend_equation(color, alpha, rdram, u, x, y, shadeAlpha);
+        result = blend_equation(cycle, chained, alpha, rdram, u, x, y, shadeAlpha);
     return (result & 0xFFFFFFu) | (((color >> 24) & 0xFFu) << 24);
 }
 
@@ -633,7 +700,7 @@ static i32 coverage_at(i32 x, i32 flip, i32 ps, i32 pe, u32 *rec)
     return mask;
 }
 
-static void write_pixel(u32 *rdram, u8 *hidden, u32 *zcom, u32 *zdec, u32 *deltaz, u32 *u, i32 x, i32 y, u32 color, i32 z, i32 shadeAlpha, i32 cvg)
+static void write_pixel(u32 *rdram, u8 *hidden, u32 *zcom, u32 *zdec, u32 *deltaz, u32 *u, i32 x, i32 y, u32 color, i32 z, i32 shadeAlpha, i32 cvg, i32 spanDzPix, i32 spanDzEnc)
 {
     i32 alpha = (i32)(color >> 24) & 0xFF;
     if ((i32)u[U_CTA]) {
@@ -649,8 +716,8 @@ static void write_pixel(u32 *rdram, u8 *hidden, u32 *zcom, u32 *zdec, u32 *delta
     }
     u32 recolor = (color & 0xFFFFFFu) | ((u32)alpha << 24);
     if ((i32)u[U_USEDEPTH] && u[U_ZIMAGE] != 0) {
-        i32 dzPix = (i32)u[U_ZSOURCE] ? (i32)u[U_PRIMDZ] : (i32)u[U_SPANDZPIX];
-        i32 dzEnc = (i32)u[U_ZSOURCE] ? (i32)u[U_PRIMDZENC] : (i32)u[U_SPANDZPIXENC];
+        i32 dzPix = (i32)u[U_ZSOURCE] ? (i32)u[U_PRIMDZ] : spanDzPix;
+        i32 dzEnc = (i32)u[U_ZSOURCE] ? (i32)u[U_PRIMDZENC] : spanDzEnc;
         if ((i32)u[U_ZCOMPARE] && !zpass(rdram, hidden, zdec, deltaz, u, x, y, z, dzPix)) return;
         write_color(rdram, u, x, y, blend_pixel(rdram, u, x, y, recolor, shadeAlpha));
         if ((i32)u[U_ZUPDATE]) zstore(rdram, hidden, zcom, u, x, y, z, dzEnc);
@@ -659,35 +726,54 @@ static void write_pixel(u32 *rdram, u8 *hidden, u32 *zcom, u32 *zdec, u32 *delta
     write_color(rdram, u, x, y, blend_pixel(rdram, u, x, y, recolor, shadeAlpha));
 }
 
-static void rdpspan_core(u32 gid, u32 *rdram, u8 *hidden, u32 *spans, u32 *u, u32 *zcom, u32 *zdec, u32 *deltaz, u8 *tmem, u32 *tcdiv, u32 spanCount)
+static void rdpspan_core(u32 gid, u32 lane, u32 *rdram, u8 *hidden, u32 *spans, u32 *u, u32 *zcom, u32 *zdec, u32 *deltaz, u8 *tmem, u32 *tcdiv)
 {
-    if (gid >= spanCount) return;
-
     u32 *rec = spans + gid * SPAN_STRIDE;
     i32 row = (i32)rec[SPAN_ROW];
     i32 xstart = (i32)rec[SPAN_LX];
     i32 xendsc = (i32)rec[SPAN_RX];
     i32 xend = (i32)rec[SPAN_UNSCRX];
-    i32 r = (i32)rec[SPAN_R];
-    i32 g = (i32)rec[SPAN_G];
-    i32 b = (i32)rec[SPAN_B];
-    i32 a = (i32)rec[SPAN_A];
-    i32 z = (i32)rec[SPAN_Z];
-    i32 s = (i32)rec[SPAN_S];
-    i32 t = (i32)rec[SPAN_T];
-    i32 w = (i32)rec[SPAN_W];
 
-    i32 flip = (i32)u[U_FLIP];
+    if ((i32)u[U_FILL]) {
+        u32 fillColor = u[U_FILLCOLOR];
+        i32 size = (i32)u[U_COLORSIZE];
+        u32 image = u[U_COLORIMAGE];
+        i32 width = (i32)u[U_COLORWIDTH];
+        for (i32 fx = xstart + (i32)lane; fx <= xendsc; fx += 64) {
+            if (size == 2) {
+                i32 value = (fx & 1) == 0 ? (i32)((fillColor >> 16) & 0xFFFFu) : (i32)(fillColor & 0xFFFFu);
+                u32 at = image + (u32)(row * width + fx) * 2u;
+                store16(rdram, at, value);
+                hidden[(at & RDRAM_MASK) >> 1] = (u8)((value & 1) ? 3 : 0);
+            } else if (size == 3) {
+                rdram[((image + (u32)(row * width + fx) * 4u) & RDRAM_MASK) >> 2] = fillColor;
+            }
+        }
+        return;
+    }
+
+    i32 r0 = (i32)rec[SPAN_R];
+    i32 g0 = (i32)rec[SPAN_G];
+    i32 b0 = (i32)rec[SPAN_B];
+    i32 a0 = (i32)rec[SPAN_A];
+    i32 z0 = (i32)rec[SPAN_Z];
+    i32 s0 = (i32)rec[SPAN_S];
+    i32 t0 = (i32)rec[SPAN_T];
+    i32 w0 = (i32)rec[SPAN_W];
+
+    i32 flip = (i32)rec[SPAN_FLIP];
+    i32 spanDzPix = (i32)rec[SPAN_DZPIX];
+    i32 spanDzEnc = (i32)rec[SPAN_DZPIXENC];
     i32 scXh = (i32)u[U_SCISSOR_XH];
     i32 scXl = (i32)u[U_SCISSOR_XL];
-    i32 drinc = flip ? (i32)u[U_SPANS_DR] : -(i32)u[U_SPANS_DR];
-    i32 dginc = flip ? (i32)u[U_SPANS_DG] : -(i32)u[U_SPANS_DG];
-    i32 dbinc = flip ? (i32)u[U_SPANS_DB] : -(i32)u[U_SPANS_DB];
-    i32 dainc = flip ? (i32)u[U_SPANS_DA] : -(i32)u[U_SPANS_DA];
-    i32 dzinc = flip ? (i32)u[U_SPANS_DZ] : -(i32)u[U_SPANS_DZ];
-    i32 dsinc = flip ? (i32)u[U_SPANS_DS] : -(i32)u[U_SPANS_DS];
-    i32 dtinc = flip ? (i32)u[U_SPANS_DT] : -(i32)u[U_SPANS_DT];
-    i32 dwinc = flip ? (i32)u[U_SPANS_DW] : -(i32)u[U_SPANS_DW];
+    i32 drinc = flip ? (i32)rec[SPAN_DR] : -(i32)rec[SPAN_DR];
+    i32 dginc = flip ? (i32)rec[SPAN_DG] : -(i32)rec[SPAN_DG];
+    i32 dbinc = flip ? (i32)rec[SPAN_DB] : -(i32)rec[SPAN_DB];
+    i32 dainc = flip ? (i32)rec[SPAN_DA] : -(i32)rec[SPAN_DA];
+    i32 dzinc = flip ? (i32)rec[SPAN_DZ] : -(i32)rec[SPAN_DZ];
+    i32 dsinc = flip ? (i32)rec[SPAN_DS] : -(i32)rec[SPAN_DS];
+    i32 dtinc = flip ? (i32)rec[SPAN_DT] : -(i32)rec[SPAN_DT];
+    i32 dwinc = flip ? (i32)rec[SPAN_DW] : -(i32)rec[SPAN_DW];
     i32 xinc = flip ? 1 : -1;
 
     i32 length, scdiff;
@@ -700,14 +786,14 @@ static void rdpspan_core(u32 gid, u32 *rdram, u8 *hidden, u32 *spans, u32 *u, u3
     }
     if (scdiff != 0) {
         scdiff &= 0xFFF;
-        r += drinc * scdiff;
-        g += dginc * scdiff;
-        b += dbinc * scdiff;
-        a += dainc * scdiff;
-        s += dsinc * scdiff;
-        t += dtinc * scdiff;
-        w += dwinc * scdiff;
-        z += dzinc * scdiff;
+        r0 += drinc * scdiff;
+        g0 += dginc * scdiff;
+        b0 += dbinc * scdiff;
+        a0 += dainc * scdiff;
+        s0 += dsinc * scdiff;
+        t0 += dtinc * scdiff;
+        w0 += dwinc * scdiff;
+        z0 += dzinc * scdiff;
     }
 
     i32 forceBlend = (i32)u[U_FORCEBLEND];
@@ -721,9 +807,45 @@ static void rdpspan_core(u32 gid, u32 *rdram, u8 *hidden, u32 *spans, u32 *u, u3
     i32 ps = flip ? xendsc : xstart;
     i32 pe = flip ? xstart : xendsc;
 
-    i32 x = xendsc;
-    for (i32 pixel = 0; pixel <= length; pixel++) {
+    i32 texrect = (i32)rec[SPAN_TEXRECT];
+    i32 copy = (i32)u[U_COPY];
+    i32 trX0 = (i32)rec[SPAN_TR_X0], trY0 = (i32)rec[SPAN_TR_Y0];
+    i32 trS = (i32)rec[SPAN_TR_S], trT = (i32)rec[SPAN_TR_T];
+    i32 trDsdx = (i32)rec[SPAN_TR_DSDX], trDtdy = (i32)rec[SPAN_TR_DTDY];
+    i32 trShift = (i32)rec[SPAN_TR_SHIFT], trFlip = (i32)rec[SPAN_TR_FLIP];
+
+    for (i32 pixel = (i32)lane; pixel <= length; pixel += 64) {
+        i32 x = xendsc + xinc * pixel;
         if (x >= scXh && x < scXl) {
+            u32 step = (u32)pixel;
+            i32 r = (i32)((u32)r0 + (u32)drinc * step);
+            i32 g = (i32)((u32)g0 + (u32)dginc * step);
+            i32 b = (i32)((u32)b0 + (u32)dbinc * step);
+            i32 a = (i32)((u32)a0 + (u32)dainc * step);
+            i32 s = (i32)((u32)s0 + (u32)dsinc * step);
+            i32 t = (i32)((u32)t0 + (u32)dtinc * step);
+            i32 w = (i32)((u32)w0 + (u32)dwinc * step);
+            i32 z = (i32)((u32)z0 + (u32)dzinc * step);
+            if (texrect) {
+                i32 dx = x - trX0, dy = row - trY0;
+                i32 texS, texT;
+                if (trFlip) {
+                    texS = trS + ((dy * trDsdx) >> trShift);
+                    texT = trT + ((dx * trDtdy) >> trShift);
+                } else {
+                    texS = trS + ((dx * trDsdx) >> trShift);
+                    texT = trT + ((dy * trDtdy) >> trShift);
+                }
+                if (copy) {
+                    u32 texel = sample_point(u, tmem, texS, texT);
+                    if (!(i32)u[U_ALPHACOMPARE] || ((i32)(texel >> 24) & 0xFF) != 0)
+                        write_color(rdram, u, x, row, texel);
+                } else {
+                    u32 texel = textureOn ? sample_tex(u, tmem, texS, texT) : 0u;
+                    u32 color = combine(texel, texel, u[U_RECTSHADE], 0xFF, u);
+                    write_pixel(rdram, hidden, zcom, zdec, deltaz, u, x, row, color, 0, 0, 8, spanDzPix, spanDzEnc);
+                }
+            } else {
             i32 draw = 1;
             i32 drawCvg = 8;
             if (needCvg) {
@@ -748,26 +870,27 @@ static void rdpspan_core(u32 gid, u32 *rdram, u8 *hidden, u32 *spans, u32 *u, u3
                 }
                 u32 color = combine(texel, texel, shade, shadeAlpha, u);
                 i32 pixelZ = zcorrect((i32)u[U_ZSOURCE] ? ((i32)u[U_PRIMDEPTH] << 16) : z);
-                write_pixel(rdram, hidden, zcom, zdec, deltaz, u, x, row, color, pixelZ, shadeAlpha, drawCvg);
+                write_pixel(rdram, hidden, zcom, zdec, deltaz, u, x, row, color, pixelZ, shadeAlpha, drawCvg, spanDzPix, spanDzEnc);
+            }
             }
         }
-        r += drinc;
-        g += dginc;
-        b += dbinc;
-        a += dainc;
-        s += dsinc;
-        t += dtinc;
-        w += dwinc;
-        z += dzinc;
-        x += xinc;
     }
 }
 
 #ifdef __AMDGCN__
 __attribute__((amdgpu_kernel))
-void rdpspan(u32 *rdram, u8 *hidden, u32 *spans, u32 *uniforms, u32 *zcom, u32 *zdec, u32 *deltaz, u8 *tmem, u32 *tcdiv, u32 spanCount)
+void rdpspan(u32 *rdram, u8 *hidden, u32 *spans, u32 *uniforms, u32 *zcom, u32 *zdec, u32 *deltaz, u8 *tmem, u32 *tcdiv, u32 *rowStart, u32 rowCount)
 {
-    u32 gid = __builtin_amdgcn_workgroup_id_x() * 64u + __builtin_amdgcn_workitem_id_x();
-    rdpspan_core(gid, rdram, hidden, spans, uniforms, zcom, zdec, deltaz, tmem, tcdiv, spanCount);
+    u32 g = __builtin_amdgcn_workgroup_id_x();
+    if (g >= rowCount) return;
+
+    u32 lane = __builtin_amdgcn_workitem_id_x();
+    u32 begin = rowStart[g];
+    u32 end = rowStart[g + 1];
+
+    for (u32 i = begin; i < end; i++) {
+        rdpspan_core(i, lane, rdram, hidden, spans, uniforms, zcom, zdec, deltaz, tmem, tcdiv);
+        __builtin_amdgcn_s_waitcnt(0);
+    }
 }
 #endif

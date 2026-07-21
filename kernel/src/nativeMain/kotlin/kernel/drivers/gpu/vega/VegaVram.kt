@@ -47,7 +47,13 @@ object VegaVram {
 
         val alignedGpu = (regionGpu + cursor + align - 1UL) and (align - 1UL).inv()
         val at = alignedGpu - regionGpu
-        if (at + bytes > regionBytes) return null
+        if (at + bytes > regionBytes) {
+            KLog.info(
+                "gpu",
+                "vram exhausted: want ${KLog.mib(bytes)}, used ${KLog.mib(at)} of ${KLog.mib(regionBytes)}",
+            )
+            return null
+        }
 
         cursor = at + bytes
         val alloc = VramAlloc(regionGpu + at, regionCpu + at, bytes)
@@ -55,5 +61,5 @@ object VegaVram {
         return alloc
     }
 
-    private const val DRIVER_RESERVE: ULong = 0x2000000UL
+    private const val DRIVER_RESERVE: ULong = 0x4000000UL
 }
