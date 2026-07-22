@@ -14,6 +14,9 @@ const val PI_DOM2_PWD = 10
 const val PI_DOM2_PGS = 11
 const val PI_DOM2_RLS = 12
 
+const val RDRAM_PAGE = 2048
+const val BUFFER = 128
+
 const val PI_STATUS_DMA_BUSY = 1 shl 0
 const val PI_STATUS_IO_BUSY = 1 shl 1
 const val PI_STATUS_INTERRUPT = 1 shl 3
@@ -75,17 +78,48 @@ class PI(private val n64: N64) {
     }
 
     private fun dmaWrite() {
-        val cartAddr = regs[PI_CART_ADDR] and 1.inv()
-        val dramAddr = regs[PI_DRAM_ADDR] and 0xFFFFFE
-        var length = (regs[PI_WR_LEN] and 0xFFFFFF) + 1
-        if (length >= 0x7F && (length and 1) != 0) length++
-        if (length <= 0x80) length -= dramAddr and 7
+        var cart = regs[PI_CART_ADDR] and 1.inv()
+        var dram = regs[PI_DRAM_ADDR] and 0xFFFFFE
+        val misalign = dram and 7
+        var remaining = (regs[PI_WR_LEN] and 0xFFFFFF) + 1
 
-        n64.cartridge.dmaWrite(cartAddr, dramAddr, length)
+        var index = misalign
+        var first = true
+        var moved = 0
 
-        n64.createEvent(EVENT_PI, cycles(length))
-        regs[PI_DRAM_ADDR] = (regs[PI_DRAM_ADDR] + length + 7) and 7.inv()
-        regs[PI_CART_ADDR] = (regs[PI_CART_ADDR] + length + 1) and 1.inv()
+        while (remaining > 0) {
+            val pageLeft = RDRAM_PAGE - (dram and (RDRAM_PAGE - 1))
+            val room = BUFFER - index
+            var block = minOf(remaining, room, pageLeft)
+            var fetch = block
+
+            if ((block and 1) != 0) {
+                if (!first || block >= minOf(room, pageLeft) - 1) {
+                    block++
+                    fetch = block
+                } else {
+                    fetch = block + 1
+                }
+            }
+
+            val written = if (first) maxOf(0, block - misalign) else block
+            if (written > 0) {
+                n64.cartridge.dmaWrite(cart, dram, written)
+                dram += written
+            }
+
+            cart += fetch
+            remaining -= fetch
+            moved += fetch
+
+            if (index + block >= BUFFER) index = 0
+            dram = (dram + 7) and 7.inv()
+            first = false
+        }
+
+        n64.createEvent(EVENT_PI, cycles(moved))
+        regs[PI_DRAM_ADDR] = dram
+        regs[PI_CART_ADDR] = cart
         regs[PI_STATUS] = regs[PI_STATUS] or PI_STATUS_DMA_BUSY
     }
 
