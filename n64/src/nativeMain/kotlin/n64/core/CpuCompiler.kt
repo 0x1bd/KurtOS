@@ -605,7 +605,7 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
     private fun emitDenormBailDouble(slow: ArrayList<Int>) {
         asm.stmxcsr(RBX, CTX_MXCSR)
         asm.movRM(RAX, RBX, CTX_MXCSR, 0)
-        asm.testRI(RAX, 2)
+        asm.testRI(RAX, 0x12)
         slow.add(asm.jcc(CC_NE))
 
         asm.movqRX(RCX, 0)
@@ -633,7 +633,7 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
     private fun emitDenormBail(slow: ArrayList<Int>, minNormal: Int) {
         asm.stmxcsr(RBX, CTX_MXCSR)
         asm.movRM(RAX, RBX, CTX_MXCSR, 0)
-        asm.testRI(RAX, 2)
+        asm.testRI(RAX, 0x12)
         slow.add(asm.jcc(CC_NE))
 
         asm.movdRX(RCX, 0)
