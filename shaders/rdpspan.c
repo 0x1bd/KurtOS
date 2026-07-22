@@ -927,7 +927,7 @@ static inline void span_pixel(span_ctx c, const u32 *__restrict rec, const u32 *
     }
 }
 
-static void rdpspan_row(const u32 *__restrict rec, const u32 *__restrict u, i32 lane, u32 *__restrict rdram, u8 *__restrict hidden, const u32 *__restrict zcom, const u32 *__restrict zdec, const u32 *__restrict deltaz, const u8 *__restrict tmem, const u32 *__restrict tcdiv)
+static void rdpspan_chain(const u32 *__restrict rec, const u32 *__restrict u, i32 lane, u32 *__restrict rdram, u8 *__restrict hidden, const u32 *__restrict zcom, const u32 *__restrict zdec, const u32 *__restrict deltaz, const u8 *__restrict tmem, const u32 *__restrict tcdiv)
 {
     if ((i32)u[U_FILL]) {
         i32 xstart = (i32)rec[SPAN_LX];
@@ -961,16 +961,16 @@ static void rdpspan_one(const u32 *__restrict rec, const u32 *__restrict u, i32 
 #ifdef __AMDGCN__
 __attribute__((amdgpu_kernel))
 __attribute__((amdgpu_flat_work_group_size(64, 64)))
-void rdpspan(u32 *__restrict rdram, u8 *__restrict hidden, const u32 *__restrict spans, const u32 *__restrict uniforms, const u32 *__restrict zcom, const u32 *__restrict zdec, const u32 *__restrict deltaz, const u8 *__restrict tmem, const u32 *__restrict tcdiv, const u32 *rowStart, const u32 *rowSpans, u32 rowCount)
+void rdpspan(u32 *__restrict rdram, u8 *__restrict hidden, const u32 *__restrict spans, const u32 *__restrict uniforms, const u32 *__restrict zcom, const u32 *__restrict zdec, const u32 *__restrict deltaz, const u8 *__restrict tmem, const u32 *__restrict tcdiv, const u32 *chainStart, const u32 *chainSpans, u32 chainCount)
 {
     u32 t = __builtin_amdgcn_workgroup_id_x();
-    if (t >= rowCount) return;
+    if (t >= chainCount) return;
 
     i32 lane = (i32)__builtin_amdgcn_workitem_id_x();
-    u32 end = rowStart[t + 1];
+    u32 end = chainStart[t + 1];
 
-    for (u32 k = rowStart[t]; k < end; k++) {
-        rdpspan_row(spans + rowSpans[k] * SPAN_STRIDE, uniforms, lane,
+    for (u32 k = chainStart[t]; k < end; k++) {
+        rdpspan_chain(spans + chainSpans[k] * SPAN_STRIDE, uniforms, lane,
                     rdram, hidden, zcom, zdec, deltaz, tmem, tcdiv);
     }
 }

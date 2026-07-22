@@ -1,11 +1,7 @@
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.security.MessageDigest
-import org.gradle.api.tasks.PathSensitivity
+import kurtos.CompileShaders
 
 plugins {
     base
-    kotlin("multiplatform") version "2.3.21" apply false
 }
 
 group = "org.kvxd.kurtos"
@@ -107,40 +103,16 @@ val linkKurtOS by tasks.registering(Exec::class) {
 val shadersDir = layout.projectDirectory.dir("shaders")
 val compiledShadersDir = layout.buildDirectory.dir("shaders")
 
-val compileShaders by tasks.registering {
+val compileShaders by tasks.registering(CompileShaders::class) {
     group = "kurtos"
     description = "Compile shaders/*.c to gfx902 HSA code objects and extract .kbin blobs"
 
-    inputs.dir(shadersDir).withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.file(layout.projectDirectory.file("tools/extract_shader.py"))
-    outputs.dir(compiledShadersDir)
-
-    doLast {
-        val outDir = compiledShadersDir.get().asFile
-        outDir.mkdirs()
-        val sources = shadersDir.asFile.listFiles()?.filter { it.extension == "c" }?.sortedBy { it.name } ?: emptyList()
-        for (src in sources) {
-            val base = src.nameWithoutExtension
-            val hsaco = outDir.resolve("$base.hsaco")
-            val kbin = outDir.resolve("$base.kbin")
-
-            val compile = ProcessBuilder(
-                "clang", "-x", "c", "--target=amdgcn-amd-amdhsa", "-mcpu=gfx902",
-                "-O2", "-nogpulib", "-ffreestanding", "-fno-jump-tables",
-                src.absolutePath, "-o", hsaco.absolutePath,
-            ).redirectErrorStream(true).start()
-            val compileOut = compile.inputStream.bufferedReader().readText()
-            if (compile.waitFor() != 0) throw GradleException("shader compile failed for ${src.name}:\n$compileOut")
-
-            val extract = ProcessBuilder(
-                "python3", layout.projectDirectory.file("tools/extract_shader.py").asFile.absolutePath,
-                hsaco.absolutePath, kbin.absolutePath,
-            ).redirectErrorStream(true).start()
-            val extractOut = extract.inputStream.bufferedReader().readText()
-            if (extract.waitFor() != 0) throw GradleException("shader extract failed for ${src.name}:\n$extractOut")
-            logger.lifecycle("shader $base: $extractOut".trim())
-        }
-    }
+    sourceDir.set(shadersDir)
+    extractScript.set(layout.projectDirectory.file("tools/extract_shader.py"))
+    target.set("amdgcn-amd-amdhsa")
+    cpu.set("gfx902")
+    compilerArgs.set(listOf("-O2", "-nogpulib", "-ffreestanding", "-fno-jump-tables"))
+    outputDir.set(compiledShadersDir)
 }
 
 val buildImage by tasks.registering(Exec::class) {

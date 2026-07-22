@@ -1,10 +1,8 @@
 plugins {
-    kotlin("multiplatform")
+    id("kurtos-native")
 }
 
 kotlin {
-    linuxX64()
-
     sourceSets {
         val linuxX64Main by getting {
             dependencies {

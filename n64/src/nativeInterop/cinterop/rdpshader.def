@@ -14,13 +14,13 @@ static inline void rdpspan_exec(
     unsigned int *deltaz,
     unsigned char *tmem,
     unsigned int *tcdiv,
-    unsigned int *rowStart,
-    unsigned int *rowSpans,
-    unsigned int rowCount)
+    unsigned int *chainStart,
+    unsigned int *chainSpans,
+    unsigned int chainCount)
 {
-    if (gid >= rowCount) return;
-    for (unsigned int k = rowStart[gid]; k < rowStart[gid + 1]; k++) {
-        rdpspan_row(spans + rowSpans[k] * SPAN_STRIDE, uniforms, (int)lane,
+    if (gid >= chainCount) return;
+    for (unsigned int k = chainStart[gid]; k < chainStart[gid + 1]; k++) {
+        rdpspan_chain(spans + chainSpans[k] * SPAN_STRIDE, uniforms, (int)lane,
                     rdram, hidden, zcom, zdec, deltaz, tmem, tcdiv);
     }
 }

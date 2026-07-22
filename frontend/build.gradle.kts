@@ -1,5 +1,5 @@
 plugins {
-    kotlin("multiplatform")
+    id("kurtos-native")
 }
 
 val generateBuildInfo by tasks.registering {
@@ -26,8 +26,6 @@ val generateBuildInfo by tasks.registering {
 }
 
 kotlin {
-    linuxX64()
-
     sourceSets {
         val linuxX64Main by getting {
             dependencies {

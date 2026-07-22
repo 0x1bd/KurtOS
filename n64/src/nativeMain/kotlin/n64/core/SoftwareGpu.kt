@@ -58,8 +58,8 @@ class SoftwareGpu(private val order: Order = Order.Forward) : GpuBackend {
     override fun dispatch(kernel: GpuKernel, kernargs: GpuBuffer, groups: Int, threadsPerGroup: Int): Boolean {
         if (kernel !== SoftwareSpanKernel) return false
 
-        val rows = kernargs.readWord(22)
-        val limit = if (groups < rows) groups else rows
+        val chains = kernargs.readWord(22)
+        val limit = if (groups < chains) groups else chains
         if (limit <= 0) return true
 
         val rdram = pointer(kernargs, 0).toCPointer<UIntVar>()
@@ -71,8 +71,8 @@ class SoftwareGpu(private val order: Order = Order.Forward) : GpuBackend {
         val deltaz = pointer(kernargs, 12).toCPointer<UIntVar>()
         val tmem = pointer(kernargs, 14).toCPointer<UByteVar>()
         val tcdiv = pointer(kernargs, 16).toCPointer<UIntVar>()
-        val rowStart = pointer(kernargs, 18).toCPointer<UIntVar>()
-        val rowSpans = pointer(kernargs, 20).toCPointer<UIntVar>()
+        val chainStart = pointer(kernargs, 18).toCPointer<UIntVar>()
+        val chainSpans = pointer(kernargs, 20).toCPointer<UIntVar>()
 
         for (step in 0 until limit) {
             val group = if (order == Order.Reverse) limit - 1 - step else step
@@ -89,9 +89,9 @@ class SoftwareGpu(private val order: Order = Order.Forward) : GpuBackend {
                     deltaz,
                     tmem,
                     tcdiv,
-                    rowStart,
-                    rowSpans,
-                    rows.toUInt(),
+                    chainStart,
+                    chainSpans,
+                    chains.toUInt(),
                 )
             }
         }

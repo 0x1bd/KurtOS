@@ -26,8 +26,8 @@ class RdpSpanAccel(
     private val spansBufs = arrayOfNulls<GpuBuffer>(SLOTS)
     private val uniformBufs = arrayOfNulls<GpuBuffer>(SLOTS)
     private val kernargBufs = arrayOfNulls<GpuBuffer>(SLOTS)
-    private val rowStartBufs = arrayOfNulls<GpuBuffer>(SLOTS)
-    private val rowSpanBufs = arrayOfNulls<GpuBuffer>(SLOTS)
+    private val chainStartBufs = arrayOfNulls<GpuBuffer>(SLOTS)
+    private val chainSpanBufs = arrayOfNulls<GpuBuffer>(SLOTS)
     private var identityBuf: GpuBuffer? = null
     private var zcomBuf: GpuBuffer? = null
     private var zdecBuf: GpuBuffer? = null
@@ -111,8 +111,8 @@ class RdpSpanAccel(
             uniformBufs[i] = GfxPool.buffer("n64.uniform.$i", UNIFORM_WORDS) ?: return false
             kernargBufs[i] = GfxPool.buffer("n64.kernarg.$i", KERNARG_WORDS) ?: return false
             tmemBufs[i] = GfxPool.buffer("n64.tmem.$i", TMEM_WORDS * TMEM_SLOTS) ?: return false
-            rowStartBufs[i] = GfxPool.buffer("n64.rowstart.$i", SPANS + 1) ?: return false
-            rowSpanBufs[i] = GfxPool.buffer("n64.rowspans.$i", SPANS) ?: return false
+            chainStartBufs[i] = GfxPool.buffer("n64.chainstart.$i", SPANS + 1) ?: return false
+            chainSpanBufs[i] = GfxPool.buffer("n64.chainspans.$i", SPANS) ?: return false
         }
         val ident = GfxPool.buffer("n64.identity", SPANS + 1) ?: return false
         val zc = GfxPool.buffer("n64.zcom", zcom.size) ?: return false
@@ -248,8 +248,8 @@ class RdpSpanAccel(
             rs = id
             rl = id
         } else {
-            rs = rowStartBufs[s] ?: return false
-            rl = rowSpanBufs[s] ?: return false
+            rs = chainStartBufs[s] ?: return false
+            rl = chainSpanBufs[s] ?: return false
             rs.write(0, chainStart, 0, groups + 1)
             rl.write(0, chainSpans, 0, spanCount)
         }
