@@ -45,10 +45,6 @@ class Tile {
     var clampEnT = false
     var maskSClamped = 0
     var maskTClamped = 0
-    var cache: IntArray? = null
-    var cacheBuf: IntArray? = null
-    var cacheW = 0
-    var cacheH = 0
 
     fun updateDerivs() {
         clampDiffS = ((sh shr 2) - (sl shr 2)) and 0x3FF
@@ -57,7 +53,6 @@ class Tile {
         clampEnT = clampT != 0 || maskT == 0
         maskSClamped = if (maskS <= 10) maskS else 10
         maskTClamped = if (maskT <= 10) maskT else 10
-        cache = null
     }
 }
 
@@ -72,13 +67,11 @@ class Rdp(private val n64: N64) {
     private val commands = IntArray(44)
     private val edgeCoefficients = IntArray(44)
 
-    private val maskBits = IntArray(16) { if (it == 0) 0x3FF else (0xFFFF ushr (16 - it)) and 0x3FF }
     private val tcdivTable = IntArray(0x8000)
 
     private val zComTable = IntArray(0x40000)
     private val zDecTable = IntArray(0x4000)
     private val deltazLut = IntArray(0x10000)
-    private val bldivTable = IntArray(0x8000)
 
     private val spanAccel = RdpSpanAccel(n64.rdram, n64.hidden, tmem, zComTable, zDecTable, deltazLut, tcdivTable) { lo, hi ->
         n64.rdpInvalidateWords(lo, hi)
@@ -124,26 +117,6 @@ class Rdp(private val n64: N64) {
             }
         }
 
-        val ps = IntArray(9)
-        for (i in 0 until 0x8000) {
-            val d = (i shr 11) and 0xF
-            val n = i and 0x7FF
-            val invd = d.inv() and 0xF
-            var res = 0
-            var temp = invd + (n shr 8) + 1
-            ps[0] = temp and 7
-            for (k in 0 until 8) {
-                val nbit = (n shr (7 - k)) and 1
-                temp = if (res and (0x100 shr k) != 0) {
-                    invd + (ps[k] shl 1) + nbit + 1
-                } else {
-                    d + (ps[k] shl 1) + nbit
-                }
-                ps[k + 1] = temp and 7
-                if (temp and 0x10 != 0) res = res or (1 shl (7 - k))
-            }
-            bldivTable[i] = res and 0xFF
-        }
         for (i in 0 until 0x8000) {
             var k = 1
             while (k <= 14 && (i shl k) and 0x8000 == 0) k++
@@ -176,7 +149,6 @@ class Rdp(private val n64: N64) {
     private var alphaDither = 0
     private var rgbDither = 0
 
-    private var blendMask = 0
     private var forceBlend = false
     private var alphaCoverageSelect = false
     private var coverageTimesAlpha = false
@@ -247,22 +219,6 @@ class Rdp(private val n64: N64) {
     private val spanMajorX = IntArray(SPANS * 4)
     private val spanInvalY = IntArray(SPANS * 4)
 
-    private val pool = WorkerPool.shared
-    private val poolLanes = pool?.lanes ?: 1
-    private val laneCvg = Array(poolLanes) { IntArray(4096) }
-    private val lanePixels = LongArray(poolLanes * 8)
-
-    private var jobFirst = 0
-    private var jobLast = 0
-    private var jobFlip = false
-    private var jobTile: Tile? = null
-    private var jobShade = false
-    private var jobTexture = false
-    private var jobDepth = false
-
-    private val spanJob = PoolJob { lane, lanes ->
-        renderSpanRange(jobFirst, jobLast, lane, lanes, jobFlip, jobTile!!, jobShade, jobTexture, jobDepth)
-    }
     private val spanR = IntArray(SPANS)
     private val spanG = IntArray(SPANS)
     private val spanB = IntArray(SPANS)
@@ -281,8 +237,6 @@ class Rdp(private val n64: N64) {
     private var spansDw = 0
     private var spansDz = 0
 
-    private var lodFrac = 0
-
     var triangles = 0
         private set
     var rectangles = 0
@@ -297,24 +251,14 @@ class Rdp(private val n64: N64) {
     val gpuPixels: Long get() = spanAccel.offloadedPixels
     val gpuActive: Boolean get() = !spanAccel.disabled
 
-    var dbgTexCalls = 0L
-    var dbgTexGpu = 0L
-    var dbgTexGuard = 0L
-    var dbgTexFail = 0L
-    var dbgTexCsize = 0
     val spanFail: Int get() = spanAccel.failReason
-    val spanDisp: Long get() = spanAccel.dispatched
     val spanSubmitted: Long get() = spanAccel.spansSubmitted
     val spanGroups: Long get() = spanAccel.groupsSubmitted
     val spanBreakTmem: Long get() = spanAccel.breakTmem
     val spanBreakUniform: Long get() = spanAccel.breakUniform
     val spanBreakCapacity: Long get() = spanAccel.breakCapacity
     val spanBreakForced: Long get() = spanAccel.breakForced
-    val spanColorWords: Long get() = spanAccel.colorWordsRead
-    val spanZWords: Long get() = spanAccel.zWordsRead
-    val spanAuxWords: Long get() = spanAccel.auxWordsRead
     val spanRebinds: Int get() = spanAccel.rebinds
-    val spanRebindBits: Int get() = spanAccel.rebindBits
     val spanFlushes: Int get() = spanAccel.flushes
 
     fun reset() {
@@ -429,8 +373,6 @@ class Rdp(private val n64: N64) {
         var current = regsDpc[DPC_CURRENT]
         val end = regsDpc[DPC_END]
 
-        if (current < end) pool?.wake()
-
         while (current < end) {
             val word0 = readCommand(current)
             val opcode = (word0 ushr 24) and 0x3F
@@ -449,7 +391,6 @@ class Rdp(private val n64: N64) {
         }
 
         regsDpc[DPC_CURRENT] = current
-        pool?.rest()
     }
 
     fun flushDisplay() {
@@ -581,7 +522,6 @@ class Rdp(private val n64: N64) {
         lodEnable = w0 and (1 shl 16) != 0
         val tlutEnableNew = w0 and (1 shl 15) != 0
         val tlutTypeNew = (w0 ushr 14) and 1
-        if (tlutEnableNew != tlutEnable || tlutTypeNew != tlutType) invalidateTileCaches()
         tlutEnable = tlutEnableNew
         tlutType = tlutTypeNew
         sampleType = (w0 ushr 13) and 1
@@ -615,7 +555,6 @@ class Rdp(private val n64: N64) {
         zSourceSelect = w1 and (1 shl 2) != 0
         ditherAlpha = w1 and (1 shl 1) != 0
         alphaCompare = w1 and (1 shl 0) != 0
-        classifyCombine()
     }
 
     private fun setCombine() {
@@ -640,40 +579,6 @@ class Rdp(private val n64: N64) {
         combineRgbD[1] = (w1 ushr 6) and 7
         combineAlphaB[1] = (w1 ushr 3) and 7
         combineAlphaD[1] = w1 and 7
-        classifyCombine()
-    }
-
-    private var combineFast = 0
-
-    private fun classifyCombine() {
-        combineFast = 0
-        if (cycleType != CYCLE_1) return
-        val rgb = combineRgbA[0] or (combineRgbB[0] shl 4) or (combineRgbC[0] shl 8) or (combineRgbD[0] shl 13)
-        val alpha = combineAlphaA[0] or (combineAlphaB[0] shl 3) or (combineAlphaC[0] shl 6) or (combineAlphaD[0] shl 9)
-        combineFast = when {
-            rgb == (15 or (15 shl 4) or (31 shl 8) or (4 shl 13)) &&
-                alpha == (7 or (7 shl 3) or (7 shl 6) or (4 shl 9)) -> 1
-
-            rgb == (1 or (15 shl 4) or (4 shl 8) or (7 shl 13)) &&
-                alpha == (7 or (7 shl 3) or (7 shl 6) or (4 shl 9)) -> 2
-
-            rgb == (1 or (15 shl 4) or (5 shl 8) or (7 shl 13)) &&
-                alpha == (1 or (7 shl 3) or (5 shl 6) or (7 shl 9)) -> 3
-
-            rgb == (15 or (15 shl 4) or (31 shl 8) or (1 shl 13)) &&
-                alpha == (7 or (7 shl 3) or (7 shl 6) or (4 shl 9)) -> 4
-
-            rgb == (15 or (15 shl 4) or (31 shl 8) or (1 shl 13)) &&
-                alpha == (7 or (7 shl 3) or (7 shl 6) or (1 shl 9)) -> 5
-
-            rgb == (1 or (15 shl 4) or (4 shl 8) or (7 shl 13)) &&
-                alpha == (7 or (7 shl 3) or (7 shl 6) or (1 shl 9)) -> 6
-
-            rgb == (3 or (4 shl 4) or (1 shl 8) or (4 shl 13)) &&
-                alpha == (3 or (4 shl 3) or (1 shl 6) or (4 shl 9)) -> 7
-
-            else -> 0
-        }
     }
 
     private fun setTile() {
@@ -710,7 +615,6 @@ class Rdp(private val n64: N64) {
     }
 
     private fun loadTile() {
-        invalidateTileCaches()
         val w0 = commands[0]
         val w1 = commands[1]
         val tile = tiles[(w1 ushr 24) and 7]
@@ -783,7 +687,6 @@ class Rdp(private val n64: N64) {
     }
 
     private fun loadBlock() {
-        invalidateTileCaches()
         val w0 = commands[0]
         val w1 = commands[1]
         val tile = tiles[(w1 ushr 24) and 7]
@@ -845,7 +748,6 @@ class Rdp(private val n64: N64) {
     }
 
     private fun loadTlut() {
-        invalidateTileCaches()
         val w0 = commands[0]
         val w1 = commands[1]
         val tile = tiles[(w1 ushr 24) and 7]
@@ -884,21 +786,18 @@ class Rdp(private val n64: N64) {
         val top = maxOf(yh, scissorYh)
         val bottom = minOf(yl, scissorYl - 1)
 
-        if (right < left || bottom < top || (colorSize != 2 && colorSize != 3)) return
+        if (right < left || bottom < top) return
 
         if (cycleType == CYCLE_FILL) {
             buildFillUniform()
-            val drawn = spanAccel.renderFill(spanUniforms, top, bottom, left, right, tmemGeneration)
-            if (drawn >= 0) pixels += drawn
+            pixels += spanAccel.renderFill(spanUniforms, top, bottom, left, right, tmemGeneration)
             return
         }
 
         buildSolidRectUniform(left, top)
         val drawn = spanAccel.renderTexrect(spanUniforms, top, bottom, left, right, tmemGeneration)
-        if (drawn >= 0) {
-            pixels += drawn
-            workPixels += drawn
-        }
+        pixels += drawn
+        workPixels += drawn
     }
 
     private fun textureRectangle(flip: Boolean) {
@@ -931,63 +830,22 @@ class Rdp(private val n64: N64) {
         val tile = tiles[tileIndex]
 
         if (n64.debugTrace) {
-            val corner = if (cycleType == CYCLE_COPY) sampleCopy(tile, s, t) else sample(tile, s, t)
             n64.debugLog.add(
                 "texrect x=$x0-$x1 y=$y0-$y1 fmt=${tile.format}/${tile.size} tmem=${tile.tmem}" +
                     " line=${tile.line} pal=${tile.palette} tlut=$tlutEnable/$tlutType cycle=$cycleType" +
-                    " s=$s t=$t dsdx=$dsdx dtdy=$dtdy texel=0x${corner.toUInt().toString(16)}" +
+                    " s=$s t=$t dsdx=$dsdx dtdy=$dtdy" +
                     " combine=${combineRgbA[0]}/${combineRgbB[0]}/${combineRgbC[0]}/${combineRgbD[0]}" +
                     " alpha=${combineAlphaA[0]}/${combineAlphaB[0]}/${combineAlphaC[0]}/${combineAlphaD[0]} f=${n64.frameCount}",
             )
         }
 
+        if (right < left || bottom < top) return
+
         val coordShift = if (cycleType == CYCLE_COPY) 0 else 5
-
-        if (right >= left && bottom >= top && (colorSize == 2 || colorSize == 3)) {
-            buildTexrectUniform(flip, tile, s, t, dsdx, dtdy, x0, y0, coordShift)
-            val drawn = spanAccel.renderTexrect(spanUniforms, top, bottom, left, right, tmemGeneration)
-            if (drawn >= 0) {
-                pixels += drawn
-                workPixels += drawn
-                return
-            }
-        }
-
-        spanAccel.flush()
-
-        if (cycleType != CYCLE_COPY) prepareTileCache(tile)
-
-        var count = 0L
-        for (y in top..bottom) {
-            for (x in left..right) {
-                val dx = x - x0
-                val dy = y - y0
-
-                val texS: Int
-                val texT: Int
-                if (flip) {
-                    texS = s + ((dy * dsdx) shr coordShift)
-                    texT = t + ((dx * dtdy) shr coordShift)
-                } else {
-                    texS = s + ((dx * dsdx) shr coordShift)
-                    texT = t + ((dy * dtdy) shr coordShift)
-                }
-
-                if (cycleType == CYCLE_COPY) {
-                    val texel = sampleCopy(tile, texS, texT)
-                    if (!alphaCompare || (texel ushr 24) and 0xFF != 0) {
-                        writeColor(x, y, texel)
-                    }
-                } else {
-                    val texel = sample(tile, texS, texT)
-                    val color = combine(texel, texel, 0xFFFFFFFF.toInt(), 0xFF, 0, 0)
-                    count++
-                    writePixel(x, y, color, 0x3FFFF, false)
-                }
-            }
-        }
-        pixels += count
-        workPixels += count
+        buildTexrectUniform(flip, tile, s, t, dsdx, dtdy, x0, y0, coordShift)
+        val drawn = spanAccel.renderTexrect(spanUniforms, top, bottom, left, right, tmemGeneration)
+        pixels += drawn
+        workPixels += drawn
     }
 
     private fun triangle(opcode: Int) {
@@ -1287,76 +1145,6 @@ class Rdp(private val n64: N64) {
         renderSpans(yhlimit shr 2, yllimit shr 2, flip, tile, shade, texture, depth)
     }
 
-    private fun rightcvghex(x: Int, fmask: Int): Int {
-        val covered = ((x and 7) + 1) shr 1
-        return (0xF0 ushr covered) and fmask
-    }
-
-    private fun leftcvghex(x: Int, fmask: Int): Int {
-        val covered = ((x and 7) + 1) shr 1
-        return (0xF ushr covered) and fmask
-    }
-
-    private fun popcount8(v: Int): Int {
-        var x = v and 0xFF
-        x -= (x shr 1) and 0x55
-        x = (x and 0x33) + ((x shr 2) and 0x33)
-        return (x + (x shr 4)) and 0xF
-    }
-
-    private fun computeCoverage(i: Int, flip: Boolean, cvgBuf: IntArray) {
-        val purgestart = if (flip) spanRx[i] else spanLx[i]
-        val purgeend = if (flip) spanLx[i] else spanRx[i]
-        if (purgestart < 0 || purgeend >= cvgBuf.size || purgeend - purgestart < 0) return
-
-        for (k in purgestart..purgeend) cvgBuf[k] = 0xFF
-
-        for (subrow in 0 until 4) {
-            val fmask = 0xA ushr (subrow and 1)
-            val maskshift = (subrow - 2) and 4
-            val fmaskshifted = fmask shl maskshift
-
-            if (spanInvalY[i * 4 + subrow] == 0) {
-                val minorcur = spanMinorX[i * 4 + subrow]
-                val majorcur = spanMajorX[i * 4 + subrow]
-                val minorcurint = minorcur shr 3
-                val majorcurint = majorcur shr 3
-
-                if (flip) {
-                    for (k in purgestart..minOf(majorcurint, purgeend)) cvgBuf[k] = cvgBuf[k] and fmaskshifted.inv()
-                    for (k in maxOf(minorcurint, purgestart)..purgeend) cvgBuf[k] = cvgBuf[k] and fmaskshifted.inv()
-                    if (minorcurint > majorcurint) {
-                        if (minorcurint in purgestart..purgeend) {
-                            cvgBuf[minorcurint] = cvgBuf[minorcurint] or (rightcvghex(minorcur, fmask) shl maskshift)
-                        }
-                        if (majorcurint in purgestart..purgeend) {
-                            cvgBuf[majorcurint] = cvgBuf[majorcurint] or (leftcvghex(majorcur, fmask) shl maskshift)
-                        }
-                    } else if (minorcurint == majorcurint && majorcurint in purgestart..purgeend) {
-                        val samecvg = rightcvghex(minorcur, fmask) and leftcvghex(majorcur, fmask)
-                        cvgBuf[majorcurint] = cvgBuf[majorcurint] or (samecvg shl maskshift)
-                    }
-                } else {
-                    for (k in purgestart..minOf(minorcurint, purgeend)) cvgBuf[k] = cvgBuf[k] and fmaskshifted.inv()
-                    for (k in maxOf(majorcurint, purgestart)..purgeend) cvgBuf[k] = cvgBuf[k] and fmaskshifted.inv()
-                    if (majorcurint > minorcurint) {
-                        if (minorcurint in purgestart..purgeend) {
-                            cvgBuf[minorcurint] = cvgBuf[minorcurint] or (leftcvghex(minorcur, fmask) shl maskshift)
-                        }
-                        if (majorcurint in purgestart..purgeend) {
-                            cvgBuf[majorcurint] = cvgBuf[majorcurint] or (rightcvghex(majorcur, fmask) shl maskshift)
-                        }
-                    } else if (minorcurint == majorcurint && majorcurint in purgestart..purgeend) {
-                        val samecvg = leftcvghex(minorcur, fmask) and rightcvghex(majorcur, fmask)
-                        cvgBuf[majorcurint] = cvgBuf[majorcurint] or (samecvg shl maskshift)
-                    }
-                }
-            } else {
-                for (k in purgestart..purgeend) cvgBuf[k] = cvgBuf[k] and fmaskshifted.inv()
-            }
-        }
-    }
-
     private fun renderSpans(
         start: Int,
         end: Int,
@@ -1370,57 +1158,18 @@ class Rdp(private val n64: N64) {
         val last = minOf(end, SPANS - 1)
         if (last < first) return
 
-        if (spanEligible()) {
-            buildSpanUniforms(flip, shade, texture, depth, tile)
-            val drawn = spanAccel.render(
-                first, last, spanUniforms,
-                spanValid, spanLx, spanRx, spanUnscrx,
-                spanR, spanG, spanB, spanA,
-                spanZ, spanS, spanT, spanW,
-                spanMinorX, spanMajorX, spanInvalY,
-                tmemGeneration,
-            )
-            if (drawn >= 0) {
-                pixels += drawn
-                workPixels += drawn
-                return
-            }
-        }
-
-        spanAccel.flush()
-        if (texture) prepareTileCache(tile)
-
-        val pool = pool
-        if (pool != null && !diagEnabled && last - first >= PARALLEL_MIN_ROWS) {
-            jobFirst = first
-            jobLast = last
-            jobFlip = flip
-            jobTile = tile
-            jobShade = shade
-            jobTexture = texture
-            jobDepth = depth
-            pool.run(spanJob)
-        } else {
-            renderSpanRange(first, last, 0, 1, flip, tile, shade, texture, depth)
-        }
-
-        var total = 0L
-        for (lane in 0 until poolLanes) {
-            total += lanePixels[lane * 8]
-            lanePixels[lane * 8] = 0
-        }
-        pixels += total
-        workPixels += total
-
-        dbgTexCalls += total
-        dbgTexGuard = dbgTexGuard or (1L shl (cycleType and 3))
-        dbgTexGpu = dbgTexGpu or (1L shl (colorSize and 3))
-        if (spanEligible()) dbgTexFail++
-        dbgTexCsize++
+        buildSpanUniforms(flip, shade, texture, depth, tile)
+        val drawn = spanAccel.render(
+            first, last, spanUniforms,
+            spanValid, spanLx, spanRx, spanUnscrx,
+            spanR, spanG, spanB, spanA,
+            spanZ, spanS, spanT, spanW,
+            spanMinorX, spanMajorX, spanInvalY,
+            tmemGeneration,
+        )
+        pixels += drawn
+        workPixels += drawn
     }
-
-    private fun spanEligible(): Boolean =
-        (cycleType == CYCLE_1 || cycleType == CYCLE_2) && (colorSize == 2 || colorSize == 3)
 
     private fun buildSpanUniforms(flip: Boolean, shade: Boolean, texture: Boolean, depth: Boolean, tile: Tile) {
         val u = spanUniforms
@@ -1569,133 +1318,6 @@ class Rdp(private val n64: N64) {
         u[RdpSpanAccel.U_TR_FLIP] = if (flip) 1 else 0
     }
 
-    private fun renderSpanRange(
-        first: Int,
-        last: Int,
-        lane: Int,
-        lanes: Int,
-        flip: Boolean,
-        tile: Tile,
-        shade: Boolean,
-        texture: Boolean,
-        depth: Boolean,
-    ) {
-        val cvgBuf = laneCvg[lane]
-        var count = 0L
-
-        val drinc = if (flip) spansDr else -spansDr
-        val dginc = if (flip) spansDg else -spansDg
-        val dbinc = if (flip) spansDb else -spansDb
-        val dainc = if (flip) spansDa else -spansDa
-        val dsinc = if (flip) spansDs else -spansDs
-        val dtinc = if (flip) spansDt else -spansDt
-        val dwinc = if (flip) spansDw else -spansDw
-        val dzinc = if (flip) spansDz else -spansDz
-        val xinc = if (flip) 1 else -1
-
-        var i = first + lane
-        while (i <= last) {
-            if (!spanValid[i]) {
-                i += lanes
-                continue
-            }
-
-            val xstart = spanLx[i]
-            val xend = spanUnscrx[i]
-            val xendsc = spanRx[i]
-
-            var r = spanR[i]
-            var g = spanG[i]
-            var b = spanB[i]
-            var a = spanA[i]
-            var s = spanS[i]
-            var t = spanT[i]
-            var w = spanW[i]
-            var z = spanZ[i]
-
-            val length: Int
-            var scdiff: Int
-
-            if (flip) {
-                length = xstart - xendsc
-                scdiff = xendsc - xend
-            } else {
-                length = xendsc - xstart
-                scdiff = xend - xendsc
-            }
-
-            if (scdiff != 0) {
-                scdiff = scdiff and 0xFFF
-                r += drinc * scdiff
-                g += dginc * scdiff
-                b += dbinc * scdiff
-                a += dainc * scdiff
-                s += dsinc * scdiff
-                t += dtinc * scdiff
-                w += dwinc * scdiff
-                z += dzinc * scdiff
-            }
-
-            val ownerMode = forceBlend && !coverageTimesAlpha && !alphaCoverageSelect
-            val needCvg = coverageTimesAlpha || alphaCoverageSelect || ownerMode
-            if (needCvg) computeCoverage(i, flip, cvgBuf)
-
-            var x = xendsc
-
-            for (pixel in 0..length) {
-                if (x >= scissorXh && x < scissorXl) {
-                    var draw = true
-                    var drawCvg = 8
-                    if (needCvg) {
-                        val mask = cvgBuf[x]
-                        val cvg = popcount8(mask)
-                        if (ownerMode) {
-                            draw = cvg > 4 || (cvg == 4 && (mask and 0x80) != 0)
-                            drawCvg = 8
-                        } else {
-                            draw = cvg != 0
-                            drawCvg = cvg
-                        }
-                    }
-                    if (draw) {
-                        val shadeColor = if (shade) {
-                            pack(clamp255(r shr 16), clamp255(g shr 16), clamp255(b shr 16), clamp255(a shr 16))
-                        } else {
-                            0
-                        }
-
-                        val texel = if (texture) {
-                            val coords = divide(s, t, w)
-                            sample(tile, (coords ushr 32).toInt(), coords.toInt())
-                        } else {
-                            0
-                        }
-
-                        val pixelZ = zCorrect(if (zSourceSelect) primDepth shl 16 else z)
-
-                        val color = combine(texel, texel, shadeColor, (shadeColor ushr 24) and 0xFF, 0, 0)
-                        count++
-                        writePixel(x, i, color, pixelZ, depth, (shadeColor ushr 24) and 0xFF, drawCvg)
-                    }
-                }
-
-                r += drinc
-                g += dginc
-                b += dbinc
-                a += dainc
-                s += dsinc
-                t += dtinc
-                w += dwinc
-                z += dzinc
-                x += xinc
-            }
-
-            i += lanes
-        }
-
-        lanePixels[lane * 8] += count
-    }
-
     private fun high(value: Int): Int = value and 0xFFFF0000.toInt()
 
     private fun highShifted(value: Int): Int = (value shl 16) and 0xFFFF0000.toInt()
@@ -1713,579 +1335,8 @@ class Rdp(private val n64: N64) {
 
     private fun sx16(value: Int): Int = value.toShort().toInt()
 
-    private fun divide(s: Int, t: Int, w: Int): Long {
-        val ss = (s shr 16) and 0xFFFF
-        val st = (t shr 16) and 0xFFFF
-        val sw = (w shr 16) and 0xFFFF
-
-        var sss: Int
-        var sst: Int
-
-        if (!perspective) {
-            sss = sx16(ss) and 0x1FFFF
-            sst = sx16(st) and 0x1FFFF
-        } else {
-            val wCarry = sx16(sw) <= 0
-            val wIndex = sw and 0x7FFF
-
-            val entry = tcdivTable[wIndex]
-            val tluRcp = entry shr 4
-            val shift = entry and 0xF
-
-            val sprod = sx16(ss) * tluRcp
-            val tprod = sx16(st) * tluRcp
-
-            val tempmask = ((1 shl 30) - 1) and -((1 shl 29) shr shift)
-            val outOfBoundsS = sprod and tempmask
-            val outOfBoundsT = tprod and tempmask
-
-            var temps: Int
-            var tempt: Int
-            if (shift != 0xE) {
-                temps = sprod shr (13 - shift)
-                tempt = tprod shr (13 - shift)
-            } else {
-                temps = sprod shl 1
-                tempt = tprod shl 1
-            }
-
-            var overUnderS = 0
-            var overUnderT = 0
-            if (outOfBoundsS != tempmask && outOfBoundsS != 0) {
-                overUnderS = if (sprod and (1 shl 29) == 0) 2 shl 17 else 1 shl 17
-            }
-            if (outOfBoundsT != tempmask && outOfBoundsT != 0) {
-                overUnderT = if (tprod and (1 shl 29) == 0) 2 shl 17 else 1 shl 17
-            }
-            if (wCarry) {
-                overUnderS = overUnderS or (2 shl 17)
-                overUnderT = overUnderT or (2 shl 17)
-            }
-
-            sss = (temps and 0x1FFFF) or overUnderS
-            sst = (tempt and 0x1FFFF) or overUnderT
-        }
-
-        return ((tclodClamp(sss).toLong() and 0xFFFFFFFFL) shl 32) or (tclodClamp(sst).toLong() and 0xFFFFFFFFL)
-    }
-
-    private fun tclodClamp(coord: Int): Int = when {
-        coord and 0x40000 != 0 -> 0x7FFF
-        coord and 0x20000 != 0 -> 0x8000
-        else -> when (coord and 0x18000) {
-            0x8000 -> 0x7FFF
-            0x10000 -> 0x8000
-            else -> coord and 0xFFFF
-        }
-    }
-
-    private fun tcShift(coord: Int, shifter: Int): Int =
-        if (shifter < 11) sx16(coord) shr shifter else sx16(coord shl (16 - shifter))
-
-    private fun sampleCopy(tile: Tile, rawS: Int, rawT: Int): Int {
-        var s = tcShift(rawS, tile.shiftS)
-        val maxS = (s shr 3) >= tile.sh
-        var t = tcShift(rawT, tile.shiftT)
-        val maxT = (t shr 3) >= tile.th
-
-        s -= tile.sl shl 3
-        t -= tile.tl shl 3
-
-        s = if (tile.clampEnS) {
-            when {
-                maxS -> tile.clampDiffS
-                s and 0x10000 != 0 -> 0
-                else -> s shr 5
-            }
-        } else {
-            s shr 5
-        }
-        t = if (tile.clampEnT) {
-            when {
-                maxT -> tile.clampDiffT
-                t and 0x10000 != 0 -> 0
-                else -> t shr 5
-            }
-        } else {
-            t shr 5
-        }
-
-        if (tile.maskS != 0) {
-            if (tile.mirrorS != 0 && (s shr tile.maskSClamped) and 1 != 0) s = s.inv()
-            s = s and maskBits[tile.maskS]
-        }
-        if (tile.maskT != 0) {
-            if (tile.mirrorT != 0 && (t shr tile.maskTClamped) and 1 != 0) t = t.inv()
-            t = t and maskBits[tile.maskT]
-        }
-
-        return fetch(tile, s, t)
-    }
-
-    private fun sample(tile: Tile, rawS: Int, rawT: Int): Int {
-        var s = tcShift(rawS, tile.shiftS)
-        val maxS = (s shr 3) >= tile.sh
-        var t = tcShift(rawT, tile.shiftT)
-        val maxT = (t shr 3) >= tile.th
-
-        s -= tile.sl shl 3
-        t -= tile.tl shl 3
-
-        if (sampleType == 0 && !tlutEnable) {
-            s = if (tile.clampEnS) {
-                when {
-                    maxS -> tile.clampDiffS
-                    s and 0x10000 != 0 -> 0
-                    else -> s shr 5
-                }
-            } else {
-                s shr 5
-            }
-            t = if (tile.clampEnT) {
-                when {
-                    maxT -> tile.clampDiffT
-                    t and 0x10000 != 0 -> 0
-                    else -> t shr 5
-                }
-            } else {
-                t shr 5
-            }
-
-            if (tile.maskS != 0) {
-                if (tile.mirrorS != 0 && (s shr tile.maskSClamped) and 1 != 0) s = s.inv()
-                s = s and maskBits[tile.maskS]
-            }
-            if (tile.maskT != 0) {
-                if (tile.mirrorT != 0 && (t shr tile.maskTClamped) and 1 != 0) t = t.inv()
-                t = t and maskBits[tile.maskT]
-            }
-
-            return fetchCached(tile, s, t)
-        }
-
-        var sFrac = s and 0x1F
-        var tFrac = t and 0x1F
-
-        if (tile.clampEnS) {
-            when {
-                maxS -> {
-                    s = tile.clampDiffS
-                    sFrac = 0
-                }
-
-                s and 0x10000 != 0 -> {
-                    s = 0
-                    sFrac = 0
-                }
-
-                else -> s = s shr 5
-            }
-        } else {
-            s = s shr 5
-        }
-
-        if (tile.clampEnT) {
-            when {
-                maxT -> {
-                    t = tile.clampDiffT
-                    tFrac = 0
-                }
-
-                t and 0x10000 != 0 -> {
-                    t = 0
-                    tFrac = 0
-                }
-
-                else -> t = t shr 5
-            }
-        } else {
-            t = t shr 5
-        }
-
-        var sDiff: Int
-        var tDiff: Int
-
-        if (tile.maskS != 0) {
-            val bits = maskBits[tile.maskS]
-            if (tile.mirrorS != 0) {
-                val wrap = (s shr tile.maskSClamped) and 1
-                if (wrap != 0) s = s.inv()
-                s = s and bits
-                sDiff = if (((s - wrap) and bits) == bits) 0 else 1 - (wrap shl 1)
-            } else {
-                s = s and bits
-                sDiff = if (s == bits) -s else 1
-            }
-        } else {
-            sDiff = 1
-        }
-
-        if (tile.maskT != 0) {
-            val bits = maskBits[tile.maskT]
-            if (tile.mirrorT != 0) {
-                val wrap = (t shr tile.maskTClamped) and 1
-                if (wrap != 0) t = t.inv()
-                t = t and bits
-                tDiff = if (((t - wrap) and bits) == bits) 0 else 1 - (wrap shl 1)
-            } else {
-                t = t and bits
-                tDiff = if (t == bits) -(t and 0xFF) else 1
-            }
-        } else {
-            tDiff = 1
-        }
-
-        if (sampleType == 0) {
-            sDiff = 0
-            tDiff = 0
-        }
-
-        val t0 = fetchCached(tile, s, t)
-        val t1 = fetchCached(tile, s + sDiff, t)
-        val t2 = fetchCached(tile, s, t + tDiff)
-        val t3 = fetchCached(tile, s + sDiff, t + tDiff)
-
-        val upper = (sFrac + tFrac) and 0x20 != 0
-        val center = midTexel && sFrac == 0x10 && tFrac == 0x10
-
-        var result = 0
-        for (index in 0 until 4) {
-            val shift = index * 8
-            val c0 = (t0 ushr shift) and 0xFF
-            val c1 = (t1 ushr shift) and 0xFF
-            val c2 = (t2 ushr shift) and 0xFF
-            val c3 = (t3 ushr shift) and 0xFF
-
-            val value = if (center) {
-                c3 + ((((c1 + c2) shl 6) - (c3 shl 7) + ((c3.inv() + c0) shl 6) + 0xC0) shr 8)
-            } else if (upper) {
-                val invSf = 0x20 - sFrac
-                val invTf = 0x20 - tFrac
-                c3 + ((invSf * (c2 - c3) + invTf * (c1 - c3) + 0x10) shr 5)
-            } else {
-                c0 + ((sFrac * (c1 - c0) + tFrac * (c2 - c0) + 0x10) shr 5)
-            }
-
-            result = result or (clamp255(value) shl shift)
-        }
-        return result
-    }
-
-    private fun invalidateTileCaches() {
-        for (tile in tiles) tile.cache = null
-    }
-
-    private fun prepareTileCache(tile: Tile) {
-        if (tile.cache != null) return
-
-        val boundS = if (tile.maskS != 0) {
-            if (tile.clampEnS) maxOf(maskBits[tile.maskS], tile.clampDiffS) else maskBits[tile.maskS]
-        } else {
-            tile.clampDiffS
-        }
-        val boundT = if (tile.maskT != 0) {
-            if (tile.clampEnT) maxOf(maskBits[tile.maskT], tile.clampDiffT) else maskBits[tile.maskT]
-        } else {
-            tile.clampDiffT
-        }
-
-        val w = boundS + 3
-        val h = boundT + 3
-        if (w * h > 262144) return
-
-        var cache = tile.cacheBuf
-        if (cache == null || cache.size < w * h) {
-            cache = IntArray(w * h)
-            tile.cacheBuf = cache
-        }
-        tile.cacheW = w
-        tile.cacheH = h
-
-        var idx = 0
-        for (t in -1..boundT + 1) {
-            for (s in -1..boundS + 1) {
-                cache[idx++] = fetch(tile, s, t)
-            }
-        }
-        tile.cache = cache
-    }
-
-    private fun fetchCached(tile: Tile, s: Int, t: Int): Int {
-        val cache = tile.cache
-        val w = tile.cacheW
-        if (cache == null || s < -1 || t < -1 || s >= w - 1 || t >= tile.cacheH - 1) return fetch(tile, s, t)
-        return cache[(t + 1) * w + s + 1]
-    }
-
-    private fun tmemByte(at: Int, row: Int): Int {
-        var offset = at
-        if (row and 1 != 0) offset = offset xor 4
-        return tmem[offset and 0xFFF].toInt() and 0xFF
-    }
-
-    private fun fetch(tile: Tile, s: Int, t: Int): Int {
-        val base = tile.tmem * 8 + t * tile.line * 8
-
-        return when (tile.size) {
-            0 -> {
-                val at = base + s / 2
-                val byte = tmemByte(at, t)
-                val nibble = if (s and 1 == 0) (byte ushr 4) and 0xF else byte and 0xF
-                decode4(tile, nibble)
-            }
-
-            1 -> {
-                val byte = tmemByte(base + s, t)
-                decode8(tile, byte)
-            }
-
-            2 -> {
-                val at = base + s * 2
-                val value = (tmemByte(at, t) shl 8) or tmemByte(at + 1, t)
-                decode16(tile, value)
-            }
-
-            else -> {
-                val at = base + s * 2
-                var high = at
-                if (t and 1 != 0) high = high xor 4
-                val r = tmem[high and 0x7FF].toInt() and 0xFF
-                val g = tmem[(high + 1) and 0x7FF].toInt() and 0xFF
-                val b = tmem[((high and 0x7FF) or 0x800)].toInt() and 0xFF
-                val a = tmem[(((high + 1) and 0x7FF) or 0x800)].toInt() and 0xFF
-                pack(r, g, b, a)
-            }
-        }
-    }
-
-    private fun decode4(tile: Tile, value: Int): Int = when (tile.format) {
-        2 -> palette(tile.palette * 16 + value)
-        3 -> {
-            val three = (value ushr 1) and 7
-            val intensity = (three shl 5) or (three shl 2) or (three shr 1)
-            val alpha = if (value and 1 != 0) 0xFF else 0
-            pack(intensity, intensity, intensity, alpha)
-        }
-
-        else -> {
-            val intensity = value * 17
-            pack(intensity, intensity, intensity, intensity)
-        }
-    }
-
-    private fun decode8(tile: Tile, value: Int): Int = when (tile.format) {
-        2 -> palette(value)
-        3 -> {
-            val intensity = ((value ushr 4) and 0xF) * 17
-            val alpha = (value and 0xF) * 17
-            pack(intensity, intensity, intensity, alpha)
-        }
-
-        else -> pack(value, value, value, value)
-    }
-
-    private fun decode16(tile: Tile, value: Int): Int = when (tile.format) {
-        3 -> {
-            val intensity = (value ushr 8) and 0xFF
-            val alpha = value and 0xFF
-            pack(intensity, intensity, intensity, alpha)
-        }
-
-        2 -> palette(value and 0xFF)
-
-        else -> rgba16(value)
-    }
-
-    private fun palette(index: Int): Int {
-        val at = 0x800 + (index and 0xFF) * 8
-        val value = ((tmem[at and 0xFFF].toInt() and 0xFF) shl 8) or (tmem[(at + 1) and 0xFFF].toInt() and 0xFF)
-        return if (tlutType == 0) rgba16(value) else {
-            val intensity = (value ushr 8) and 0xFF
-            pack(intensity, intensity, intensity, value and 0xFF)
-        }
-    }
-
-    private fun rgba16(value: Int): Int {
-        val r5 = (value ushr 11) and 0x1F
-        val g5 = (value ushr 6) and 0x1F
-        val b5 = (value ushr 1) and 0x1F
-        val a = if (value and 1 != 0) 0xFF else 0
-        return pack((r5 shl 3) or (r5 shr 2), (g5 shl 3) or (g5 shr 2), (b5 shl 3) or (b5 shr 2), a)
-    }
-
     private fun pack(r: Int, g: Int, b: Int, a: Int): Int =
         (r and 0xFF) or ((g and 0xFF) shl 8) or ((b and 0xFF) shl 16) or ((a and 0xFF) shl 24)
-
-    private fun clamp255(value: Int): Int = if (value < 0) 0 else if (value > 255) 255 else value
-
-    private fun channel(color: Int, index: Int): Int = (color ushr (index * 8)) and 0xFF
-
-    private fun combine(texel0: Int, texel1: Int, shade: Int, shadeAlpha: Int, noise: Int, unused: Int): Int {
-        when (combineFast) {
-            1 -> return shade
-
-            2 -> {
-                val r = ((texel0 and 0xFF) * (shade and 0xFF)) ushr 8
-                val g = (((texel0 ushr 8) and 0xFF) * ((shade ushr 8) and 0xFF)) ushr 8
-                val b = (((texel0 ushr 16) and 0xFF) * ((shade ushr 16) and 0xFF)) ushr 8
-                return r or (g shl 8) or (b shl 16) or (shadeAlpha shl 24)
-            }
-
-            3 -> {
-                val env = envPacked
-                val r = ((texel0 and 0xFF) * (env and 0xFF)) ushr 8
-                val g = (((texel0 ushr 8) and 0xFF) * ((env ushr 8) and 0xFF)) ushr 8
-                val b = (((texel0 ushr 16) and 0xFF) * ((env ushr 16) and 0xFF)) ushr 8
-                val a = (((texel0 ushr 24) and 0xFF) * ((env ushr 24) and 0xFF)) ushr 8
-                return r or (g shl 8) or (b shl 16) or (a shl 24)
-            }
-
-            4 -> return (texel0 and 0xFFFFFF) or (shadeAlpha shl 24)
-
-            5 -> return texel0
-
-            6 -> {
-                val r = ((texel0 and 0xFF) * (shade and 0xFF)) ushr 8
-                val g = (((texel0 ushr 8) and 0xFF) * ((shade ushr 8) and 0xFF)) ushr 8
-                val b = (((texel0 ushr 16) and 0xFF) * ((shade ushr 16) and 0xFF)) ushr 8
-                return r or (g shl 8) or (b shl 16) or (texel0 and 0xFF000000.toInt())
-            }
-
-            7 -> {
-                val prim = primPacked
-                val sr = shade and 0xFF
-                val sg = (shade ushr 8) and 0xFF
-                val sb = (shade ushr 16) and 0xFF
-                val r = sr + ((((prim and 0xFF) - sr) * (texel0 and 0xFF)) shr 8)
-                val g = sg + (((((prim ushr 8) and 0xFF) - sg) * ((texel0 ushr 8) and 0xFF)) shr 8)
-                val b = sb + (((((prim ushr 16) and 0xFF) - sb) * ((texel0 ushr 16) and 0xFF)) shr 8)
-                val a = shadeAlpha + (((((prim ushr 24) and 0xFF) - shadeAlpha) * ((texel0 ushr 24) and 0xFF)) shr 8)
-                return r or (g shl 8) or (b shl 16) or (a shl 24)
-            }
-        }
-
-        var combined = 0
-        var combinedAlpha = 0
-
-        val cycles = if (cycleType == CYCLE_2) 2 else 1
-
-        for (cycle in 0 until cycles) {
-            var result = 0
-            for (index in 0 until 3) {
-                val a = combinerSource(combineRgbA[cycle], index, texel0, texel1, shade, combined, combinedAlpha, noise, true)
-                val b = combinerSource(combineRgbB[cycle], index, texel0, texel1, shade, combined, combinedAlpha, noise, false)
-                val c = combinerMultiply(combineRgbC[cycle], index, texel0, texel1, shade, shadeAlpha, combined, combinedAlpha)
-                val d = combinerAdd(combineRgbD[cycle], index, texel0, texel1, shade, combined)
-
-                val value = (((a - b) * c) shr 8) + d
-                result = result or (clamp255(value) shl (index * 8))
-            }
-
-            val aa = alphaSource(combineAlphaA[cycle], texel0, texel1, shadeAlpha, combinedAlpha)
-            val ab = alphaSource(combineAlphaB[cycle], texel0, texel1, shadeAlpha, combinedAlpha)
-            val ac = alphaMultiply(combineAlphaC[cycle], texel0, texel1, shadeAlpha, combinedAlpha)
-            val ad = alphaSource(combineAlphaD[cycle], texel0, texel1, shadeAlpha, combinedAlpha)
-
-            combinedAlpha = clamp255((((aa - ab) * ac) shr 8) + ad)
-            combined = result
-        }
-
-        return (combined and 0xFFFFFF) or ((combinedAlpha and 0xFF) shl 24)
-    }
-
-    private fun combinerSource(
-        source: Int,
-        index: Int,
-        texel0: Int,
-        texel1: Int,
-        shade: Int,
-        combined: Int,
-        combinedAlpha: Int,
-        noise: Int,
-        isA: Boolean,
-    ): Int = when (source) {
-        0 -> channel(combined, index)
-        1 -> channel(texel0, index)
-        2 -> channel(texel1, index)
-        3 -> channel(primColorPacked(), index)
-        4 -> channel(shade, index)
-        5 -> channel(envColorPacked(), index)
-        6 -> if (isA) 0xFF else 0
-        7 -> if (isA) noise else 0
-        else -> 0
-    }
-
-    private fun combinerMultiply(
-        source: Int,
-        index: Int,
-        texel0: Int,
-        texel1: Int,
-        shade: Int,
-        shadeAlpha: Int,
-        combined: Int,
-        combinedAlpha: Int,
-    ): Int = when (source) {
-        0 -> channel(combined, index)
-        1 -> channel(texel0, index)
-        2 -> channel(texel1, index)
-        3 -> channel(primColorPacked(), index)
-        4 -> channel(shade, index)
-        5 -> channel(envColorPacked(), index)
-        6 -> 0xFF
-        7 -> combinedAlpha
-        8 -> (texel0 ushr 24) and 0xFF
-        9 -> (texel1 ushr 24) and 0xFF
-        10 -> (primColorPacked() ushr 24) and 0xFF
-        11 -> shadeAlpha
-        12 -> (envColorPacked() ushr 24) and 0xFF
-        13 -> lodFrac
-        14 -> primLodFrac
-        else -> 0
-    }
-
-    private fun combinerAdd(source: Int, index: Int, texel0: Int, texel1: Int, shade: Int, combined: Int): Int =
-        when (source) {
-            0 -> channel(combined, index)
-            1 -> channel(texel0, index)
-            2 -> channel(texel1, index)
-            3 -> channel(primColorPacked(), index)
-            4 -> channel(shade, index)
-            5 -> channel(envColorPacked(), index)
-            6 -> 0xFF
-            else -> 0
-        }
-
-    private fun alphaSource(source: Int, texel0: Int, texel1: Int, shadeAlpha: Int, combinedAlpha: Int): Int =
-        when (source) {
-            0 -> combinedAlpha
-            1 -> (texel0 ushr 24) and 0xFF
-            2 -> (texel1 ushr 24) and 0xFF
-            3 -> (primColorPacked() ushr 24) and 0xFF
-            4 -> shadeAlpha
-            5 -> (envColorPacked() ushr 24) and 0xFF
-            6 -> 0xFF
-            else -> 0
-        }
-
-    private fun alphaMultiply(source: Int, texel0: Int, texel1: Int, shadeAlpha: Int, combinedAlpha: Int): Int =
-        when (source) {
-            0 -> lodFrac
-            1 -> (texel0 ushr 24) and 0xFF
-            2 -> (texel1 ushr 24) and 0xFF
-            3 -> (primColorPacked() ushr 24) and 0xFF
-            4 -> shadeAlpha
-            5 -> (envColorPacked() ushr 24) and 0xFF
-            6 -> primLodFrac
-            else -> 0
-        }
-
-    private fun primColorPacked(): Int = primPacked
-
-    private fun envColorPacked(): Int = envPacked
-
-    private fun blendColorPacked(): Int = blendPacked
-
-    private fun fogColorPacked(): Int = fogPacked
 
     private fun swizzle(value: Int): Int = pack(
         (value ushr 24) and 0xFF,
@@ -2293,146 +1344,6 @@ class Rdp(private val n64: N64) {
         (value ushr 8) and 0xFF,
         value and 0xFF,
     )
-
-    private fun writePixel(x: Int, y: Int, color: Int, z: Int, useDepth: Boolean, shadeAlpha: Int = 0, cvg: Int = 8) {
-        if (cvg == 0) return
-
-        var alpha = (color ushr 24) and 0xFF
-        if (coverageTimesAlpha) {
-            val scaled = (alpha * cvg + 4) shr 3
-            if (scaled shr 5 == 0) return
-            if (alphaCoverageSelect) alpha = minOf(scaled, 0xFF)
-        } else if (alphaCoverageSelect) {
-            alpha = if (cvg >= 8) 0xFF else cvg shl 5
-        }
-
-        if (alphaCompare) {
-            val reference = (blendColorPacked() ushr 24) and 0xFF
-            if (alpha < reference) return
-        }
-
-        if (useDepth && zImage != 0) {
-            val dzPix: Int
-            val dzEnc: Int
-            if (zSourceSelect) {
-                dzPix = primDz
-                dzEnc = primDzEnc
-            } else {
-                dzPix = spanDzPix
-                dzEnc = spanDzPixEnc
-            }
-            if (zCompare && !zPass(x, y, z, dzPix, dzEnc)) return
-
-            val blended = blend(x, y, (color and 0xFFFFFF) or (alpha shl 24), shadeAlpha)
-            writeColor(x, y, blended)
-            if (zUpdate) zStore(x, y, z, dzEnc)
-            return
-        }
-
-        val blended = blend(x, y, (color and 0xFFFFFF) or (alpha shl 24), shadeAlpha)
-        writeColor(x, y, blended)
-    }
-
-    private fun blendColorSelect(code: Int, chained: Int, x: Int, y: Int): Int = when (code) {
-        0 -> chained
-        1 -> readColor(x, y)
-        2 -> blendColorPacked()
-        else -> fogColorPacked()
-    }
-
-    private fun blendEquation(
-        cycle: Int,
-        chained: Int,
-        pixelAlpha: Int,
-        x: Int,
-        y: Int,
-        shadeAlpha: Int,
-        alwaysShift5: Boolean,
-    ): Int {
-        val aMul = when (blendB[cycle]) {
-            0 -> pixelAlpha
-            1 -> (fogColorPacked() ushr 24) and 0xFF
-            2 -> shadeAlpha
-            else -> 0
-        }
-        val bMul = when (blendD[cycle]) {
-            0 -> aMul.inv() and 0xFF
-            1 -> 0xE0
-            2 -> 0xFF
-            else -> 0
-        }
-
-        val blend1a = aMul shr 3
-        var blend2a = bMul shr 3
-        if (blendD[cycle] == 1) blend2a = blend2a or 3
-        val mulb = blend2a + 1
-
-        val p = blendColorSelect(blendA[cycle], chained, x, y)
-        val m = blendColorSelect(blendC[cycle], chained, x, y)
-
-        var result = 0
-        for (index in 0 until 3) {
-            val value = channel(p, index) * blend1a + channel(m, index) * mulb
-            val out = if (forceBlend || alwaysShift5) {
-                (value shr 5) and 0xFF
-            } else {
-                val sum = ((blend1a and 3.inv()) + (blend2a and 3.inv()) + 4) shl 9
-                bldivTable[sum or ((value shr 2) and 0x7FF)]
-            }
-            result = result or (out shl (index * 8))
-        }
-        return result
-    }
-
-    private fun blend(x: Int, y: Int, color: Int, shadeAlpha: Int): Int {
-        var alpha = (color ushr 24) and 0xFF
-        if (alpha == 0xFF) alpha = 0x100
-
-        var chained = color
-        if (cycleType == CYCLE_2) {
-            chained = (blendEquation(0, color, alpha, x, y, shadeAlpha, true) and 0xFFFFFF) or
-                (color and 0xFF000000.toInt())
-        }
-
-        val cycle = if (cycleType == CYCLE_2) 1 else 0
-        val partialReject = blendB[cycle] == 0 && blendD[cycle] == 0
-        val result = if (!forceBlend || (partialReject && alpha >= 0xFF)) {
-            blendColorSelect(blendA[cycle], chained, x, y)
-        } else {
-            blendEquation(cycle, chained, alpha, x, y, shadeAlpha, false)
-        }
-
-        return (result and 0xFFFFFF) or (((color ushr 24) and 0xFF) shl 24)
-    }
-
-    private fun readColor(x: Int, y: Int): Int {
-        if (colorSize == 2) {
-            val at = colorImage + (y * colorWidth + x) * 2
-            return rgba16(n64.ramRead16(at))
-        }
-        if (colorSize == 3) {
-            val value = n64.ramRead32(colorImage + (y * colorWidth + x) * 4)
-            return pack((value ushr 24) and 0xFF, (value ushr 16) and 0xFF, (value ushr 8) and 0xFF, value and 0xFF)
-        }
-        return 0
-    }
-
-    private fun writeColor(x: Int, y: Int, color: Int) {
-        val r = channel(color, 0)
-        val g = channel(color, 1)
-        val b = channel(color, 2)
-        val a = channel(color, 3)
-
-        if (colorSize == 2) {
-            val value = (TO5[r] shl 11) or (TO5[g] shl 6) or (TO5[b] shl 1) or
-                (if (a >= 128) 1 else 0)
-            val at = colorImage + (y * colorWidth + x) * 2
-            n64.ramWrite16(at, value)
-        } else if (colorSize == 3) {
-            val value = (r shl 24) or (g shl 16) or (b shl 8) or a
-            n64.ramWrite32(colorImage + (y * colorWidth + x) * 4, value)
-        }
-    }
 
     private fun normalizeDzpix(sum: Int): Int {
         if (sum and 0xC000 != 0) return 0x8000
@@ -2455,66 +1366,9 @@ class Rdp(private val n64: N64) {
         return j
     }
 
-    private fun zCorrect(walked: Int): Int {
-        val sz = ((walked shr 10) and 0x3FFFFF) shr 3
-        return when ((sz and 0x60000) shr 17) {
-            2 -> 0x3FFFF
-            3 -> 0
-            else -> sz and 0x3FFFF
-        }
-    }
-
-    private fun zPass(x: Int, y: Int, szIn: Int, dzPix: Int, dzPixEnc: Int): Boolean {
-        val sz = szIn and 0x3FFFF
-        val at = zImage + (y * colorWidth + x) * 2
-        val zval = n64.ramRead16(at)
-        val hval = n64.hidden[(at and RDRAM_MASK) ushr 1].toInt() and 3
-
-        val oz = zDecTable[(zval shr 2) and 0x3FFF]
-        val rawDzMem = ((zval and 3) shl 2) or hval
-        var dzMem = 1 shl rawDzMem
-        var forceCoplanar = false
-
-        val precision = (zval shr 13) and 0xF
-        if (precision < 3) {
-            if (dzMem != 0x8000) {
-                val modifier = 16 shr precision
-                dzMem = dzMem shl 1
-                if (dzMem < modifier) dzMem = modifier
-            } else {
-                forceCoplanar = true
-                dzMem = 0xFFFF
-            }
-        }
-
-        val dzNew = deltazLut[(dzPix or dzMem) and 0xFFFF] shl 3
-        val farther = forceCoplanar || (sz + dzNew >= oz)
-        val max = oz == 0x3FFFF
-        val inFront = sz < oz
-
-        return when (zMode) {
-            0 -> max || inFront
-            1 -> if (!inFront || !farther) max || inFront else true
-            2 -> inFront || max
-            else -> {
-                val nearer = forceCoplanar || (sz - dzNew <= oz)
-                farther && nearer && !max
-            }
-        }
-    }
-
-    private fun zStore(x: Int, y: Int, z: Int, dzPixEnc: Int) {
-        val at = zImage + (y * colorWidth + x) * 2
-        val zval = zComTable[z and 0x3FFFF] or (dzPixEnc shr 2)
-        n64.ramWrite16(at, zval)
-        n64.hidden[(at and RDRAM_MASK) ushr 1] = (dzPixEnc and 3).toByte()
-    }
-
     companion object {
         private const val SPANS = 1024
-        private const val PARALLEL_MIN_ROWS = 8
 
-        private val TO5 = IntArray(256) { it * 31 / 255 }
 
         private val NORM_POINT = intArrayOf(
             0x4000, 0x3F04, 0x3E10, 0x3D22, 0x3C3C, 0x3B5D, 0x3A83, 0x39B1,

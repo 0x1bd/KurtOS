@@ -31,6 +31,8 @@ class SemanticAnalyzer(private val ctx: Context, private val program: Program) {
         for (fn in functions) checkSignature(fn)
         for (fn in functions) checkBody(fn)
 
+        val uniformity = if (ctx.reporter.hasErrors) null else Uniformity(ctx, functions).analyze()
+
         return SemanticModel(
             program,
             structs,
@@ -40,6 +42,7 @@ class SemanticAnalyzer(private val ctx: Context, private val program: Program) {
             constants.values.toList(),
             sharedGlobals,
             layout,
+            uniformity,
         )
     }
 

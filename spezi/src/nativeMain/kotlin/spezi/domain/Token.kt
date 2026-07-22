@@ -15,6 +15,7 @@ enum class TokenType(val text: String = "") {
     CONST("const"),
     FN("fn"),
     KERNEL("kernel"),
+    BOUNDS("bounds"),
     STRUCT("struct"),
     IMPORT("import"),
     IF("if"),

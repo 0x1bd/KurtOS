@@ -81,6 +81,7 @@ class TestRomTest {
             dumpNative(console, "test-$name")
 
             TestLog.info("testrom", "$name pass=${verdict.first} fail=${verdict.second}")
+            assertTrue(verdict.first > 0, "$name rendered nothing, so its result was never checked")
             if (verdict.second > 0) {
                 failures++
                 failed.append(" $name")

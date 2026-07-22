@@ -16,4 +16,5 @@ class SemanticModel(
     val constants: List<ConstDef>,
     val sharedGlobals: List<VarDecl>,
     val layout: Layout,
+    val uniformity: UniformityModel? = null,
 )

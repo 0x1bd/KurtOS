@@ -61,6 +61,7 @@ class N64(image: ByteArray, forceNoDynarec: Boolean = false, forceNoRspDynarec: 
     val frameMicros: ULong get() = if (rom.pal) 20000uL else 16667uL
 
     init {
+        kapi.gpu.Gpu.register(SoftwareGpu())
         reset()
     }
 

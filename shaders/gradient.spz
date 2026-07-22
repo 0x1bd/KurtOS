@@ -1,8 +1,5 @@
-kernel fn gradient(fb: global mut *u32, width: u32, height: u32, pitchpx: u32) {
+kernel fn gradient(fb: global mut *u32, width: u32, height: u32, pitchpx: u32) bounds width * height {
     let gid = global_id_x()
-    if gid >= width * height {
-        return
-    }
 
     let x = gid % width
     let y = gid / width

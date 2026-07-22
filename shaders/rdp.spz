@@ -32,11 +32,8 @@ kernel fn rdp(
     bboxY: u32,
     bboxW: u32,
     bboxH: u32,
-) {
+) bounds bboxW * bboxH {
     let gid = global_id_x()
-    if gid >= bboxW * bboxH {
-        return
-    }
 
     let px = bboxX + gid % bboxW
     let py = bboxY + gid / bboxW

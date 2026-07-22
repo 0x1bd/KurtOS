@@ -90,8 +90,36 @@ class Parser(private val ctx: Context, source: SourceFile, private val module: S
         val name = consumeIdentifier("expected a function name")
         val params = parseParams()
         val ret = if (match(TokenType.ARROW)) parseType() else VoidType
+
+        var bounds: Expr? = null
+        if (check(TokenType.BOUNDS)) {
+            val keyword = advance()
+            bounds = parseExpr()
+            if (!isKernel) {
+                ctx.report(
+                    Level.ERROR,
+                    "'bounds' is only allowed on a kernel",
+                    keyword,
+                    "only a kernel has work items to bound; a plain 'fn' runs inside one",
+                )
+                bounds = null
+            }
+        }
+
         val body = parseBlock()
-        return FnDef(module, name, isKernel, params, ret, body, loc)
+        val fn = FnDef(module, name, isKernel, params, ret, guard(bounds, body), loc)
+        fn.bounds = bounds
+        return fn
+    }
+
+    private fun guard(bounds: Expr?, body: Block): Block {
+        if (bounds == null) return body
+        val at = bounds.loc
+        val test = BinOp(Call("global_id_x", ArrayList(), at), TokenType.GREATER_EQ, bounds, at)
+        val stmts = ArrayList<Stmt>(body.stmts.size + 1)
+        stmts.add(IfStmt(test, Block(listOf(ReturnStmt(null, at)), at), null, at))
+        stmts.addAll(body.stmts)
+        return Block(stmts, body.loc)
     }
 
     private fun parseExtern(): ExternFnDef {

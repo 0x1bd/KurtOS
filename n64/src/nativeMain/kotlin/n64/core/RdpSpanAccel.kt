@@ -19,6 +19,7 @@ class RdpSpanAccel(
     var disabled = false
         private set
 
+    private var demoted = false
     private var kernel: GpuKernel? = null
     private var surface: ResidentSurface? = null
     private var rdramBuf: GpuBuffer? = null
@@ -35,7 +36,6 @@ class RdpSpanAccel(
     private val tmemBufs = arrayOfNulls<GpuBuffer>(SLOTS)
     private var tcdivBuf: GpuBuffer? = null
     private var slot = 0
-    private var probed = false
 
     private val spans = IntArray(SPANS * SPAN_STRIDE)
     private val rowFill = IntArray(MAX_ROWS)
@@ -95,12 +95,41 @@ class RdpSpanAccel(
     val auxWordsRead: Long get() = surface?.auxWordsRead ?: 0L
 
     private fun ensure(): Boolean {
-        if (disabled) return false
         if (surface != null) return true
-        if (probed) return false
+        if (build()) return true
+        if (demote() && build()) return true
+        disabled = true
+        return false
+    }
+
+    private fun demote(): Boolean {
+        if (demoted) return false
+        demoted = true
+        Gpu.prefer(Gpu.Preference.Software)
+        if (Gpu.backend?.kernel("rdpspan") == null) return false
+        GfxPool.reset()
+        kernel = null
+        surface = null
+        identityBuf = null
+        for (i in 0 until SLOTS) {
+            spansBufs[i] = null
+            uniformBufs[i] = null
+            kernargBufs[i] = null
+            tmemBufs[i] = null
+            chainStartBufs[i] = null
+            chainSpanBufs[i] = null
+        }
+        accActive = false
+        accCount = 0
+        slot = 0
+        disabled = false
+        return true
+    }
+
+    private fun build(): Boolean {
+        if (disabled) return false
         failReason = 1
         val krn = Gpu.backend?.kernel("rdpspan") ?: return false
-        probed = true
         failReason = 2
         val rd = GfxPool.buffer("n64.rdram", RDRAM_SIZE / 4) ?: return false
         failReason = 3
@@ -257,11 +286,7 @@ class RdpSpanAccel(
         if (tmemCount > 0) tm.write(0, tmemPacked, 0, tmemCount * TMEM_WORDS)
         writeKernarg(ka, sp, un, tm, rs, rl, groups)
 
-        val ok = Gpu.backend?.dispatch(krn, ka, groups, 64) ?: false
-        if (!ok) {
-            disabled = true
-            return false
-        }
+        if (Gpu.backend?.dispatch(krn, ka, groups, 64) != true) return false
         slot++
         if (slot == SLOTS) slot = 0
         dispatched++
@@ -291,13 +316,13 @@ class RdpSpanAccel(
         invalY: IntArray,
         tmemGen: Int,
     ): Long {
-        if (!ensure()) return -1
+        if (!ensure()) return 0
 
         val flip = uniform[U_FLIP] != 0
         val scissorXh = uniform[U_SCISSOR_XH]
         val scissorXl = uniform[U_SCISSOR_XL]
 
-        if (!beginBatch(uniform, tmemGen, last - first + 1)) return -1
+        beginBatch(uniform, tmemGen, last - first + 1)
 
         var pixels = 0L
         for (i in first..last) {
@@ -341,7 +366,7 @@ class RdpSpanAccel(
         return pixels
     }
 
-    private fun beginBatch(uniform: IntArray, tmemGen: Int, maxAdd: Int): Boolean {
+    private fun beginBatch(uniform: IntArray, tmemGen: Int, maxAdd: Int) {
         val needsTmem = uniform[U_TEXTURE] != 0 || uniform[U_COPY] != 0
         if (accActive) {
             val capBreak = accCount + maxAdd > SPANS
@@ -377,7 +402,6 @@ class RdpSpanAccel(
             accTmemSlot = if (needsTmem) tmemSlotFor(tmemGen) else 0
         }
         accTmemGen = tmemGen
-        return true
     }
 
     private fun uniformsEqual(u: IntArray): Boolean {
@@ -413,18 +437,19 @@ class RdpSpanAccel(
         if (!accActive) return
         accActive = false
         if (accCount == 0 || accRowHi < accRowLo) return
-        val s = surface ?: return
+        if (submit()) return
+        if (demote() && build()) submit()
+    }
+
+    private fun submit(): Boolean {
+        val s = surface ?: return false
         s.prepare(accCi, accZi, accW, accCs, accZi != 0, accColorAux, accRowLo, accRowHi)
         val groups = if (accRowsAscending) accCount else binChains(accCount, accRowLo, accRowHi)
-        if (groups < 0) {
-            disabled = true
-            return
-        }
-        val ok = groups == 0 || dispatchSlot(accUniform, accCount, groups, groups == accCount, accTmemCount)
-        if (ok) {
-            s.markDirty(accRowLo, accRowHi)
-            offloadedPixels += accPixels
-        }
+        if (groups < 0) return false
+        if (groups > 0 && !dispatchSlot(accUniform, accCount, groups, groups == accCount, accTmemCount)) return false
+        s.markDirty(accRowLo, accRowHi)
+        offloadedPixels += accPixels
+        return true
     }
 
     fun renderFill(uniform: IntArray, top: Int, bottom: Int, left: Int, right: Int, tmemGen: Int): Long =
@@ -434,10 +459,10 @@ class RdpSpanAccel(
         renderRows(uniform, top, bottom, left, right, tmemGen)
 
     private fun renderRows(uniform: IntArray, top: Int, bottom: Int, left: Int, right: Int, tmemGen: Int): Long {
-        if (!ensure()) return -1
+        if (!ensure()) return 0
         if (bottom < top || right < left) return 0
 
-        if (!beginBatch(uniform, tmemGen, bottom - top + 1)) return -1
+        beginBatch(uniform, tmemGen, bottom - top + 1)
 
         for (y in top..bottom) {
             val base = accCount * SPAN_STRIDE

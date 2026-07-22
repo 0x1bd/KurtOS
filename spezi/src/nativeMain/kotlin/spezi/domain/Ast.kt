@@ -44,6 +44,7 @@ class FnDef(
 
     var mangledName: String = name
     var usesShared: Boolean = false
+    var bounds: Expr? = null
 }
 
 class ExternFnDef(

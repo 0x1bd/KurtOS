@@ -16,7 +16,6 @@ object N64Emulator : Emulator {
     override val players = 4
 
     override fun load(image: ByteArray): EmulatorSession? {
-        Gpu.register(n64.core.SoftwareGpu())
         val console = N64(image)
         if (!console.rom.valid) return null
         return Session(console)

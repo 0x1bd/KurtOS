@@ -26,6 +26,19 @@ kernel fn gradient(fb: global mut []u32, width: u32, height: u32, pitchpx: u32) 
 
 `kernel fn` marks an entry point. Everything else is a plain `fn` and gets inlined into the kernel.
 
+That first `if` is in every kernel that dispatches more work items than it has work, and forgetting it
+writes past the end of a buffer. Write it as a `bounds` clause instead and the compiler emits it:
+
+```
+kernel fn gradient(fb: global mut []u32, width: u32, height: u32, pitchpx: u32) bounds width * height {
+    let gid = global_id_x()
+    ...
+}
+```
+
+`bounds e` means `if global_id_x() >= e { return }` at the top of the body. `e` is a `u32` and is
+evaluated once. Only a kernel can have one.
+
 ## Memory
 
 There is no allocator. You cannot allocate memory, you can only name storage and pass pointers to it.
@@ -141,6 +154,33 @@ Synchronizing: `barrier()` waits for every lane in the workgroup. For ordering m
 `memfence_device()`, which makes them visible to the whole device. `memfence()` is the workgroup one
 under a shorter name. Device scope is more expensive, so only reach for it when another workgroup has
 to see the write.
+
+## Uniform and divergent
+
+A value is uniform when every work item in the workgroup sees the same one, and divergent when they do
+not. Kernel parameters are uniform, because the whole workgroup is launched with one set of arguments.
+`workgroup_id_x/y/z`, `workgroup_size_x/y/z` and `subgroup_size` are uniform. `global_id_x/y/z`,
+`workitem_id_x/y/z` and `lane_id` are divergent, and so is anything computed from them, passed through a
+function, or assigned inside a branch that is itself divergent.
+
+The compiler tracks this and uses it for one rule: `barrier()` has to be reached by every lane. Put one
+inside an `if` or a loop whose condition is divergent and the compile fails, because the lanes that skip
+it wait forever for the lanes that do not:
+
+```
+if global_id_x() > 4 {
+    barrier()               // error: not reached by every lane in the workgroup
+}
+```
+
+An early `return` counts. Once some lanes have left, the rest of the function is divergent, so a
+`bounds` clause and a `barrier()` do not go together in the same kernel. Leaving a loop early is
+different: the lanes come back together when the loop ends, so a `barrier()` after the loop is fine and
+one inside the rest of the loop body is not.
+
+The rule is conservative in one way worth knowing. A local is divergent from the first place it is
+assigned something divergent, for the whole function, not from that point on. Assigning a uniform value
+back over it does not make it uniform again.
 
 ## Calling a shader from the CPU
 
