@@ -61,7 +61,7 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
     private val pageLinkSlots = Array(RDRAM_SIZE ushr CPU_PAGE_SHIFT) { ArrayList<Long>() }
     private val pageLinkOrig = Array(RDRAM_SIZE ushr CPU_PAGE_SHIFT) { ArrayList<Int>() }
     private var linkCount = 0
-    private val nochain = platform.posix.getenv("KURTOS_JIT_NOCHAIN") != null
+    private val nochain = !N64Tuning.cpuChaining
 
     var lookups = 0L
         private set
@@ -76,14 +76,13 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
     var stepInstrs = 0L
         private set
 
-    private val skip = platform.posix.getenv("KURTOS_JIT_SKIP")?.toKString()?.split(",")?.toHashSet() ?: HashSet()
-    private val skipBranch = "branch" in skip
-    private val skipLoad = "load" in skip
-    private val skipStore = "store" in skip
-    private val skipMul = "mul" in skip
-    private val skipShift = "shift" in skip
-    private val skipAlu = "alu" in skip
-    private val skipFpu = "fpu" in skip
+    private val skipBranch = N64Tuning.skipBranch
+    private val skipLoad = N64Tuning.skipLoad
+    private val skipStore = N64Tuning.skipStore
+    private val skipMul = N64Tuning.skipMul
+    private val skipShift = N64Tuning.skipShift
+    private val skipAlu = N64Tuning.skipAlu
+    private val skipFpu = N64Tuning.skipFpu
 
     init {
         ctx[CTX_GPR / 8] = gprPin.addressOf(0).toLong()
@@ -381,8 +380,7 @@ class CpuDynarec(private val n64: N64, private val arena: CodeArena) {
 
     companion object {
         fun create(n64: N64): CpuDynarec? {
-            if (platform.posix.getenv("KURTOS_NOJIT") != null) return null
-            if (platform.posix.getenv("KURTOS_BREAK") != null) return null
+            if (!N64Tuning.cpuJit) return null
             val arena = CodeArena()
             if (!arena.init()) return null
             return CpuDynarec(n64, arena)

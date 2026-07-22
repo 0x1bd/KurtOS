@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.console=plain
+
+jobs:
+  test:
+    name: Emulator test suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            third_party/testroms/nemu64-test/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('third_party/testroms/nemu64-test/Cargo.lock', 'third_party/testroms/nemu64-test/rust-toolchain.toml') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Install Rust toolchain for nemu64-test
+        run: |
+          rustup show active-toolchain || rustup toolchain install stable --profile minimal
+          rustup toolchain install "$(sed -n 's/^channel *= *"\(.*\)"/\1/p' third_party/testroms/nemu64-test/rust-toolchain.toml)" \
+            --component rust-src --profile minimal
+          command -v nust64 >/dev/null || cargo +stable install nust64 --version 0.4.1 --locked --force
+
+      - name: Run test suites
+        run: >
+          ./gradlew
+          :n64:linuxX64ReleaseTest
+          :snes:linuxX64ReleaseTest
+          :gameboy:linuxX64Test
+          :gba:linuxX64Test
+          --stacktrace
+
+      - name: Test suite reports
+        if: always()
+        run: |
+          for f in testkit/build/reports/testkit/*.txt; do
+            [ -f "$f" ] || continue
+            echo "::group::$(basename "$f")"
+            tail -20 "$f"
+            echo "::endgroup::"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results
+          path: |
+            */build/test-results/**/*.xml
+            testkit/build/reports/testkit/*.txt
+          retention-days: 14
+
+  image:
+    name: Bootable image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Kotlin/Native toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - name: Install image tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang lld mtools
+
+      - name: Build release image
+        run: ./gradlew buildImage -Pkurtos.release=true --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kurtos-image
+          path: build/kurtos.img
+          retention-days: 14

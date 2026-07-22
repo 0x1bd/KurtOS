@@ -1,0 +1,16 @@
+[submodule "third_party/testroms/nemu64-test"]
+	path = third_party/testroms/nemu64-test
+	url = https://github.com/thelemmy/nemu64-test
+	shallow = true
+[submodule "third_party/testroms/gb-test-roms"]
+	path = third_party/testroms/gb-test-roms
+	url = https://github.com/retrio/gb-test-roms
+	shallow = true
+[submodule "third_party/testroms/gba-tests"]
+	path = third_party/testroms/gba-tests
+	url = https://github.com/jsmolka/gba-tests
+	shallow = true
+[submodule "third_party/testroms/peterlemon-n64"]
+	path = third_party/testroms/peterlemon-n64
+	url = https://github.com/PeterLemon/N64
+	shallow = true

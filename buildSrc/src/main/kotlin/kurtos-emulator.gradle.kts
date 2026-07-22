@@ -15,11 +15,20 @@ kotlin {
         val linuxX64Test by getting {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(project(":testkit"))
             }
         }
     }
 }
 
+val testRoms = rootProject.layout.projectDirectory.dir("third_party/testroms")
+
 tasks.withType<KotlinNativeTest>().configureEach {
-    environment("KURTOS_TESTROMS", rootProject.file("third_party/testroms").absolutePath)
+    environment("KURTOS_TESTROMS", testRoms.asFile.absolutePath)
+
+    inputs.files(
+        rootProject.fileTree(testRoms) {
+            include("**/*.gb", "**/*.gbc", "**/*.gba", "**/*.sfc", "**/*.smc", "**/*.n64", "**/*.N64", "**/*.z64")
+        },
+    ).withPropertyName("testRoms").withPathSensitivity(PathSensitivity.RELATIVE)
 }

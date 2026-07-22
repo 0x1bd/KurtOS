@@ -1,5 +1,7 @@
 package gba.core
 
+import kurtos.testkit.TestLog
+
 import kapi.state.StateReader
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -53,22 +55,26 @@ private fun runTestRom(name: String): Int? {
     return resultRegister(console)
 }
 
+private fun skipped(rom: String) {
+    TestLog.skip("gba", rom, "git submodule update --init --recursive")
+}
+
 class TestRomTest {
     @Test
     fun armInstructionsPass() {
-        val failing = runTestRom("arm.gba") ?: return
+        val failing = runTestRom("gba-tests/arm/arm.gba") ?: return skipped("gba-tests/arm/arm.gba")
         assertEquals(0, failing, "arm.gba: first failing test is $failing")
     }
 
     @Test
     fun thumbInstructionsPass() {
-        val failing = runTestRom("thumb.gba") ?: return
+        val failing = runTestRom("gba-tests/thumb/thumb.gba") ?: return skipped("gba-tests/thumb/thumb.gba")
         assertEquals(0, failing, "thumb.gba: first failing test is $failing")
     }
 
     @Test
     fun memoryAccessesPass() {
-        val failing = runTestRom("memory.gba") ?: return
+        val failing = runTestRom("gba-tests/memory/memory.gba") ?: return skipped("gba-tests/memory/memory.gba")
         assertEquals(0, failing, "memory.gba: first failing test is $failing")
     }
 }

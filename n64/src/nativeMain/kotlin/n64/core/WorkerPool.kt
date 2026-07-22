@@ -6,8 +6,8 @@ import kotlin.native.concurrent.ObsoleteWorkersApi
 import kotlin.native.concurrent.Worker
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString
+import kapi.Console
 import platform.posix._SC_NPROCESSORS_ONLN
-import platform.posix.getenv
 import platform.posix.sched_yield
 import platform.posix.sysconf
 import platform.posix.usleep
@@ -68,7 +68,7 @@ class WorkerPool private constructor(private val extra: Int) {
                 try {
                     fn.run(lane, lanes)
                 } catch (t: Throwable) {
-                    println("pool: lane $lane failed: ${t.message ?: t::class.simpleName}")
+                    Console.println("pool: lane $lane failed: ${t.message ?: t::class.simpleName}")
                 }
             }
             ackSeq[slot] = want
@@ -95,7 +95,7 @@ class WorkerPool private constructor(private val extra: Int) {
                 if (waited >= YIELD_AFTER) sched_yield()
                 if (waited >= JOIN_LIMIT) {
                     broken = true
-                    println("pool: lane ${slot + 1} unresponsive, rendering inline from now on")
+                    Console.println("pool: lane ${slot + 1} unresponsive, rendering inline from now on")
                     fn.run(slot + 1, lanes)
                     break
                 }
@@ -112,7 +112,7 @@ class WorkerPool private constructor(private val extra: Int) {
         private const val MAX_EXTRA = 3
 
         val shared: WorkerPool? by lazy {
-            val requested = getenv("KURTOS_RDP_THREADS")?.toKString()?.toIntOrNull()
+            val requested = N64Tuning.rdpThreads.takeIf { it > 0 }
             val extra = if (requested != null) {
                 requested - 1
             } else {
