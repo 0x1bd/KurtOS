@@ -459,6 +459,32 @@ int sprintf(char *str, const char *format, ...) {
     return ret;
 }
 
+int __vsnprintf_chk(char *str, size_t size, int flag, size_t slen, const char *format, va_list ap) {
+    (void)flag;
+    return vsnprintf(str, size < slen ? size : slen, format, ap);
+}
+
+int __snprintf_chk(char *str, size_t size, int flag, size_t slen, const char *format, ...) {
+    va_list ap;
+    va_start(ap, format);
+    int ret = __vsnprintf_chk(str, size, flag, slen, format, ap);
+    va_end(ap);
+    return ret;
+}
+
+int __vsprintf_chk(char *str, int flag, size_t slen, const char *format, va_list ap) {
+    (void)flag;
+    return vsnprintf(str, slen == (size_t)-1 ? 0x7FFFFFFF : slen, format, ap);
+}
+
+int __sprintf_chk(char *str, int flag, size_t slen, const char *format, ...) {
+    va_list ap;
+    va_start(ap, format);
+    int ret = __vsprintf_chk(str, flag, slen, format, ap);
+    va_end(ap);
+    return ret;
+}
+
 int fprintf(void *stream, const char *format, ...) {
     (void)stream;
     char buf[512];
