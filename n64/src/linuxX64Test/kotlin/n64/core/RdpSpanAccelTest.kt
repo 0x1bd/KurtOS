@@ -10,7 +10,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.pin
 import kotlinx.cinterop.reinterpret
-import rdpshader.rdpspan_pixel
+import rdpshader.rdpspan_one
 
 
 private val NORM_POINT = intArrayOf(
@@ -121,6 +121,8 @@ private class NativeSpan(scene: SpanScene) {
     private val pZd = Luts.zdec.pin()
     private val pDz = Luts.deltaz.pin()
     private val pTc = Luts.tcdiv.pin()
+    private val dispatch = IntArray(9).also { it[6] = 64; it[7] = 1; it[8] = 1 }
+    private val pDp = dispatch.pin()
 
     fun span() {
         val a = rec[RdpSpanAccel.SPAN_LX]
@@ -128,7 +130,8 @@ private class NativeSpan(scene: SpanScene) {
         val lo = if (a < b) a else b
         val hi = if (a < b) b else a
         for (x in lo..hi) {
-            rdpspan_pixel(
+            rdpspan_one(
+                pDp.addressOf(0).reinterpret(),
                 pSp.addressOf(0).reinterpret(),
                 pUn.addressOf(0).reinterpret(),
                 x,
@@ -145,7 +148,7 @@ private class NativeSpan(scene: SpanScene) {
 
     fun close() {
         pRd.unpin(); pHd.unpin(); pSp.unpin(); pUn.unpin(); pTm.unpin()
-        pZc.unpin(); pZd.unpin(); pDz.unpin(); pTc.unpin()
+        pZc.unpin(); pZd.unpin(); pDz.unpin(); pTc.unpin(); pDp.unpin()
     }
 }
 

@@ -1,43 +1,29 @@
 headers =
 ---
-#include "rdpspan.c"
-
-static inline void rdpspan_exec(
-    unsigned int gid,
-    unsigned int lane,
+extern void rdpspan(
+    const unsigned int *dispatch,
     unsigned int *rdram,
     unsigned char *hidden,
-    unsigned int *spans,
-    unsigned int *uniforms,
-    unsigned int *zcom,
-    unsigned int *zdec,
-    unsigned int *deltaz,
-    unsigned char *tmem,
-    unsigned int *tcdiv,
-    unsigned int *chainStart,
-    unsigned int *chainSpans,
-    unsigned int chainCount)
-{
-    if (gid >= chainCount) return;
-    for (unsigned int k = chainStart[gid]; k < chainStart[gid + 1]; k++) {
-        rdpspan_chain(spans + chainSpans[k] * SPAN_STRIDE, uniforms, (int)lane,
-                    rdram, hidden, zcom, zdec, deltaz, tmem, tcdiv);
-    }
-}
+    const unsigned int *spans,
+    const unsigned int *uniforms,
+    const unsigned int *zcom,
+    const unsigned int *zdec,
+    const unsigned int *deltaz,
+    const unsigned char *tmem,
+    const unsigned int *tcdiv,
+    const unsigned int *chainStart,
+    const unsigned int *chainSpans,
+    unsigned int chainCount);
 
-static inline void rdpspan_pixel(
-    unsigned int *span,
-    unsigned int *uniforms,
+extern void rdpspan_one(
+    const unsigned int *dispatch,
+    const unsigned int *rec,
+    const unsigned int *uniforms,
     int x,
     unsigned int *rdram,
     unsigned char *hidden,
-    unsigned int *zcom,
-    unsigned int *zdec,
-    unsigned int *deltaz,
-    unsigned char *tmem,
-    unsigned int *tcdiv)
-{
-    rdpspan_one(span, uniforms, x, rdram, hidden, zcom, zdec, deltaz, tmem, tcdiv);
-}
-
-static inline unsigned int rdpspan_lanes(void) { return 64u; }
+    const unsigned int *zcom,
+    const unsigned int *zdec,
+    const unsigned int *deltaz,
+    const unsigned char *tmem,
+    const unsigned int *tcdiv);

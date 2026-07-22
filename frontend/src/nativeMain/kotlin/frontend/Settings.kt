@@ -3,6 +3,7 @@ package frontend
 import kapi.Audio
 import kapi.Files
 import kapi.Time
+import kapi.gpu.Gpu
 
 object Settings {
     const val PATH = "/settings.cfg"
@@ -19,6 +20,8 @@ object Settings {
         private set
     var bootDiagnostics = true
         private set
+    var renderer = Gpu.Preference.Auto
+        private set
 
     private var dirty = false
 
@@ -33,6 +36,7 @@ object Settings {
         Audio.setVolume(volume)
         if (Audio.muted() != muted) Audio.toggleMuted()
         Time.setZone(zoneOffsetMinutes, daylightSaving)
+        Gpu.prefer(renderer)
     }
 
     fun flush(): Boolean? {
@@ -74,6 +78,26 @@ object Settings {
 
         showFps = value
         dirty = true
+    }
+
+    fun setRenderer(value: Gpu.Preference) {
+        if (value == renderer) return
+
+        renderer = value
+        dirty = true
+        Gpu.prefer(renderer)
+    }
+
+    fun cycleRenderer(delta: Int) {
+        val order = Gpu.Preference.entries
+        val next = ((order.indexOf(renderer) + delta) % order.size + order.size) % order.size
+        setRenderer(order[next])
+    }
+
+    fun rendererLabel(): String = when (renderer) {
+        Gpu.Preference.Auto -> if (Gpu.hasHardware()) "AUTO (GPU)" else "AUTO (CPU)"
+        Gpu.Preference.Hardware -> "GPU"
+        Gpu.Preference.Software -> "CPU"
     }
 
     fun setBootDiagnostics(value: Boolean) {
@@ -126,6 +150,11 @@ object Settings {
                 "dst" -> daylightSaving = value == "1"
                 "fps" -> showFps = value == "1"
                 "boot" -> bootDiagnostics = value != "0"
+                "renderer" -> renderer = when (value) {
+                    "gpu" -> Gpu.Preference.Hardware
+                    "cpu" -> Gpu.Preference.Software
+                    else -> Gpu.Preference.Auto
+                }
             }
         }
     }
@@ -137,6 +166,13 @@ object Settings {
         append("dst ").append(if (daylightSaving) 1 else 0).append('\n')
         append("fps ").append(if (showFps) 1 else 0).append('\n')
         append("boot ").append(if (bootDiagnostics) 1 else 0).append('\n')
+        append("renderer ").append(
+            when (renderer) {
+                Gpu.Preference.Hardware -> "gpu"
+                Gpu.Preference.Software -> "cpu"
+                Gpu.Preference.Auto -> "auto"
+            },
+        ).append('\n')
     }
 
     private fun pad(value: Int): String = value.toString().padStart(2, '0')

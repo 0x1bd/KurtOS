@@ -11,5 +11,6 @@ include(
     "gba",
     "snes",
     "n64",
+    "spezi",
     "testkit",
 )

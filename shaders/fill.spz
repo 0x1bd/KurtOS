@@ -1,0 +1,3 @@
+kernel fn fill(out: global mut *u32) {
+    out[workitem_id_x()] = 0xCA11AB1E
+}

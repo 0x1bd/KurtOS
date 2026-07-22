@@ -1,0 +1,13 @@
+kernel fn gradient(fb: global mut *u32, width: u32, height: u32, pitchpx: u32) {
+    let gid = global_id_x()
+    if gid >= width * height {
+        return
+    }
+
+    let x = gid % width
+    let y = gid / width
+    let r = x * 255 / width
+    let g = y * 255 / height
+
+    fb[y * pitchpx + x] = (r << 16) | (g << 8) | 0x60
+}

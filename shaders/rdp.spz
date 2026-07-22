@@ -1,0 +1,64 @@
+const RDRAM_MASK: u32 = 0x7FFFFF
+
+const PRIM_STRIDE: u32 = 12
+const PRIM_KIND: u32 = 0
+const PRIM_X0: u32 = 1
+const PRIM_Y0: u32 = 2
+const PRIM_X1: u32 = 3
+const PRIM_Y1: u32 = 4
+const PRIM_WIDTH: u32 = 5
+const PRIM_IMAGE: u32 = 6
+const PRIM_ARG0: u32 = 7
+
+const KIND_FILL16: u32 = 0
+
+fn store16(rdram: global mut *u32, hidden: global mut *u8, byteAddr: u32, value: u32) {
+    let masked = byteAddr & RDRAM_MASK
+    let words = rdram as global mut *u16
+    words[(masked >> 1) ^ 1] = u16(value)
+    hidden[masked >> 1] = value & 1 != 0 ? 3 : 0
+}
+
+fn store32(rdram: global mut *u32, byteAddr: u32, value: u32) {
+    rdram[(byteAddr & RDRAM_MASK) >> 2] = value
+}
+
+kernel fn rdp(
+    rdram: global mut *u32,
+    hidden: global mut *u8,
+    prims: global *u32,
+    primCount: u32,
+    bboxX: u32,
+    bboxY: u32,
+    bboxW: u32,
+    bboxH: u32,
+) {
+    let gid = global_id_x()
+    if gid >= bboxW * bboxH {
+        return
+    }
+
+    let px = bboxX + gid % bboxW
+    let py = bboxY + gid / bboxW
+
+    for p in 0..primCount {
+        let rec = p * PRIM_STRIDE
+        if px < prims[rec + PRIM_X0] or px > prims[rec + PRIM_X1] {
+            continue
+        }
+        if py < prims[rec + PRIM_Y0] or py > prims[rec + PRIM_Y1] {
+            continue
+        }
+
+        let width = prims[rec + PRIM_WIDTH]
+        let image = prims[rec + PRIM_IMAGE]
+        let fillColor = prims[rec + PRIM_ARG0]
+
+        if prims[rec + PRIM_KIND] == KIND_FILL16 {
+            let value = px & 1 != 0 ? fillColor & 0xFFFF : (fillColor >> 16) & 0xFFFF
+            store16(rdram, hidden, image + (py * width + px) * 2, value)
+        } else {
+            store32(rdram, image + (py * width + px) * 4, fillColor)
+        }
+    }
+}

@@ -47,8 +47,9 @@ object Home {
     private const val SETTING_DST = 3
     private const val SETTING_FPS = 4
     private const val SETTING_BOOT = 5
-    private const val SETTING_SYSTEM = 6
-    private const val SETTING_COUNT = 7
+    private const val SETTING_RENDERER = 6
+    private const val SETTING_SYSTEM = 7
+    private const val SETTING_COUNT = 8
 
     private val HINTS = listOf(
         Chrome.Hint(HomeIcons.DPAD, null, Panels.BAR_TEXT, "NAVIGATE"),
@@ -251,6 +252,7 @@ object Home {
             SETTING_DST -> Settings.setDaylightSaving(!Settings.daylightSaving)
             SETTING_FPS -> Settings.setShowFps(!Settings.showFps)
             SETTING_BOOT -> Settings.setBootDiagnostics(!Settings.bootDiagnostics)
+            SETTING_RENDERER -> Settings.cycleRenderer(if (delta == 0) 1 else delta)
         }
     }
 
@@ -567,6 +569,11 @@ object Home {
             ),
             Triple("FPS OVERLAY", onOff(Settings.showFps), "SHOWS A LIVE FRAME RATE WHILE A GAME RUNS"),
             Triple("BOOT DIAGNOSTICS", onOff(Settings.bootDiagnostics), "SHOW THE HARDWARE REPORT SCREEN AT STARTUP"),
+            Triple(
+                "RENDERER",
+                Settings.rendererLabel(),
+                "AUTO PICKS THE GPU WHEN IT IS THERE - CPU RUNS THE SAME SHADERS ON THE PROCESSOR",
+            ),
             Triple("SYSTEM INFO", "OPEN", "DRIVER STATUS AND A WAY INTO THE SHELL"),
         )
 

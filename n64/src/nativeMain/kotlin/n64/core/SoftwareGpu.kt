@@ -9,8 +9,9 @@ import kotlinx.cinterop.UIntVar
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.pin
 import kotlinx.cinterop.toCPointer
+import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toLong
-import rdpshader.rdpspan_exec
+import rdpshader.rdpspan
 
 @OptIn(ExperimentalForeignApi::class)
 private class SoftwareBuffer(override val words: Int) : GpuBuffer {
@@ -46,6 +47,8 @@ class SoftwareGpu(private val order: Order = Order.Forward) : GpuBackend {
 
     override val name = "software"
 
+    override val hardware = false
+
     override fun available(): Boolean = true
 
     override fun kernel(name: String): GpuKernel? =
@@ -74,12 +77,21 @@ class SoftwareGpu(private val order: Order = Order.Forward) : GpuBackend {
         val chainStart = pointer(kernargs, 18).toCPointer<UIntVar>()
         val chainSpans = pointer(kernargs, 20).toCPointer<UIntVar>()
 
+        val dispatch = IntArray(DISPATCH_WORDS)
+        dispatch[SIZE_X] = threadsPerGroup
+        dispatch[SIZE_Y] = 1
+        dispatch[SIZE_Z] = 1
+
+        val pinnedDispatch = dispatch.pin()
+        val dispatchPointer = pinnedDispatch.addressOf(0).reinterpret<UIntVar>()
+
         for (step in 0 until limit) {
             val group = if (order == Order.Reverse) limit - 1 - step else step
+            dispatch[GROUP_X] = group
             for (lane in 0 until threadsPerGroup) {
-                rdpspan_exec(
-                    group.toUInt(),
-                    lane.toUInt(),
+                dispatch[ITEM_X] = lane
+                rdpspan(
+                    dispatchPointer,
                     rdram,
                     hidden,
                     spans,
@@ -95,7 +107,17 @@ class SoftwareGpu(private val order: Order = Order.Forward) : GpuBackend {
                 )
             }
         }
+        pinnedDispatch.unpin()
         return true
+    }
+
+    private companion object {
+        const val DISPATCH_WORDS = 9
+        const val ITEM_X = 0
+        const val GROUP_X = 3
+        const val SIZE_X = 6
+        const val SIZE_Y = 7
+        const val SIZE_Z = 8
     }
 
     private fun pointer(kernargs: GpuBuffer, word: Int): Long =

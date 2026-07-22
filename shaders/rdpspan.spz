@@ -1,0 +1,1238 @@
+const RDRAM_MASK: u32 = 0x7FFFFF
+
+const SPAN_STRIDE: i32 = 45
+const SPAN_TMEM: i32 = 44
+const TMEM_BYTES: i32 = 4096
+const SPAN_ROW: i32 = 0
+const SPAN_LX: i32 = 1
+const SPAN_RX: i32 = 2
+const SPAN_UNSCRX: i32 = 3
+const SPAN_R: i32 = 4
+const SPAN_G: i32 = 5
+const SPAN_B: i32 = 6
+const SPAN_A: i32 = 7
+const SPAN_Z: i32 = 8
+const SPAN_MINORX0: i32 = 9
+const SPAN_MAJORX0: i32 = 13
+const SPAN_INVALY0: i32 = 17
+const SPAN_S: i32 = 21
+const SPAN_T: i32 = 22
+const SPAN_W: i32 = 23
+const SPAN_FLIP: i32 = 24
+const SPAN_DR: i32 = 25
+const SPAN_DG: i32 = 26
+const SPAN_DB: i32 = 27
+const SPAN_DA: i32 = 28
+const SPAN_DZ: i32 = 29
+const SPAN_DS: i32 = 30
+const SPAN_DT: i32 = 31
+const SPAN_DW: i32 = 32
+const SPAN_DZPIX: i32 = 33
+const SPAN_DZPIXENC: i32 = 34
+const SPAN_TEXRECT: i32 = 35
+const SPAN_TR_X0: i32 = 36
+const SPAN_TR_Y0: i32 = 37
+const SPAN_TR_S: i32 = 38
+const SPAN_TR_T: i32 = 39
+const SPAN_TR_DSDX: i32 = 40
+const SPAN_TR_DTDY: i32 = 41
+const SPAN_TR_SHIFT: i32 = 42
+const SPAN_TR_FLIP: i32 = 43
+
+const U_FLIP: i32 = 0
+const U_SCISSOR_XH: i32 = 1
+const U_SCISSOR_XL: i32 = 2
+const U_COLORSIZE: i32 = 3
+const U_COLORIMAGE: i32 = 4
+const U_COLORWIDTH: i32 = 5
+const U_SPANS_DR: i32 = 6
+const U_SPANS_DG: i32 = 7
+const U_SPANS_DB: i32 = 8
+const U_SPANS_DA: i32 = 9
+const U_PRIM: i32 = 10
+const U_ENV: i32 = 11
+const U_BLEND: i32 = 12
+const U_FOG: i32 = 13
+const U_PRIMLOD: i32 = 14
+const U_CRGB: i32 = 15
+const U_CALPHA: i32 = 23
+const U_BLENDSEL: i32 = 31
+const U_SPANS_DZ: i32 = 39
+const U_ZIMAGE: i32 = 40
+const U_ZMODE: i32 = 41
+const U_ZCOMPARE: i32 = 42
+const U_ZUPDATE: i32 = 43
+const U_ZSOURCE: i32 = 44
+const U_ALPHACOMPARE: i32 = 45
+const U_CTA: i32 = 46
+const U_ACS: i32 = 47
+const U_FORCEBLEND: i32 = 48
+const U_PRIMDEPTH: i32 = 49
+const U_PRIMDZ: i32 = 50
+const U_PRIMDZENC: i32 = 51
+const U_SPANDZPIX: i32 = 52
+const U_SPANDZPIXENC: i32 = 53
+const U_USEDEPTH: i32 = 54
+const U_SHADE: i32 = 55
+const U_TEXTURE: i32 = 56
+const U_PERSP: i32 = 57
+const U_SAMPLETYPE: i32 = 58
+const U_TLUTEN: i32 = 59
+const U_TLUTTYPE: i32 = 60
+const U_MIDTEXEL: i32 = 61
+const U_SPANS_DS: i32 = 62
+const U_SPANS_DT: i32 = 63
+const U_SPANS_DW: i32 = 64
+const T_FORMAT: i32 = 65
+const T_SIZE: i32 = 66
+const T_LINE: i32 = 67
+const T_TMEM: i32 = 68
+const T_PALETTE: i32 = 69
+const T_MIRRORS: i32 = 71
+const T_MASKS: i32 = 72
+const T_SHIFTS: i32 = 73
+const T_MIRRORT: i32 = 75
+const T_MASKT: i32 = 76
+const T_SHIFTT: i32 = 77
+const T_SL: i32 = 78
+const T_TL: i32 = 79
+const T_SH: i32 = 80
+const T_TH: i32 = 81
+const T_CLAMPDIFFS: i32 = 82
+const T_CLAMPDIFFT: i32 = 83
+const T_CLAMPENS: i32 = 84
+const T_CLAMPENT: i32 = 85
+const T_MASKSCLAMPED: i32 = 86
+const T_MASKTCLAMPED: i32 = 87
+const U_CYCLE2: i32 = 88
+const U_TEXRECT: i32 = 89
+const U_COPY: i32 = 90
+const U_TR_X0: i32 = 91
+const U_TR_Y0: i32 = 92
+const U_TR_S: i32 = 93
+const U_TR_T: i32 = 94
+const U_TR_DSDX: i32 = 95
+const U_TR_DTDY: i32 = 96
+const U_TR_SHIFT: i32 = 97
+const U_TR_FLIP: i32 = 98
+const U_FILL: i32 = 99
+const U_FILLCOLOR: i32 = 100
+const U_RECTSHADE: i32 = 101
+
+struct Coords {
+    s: i32,
+    t: i32,
+}
+
+struct SpanCtx {
+    row: i32,
+    xendsc: i32,
+    xinc: i32,
+    length: i32,
+    scXh: i32,
+    scXl: i32,
+    r0: i32,
+    g0: i32,
+    b0: i32,
+    a0: i32,
+    z0: i32,
+    s0: i32,
+    t0: i32,
+    w0: i32,
+    drinc: i32,
+    dginc: i32,
+    dbinc: i32,
+    dainc: i32,
+    dzinc: i32,
+    dsinc: i32,
+    dtinc: i32,
+    dwinc: i32,
+    flip: i32,
+    ps: i32,
+    pe: i32,
+    spanDzPix: i32,
+    spanDzEnc: i32,
+    ownerMode: i32,
+    needCvg: i32,
+    shadeOn: i32,
+    textureOn: i32,
+    persp: i32,
+    texrect: i32,
+    copy: i32,
+    trX0: i32,
+    trY0: i32,
+    trS: i32,
+    trT: i32,
+    trDsdx: i32,
+    trDtdy: i32,
+    trShift: i32,
+    trFlip: i32,
+}
+
+fn clamp255(v: i32) -> i32 {
+    return v < 0 ? 0 : (v > 255 ? 255 : v)
+}
+
+fn channel(color: u32, index: i32) -> i32 {
+    return i32((color >> (index * 8)) & 0xFF)
+}
+
+fn sx16(v: i32) -> i32 {
+    return i32(i16(v))
+}
+
+fn maskbits(m: i32) -> i32 {
+    return m == 0 ? 0x3FF : ((0xFFFF >> (16 - m)) & 0x3FF)
+}
+
+fn pack(r: i32, g: i32, b: i32, a: i32) -> u32 {
+    return (u32(r) & 0xFF) | ((u32(g) & 0xFF) << 8) | ((u32(b) & 0xFF) << 16) | ((u32(a) & 0xFF) << 24)
+}
+
+fn rgba16(value: i32) -> u32 {
+    let r5 = (value >> 11) & 0x1F
+    let g5 = (value >> 6) & 0x1F
+    let b5 = (value >> 1) & 0x1F
+    let a = value & 1 != 0 ? 0xFF : 0
+    return pack((r5 << 3) | (r5 >> 2), (g5 << 3) | (g5 >> 2), (b5 << 3) | (b5 >> 2), a)
+}
+
+fn rdram16(rdram: global mut *u32, addr: u32) -> i32 {
+    let masked = addr & RDRAM_MASK
+    let words = rdram as global mut *u16
+    return i32(words[(masked >> 1) ^ 1])
+}
+
+fn store16(rdram: global mut *u32, addr: u32, value: i32) {
+    let masked = addr & RDRAM_MASK
+    let words = rdram as global mut *u16
+    words[(masked >> 1) ^ 1] = u16(value)
+}
+
+fn read_color(rdram: global mut *u32, u: global *u32, x: i32, y: i32) -> u32 {
+    let size = i32(u[U_COLORSIZE])
+    let image = u[U_COLORIMAGE]
+    let width = u[U_COLORWIDTH]
+    if size == 2 {
+        return rgba16(rdram16(rdram, image + u32(y * i32(width) + x) * 2))
+    }
+    if size == 3 {
+        let v = rdram[((image + u32(y * i32(width) + x) * 4) & RDRAM_MASK) >> 2]
+        return pack(i32(v >> 24) & 0xFF, i32(v >> 16) & 0xFF, i32(v >> 8) & 0xFF, i32(v) & 0xFF)
+    }
+    return 0
+}
+
+fn write_color(rdram: global mut *u32, u: global *u32, x: i32, y: i32, color: u32) {
+    let r = channel(color, 0)
+    let g = channel(color, 1)
+    let b = channel(color, 2)
+    let a = channel(color, 3)
+    let size = i32(u[U_COLORSIZE])
+    let image = u[U_COLORIMAGE]
+    let width = u[U_COLORWIDTH]
+    if size == 2 {
+        let value = ((r * 31 / 255) << 11) | ((g * 31 / 255) << 6) | ((b * 31 / 255) << 1) | (a >= 128 ? 1 : 0)
+        store16(rdram, image + u32(y * i32(width) + x) * 2, value)
+    } else if size == 3 {
+        rdram[((image + u32(y * i32(width) + x) * 4) & RDRAM_MASK) >> 2] =
+            (u32(r) << 24) | (u32(g) << 16) | (u32(b) << 8) | u32(a)
+    }
+}
+
+fn tmem_byte(tmem: global *u8, texBase: i32, at: i32, row: i32) -> i32 {
+    let mut offset = at
+    if row & 1 != 0 {
+        offset = offset ^ 4
+    }
+    return i32(tmem[texBase + (offset & 0xFFF)])
+}
+
+fn palette(u: global *u32, tmem: global *u8, texBase: i32, index: i32) -> u32 {
+    let at = 0x800 + (index & 0xFF) * 8
+    let value = (i32(tmem[texBase + (at & 0xFFF)]) << 8) | i32(tmem[texBase + ((at + 1) & 0xFFF)])
+    if i32(u[U_TLUTTYPE]) == 0 {
+        return rgba16(value)
+    }
+    let inten = (value >> 8) & 0xFF
+    return pack(inten, inten, inten, value & 0xFF)
+}
+
+fn decode4(u: global *u32, tmem: global *u8, texBase: i32, value: i32) -> u32 {
+    let fmt = i32(u[T_FORMAT])
+    if fmt == 2 {
+        return palette(u, tmem, texBase, i32(u[T_PALETTE]) * 16 + value)
+    }
+    if fmt == 3 {
+        let three = (value >> 1) & 7
+        let shaded = (three << 5) | (three << 2) | (three >> 1)
+        return pack(shaded, shaded, shaded, value & 1 != 0 ? 0xFF : 0)
+    }
+    let inten = value * 17
+    return pack(inten, inten, inten, inten)
+}
+
+fn decode8(u: global *u32, tmem: global *u8, texBase: i32, value: i32) -> u32 {
+    let fmt = i32(u[T_FORMAT])
+    if fmt == 2 {
+        return palette(u, tmem, texBase, value)
+    }
+    if fmt == 3 {
+        let inten = ((value >> 4) & 0xF) * 17
+        let a = (value & 0xF) * 17
+        return pack(inten, inten, inten, a)
+    }
+    return pack(value, value, value, value)
+}
+
+fn decode16(u: global *u32, tmem: global *u8, texBase: i32, value: i32) -> u32 {
+    let fmt = i32(u[T_FORMAT])
+    if fmt == 3 {
+        let inten = (value >> 8) & 0xFF
+        return pack(inten, inten, inten, value & 0xFF)
+    }
+    if fmt == 2 {
+        return palette(u, tmem, texBase, value & 0xFF)
+    }
+    return rgba16(value)
+}
+
+fn fetch(u: global *u32, tmem: global *u8, texBase: i32, s: i32, t: i32) -> u32 {
+    let base = i32(u[T_TMEM]) * 8 + t * i32(u[T_LINE]) * 8
+    let size = i32(u[T_SIZE])
+    if size == 0 {
+        let at = base + s / 2
+        let raw = tmem_byte(tmem, texBase, at, t)
+        let nib = (s & 1) == 0 ? (raw >> 4) & 0xF : raw & 0xF
+        return decode4(u, tmem, texBase, nib)
+    }
+    if size == 1 {
+        return decode8(u, tmem, texBase, tmem_byte(tmem, texBase, base + s, t))
+    }
+    if size == 2 {
+        let at = base + s * 2
+        let value = (tmem_byte(tmem, texBase, at, t) << 8) | tmem_byte(tmem, texBase, at + 1, t)
+        return decode16(u, tmem, texBase, value)
+    }
+    let at = base + s * 2
+    let mut high = at
+    if t & 1 != 0 {
+        high = high ^ 4
+    }
+    let r = i32(tmem[texBase + (high & 0x7FF)])
+    let g = i32(tmem[texBase + ((high + 1) & 0x7FF)])
+    let b = i32(tmem[texBase + ((high & 0x7FF) | 0x800)])
+    let a = i32(tmem[texBase + (((high + 1) & 0x7FF) | 0x800)])
+    return pack(r, g, b, a)
+}
+
+fn tclod_clamp(coord: i32) -> i32 {
+    if coord & 0x40000 != 0 {
+        return 0x7FFF
+    }
+    if coord & 0x20000 != 0 {
+        return 0x8000
+    }
+    switch coord & 0x18000 {
+        case 0x8000 -> { return 0x7FFF }
+        case 0x10000 -> { return 0x8000 }
+        else -> { return coord & 0xFFFF }
+    }
+}
+
+fn tc_shift(coord: i32, shifter: i32) -> i32 {
+    return shifter < 11 ? sx16(coord) >> shifter : sx16(coord << (16 - shifter))
+}
+
+fn divide(s: i32, t: i32, w: i32, tcdiv: global *u32, persp: i32) -> Coords {
+    let ss = (s >> 16) & 0xFFFF
+    let st = (t >> 16) & 0xFFFF
+    let sw = (w >> 16) & 0xFFFF
+    let mut sss: i32 = 0
+    let mut sst: i32 = 0
+    if persp == 0 {
+        sss = sx16(ss) & 0x1FFFF
+        sst = sx16(st) & 0x1FFFF
+    } else {
+        let wCarry = sx16(sw) <= 0
+        let wIndex = sw & 0x7FFF
+        let entry = i32(tcdiv[wIndex])
+        let tluRcp = entry >> 4
+        let shift = entry & 0xF
+        let sprod = sx16(ss) * tluRcp
+        let tprod = sx16(st) * tluRcp
+        let tempmask: i32 = ((1 << 30) - 1) & -((1 << 29) >> shift)
+        let oobS = sprod & tempmask
+        let oobT = tprod & tempmask
+        let mut temps: i32 = 0
+        let mut tempt: i32 = 0
+        if shift != 0xE {
+            temps = sprod >> (13 - shift)
+            tempt = tprod >> (13 - shift)
+        } else {
+            temps = sprod << 1
+            tempt = tprod << 1
+        }
+        let mut ouS: i32 = 0
+        let mut ouT: i32 = 0
+        if oobS != tempmask and oobS != 0 {
+            ouS = (sprod & (1 << 29)) == 0 ? (2 << 17) : (1 << 17)
+        }
+        if oobT != tempmask and oobT != 0 {
+            ouT = (tprod & (1 << 29)) == 0 ? (2 << 17) : (1 << 17)
+        }
+        if wCarry {
+            ouS = ouS | (2 << 17)
+            ouT = ouT | (2 << 17)
+        }
+        sss = (temps & 0x1FFFF) | ouS
+        sst = (tempt & 0x1FFFF) | ouT
+    }
+    return Coords(tclod_clamp(sss), tclod_clamp(sst))
+}
+
+fn sample_point(u: global *u32, tmem: global *u8, texBase: i32, rawS: i32, rawT: i32) -> u32 {
+    let mut s = tc_shift(rawS, i32(u[T_SHIFTS]))
+    let maxS = (s >> 3) >= i32(u[T_SH])
+    let mut t = tc_shift(rawT, i32(u[T_SHIFTT]))
+    let maxT = (t >> 3) >= i32(u[T_TH])
+    s = s - (i32(u[T_SL]) << 3)
+    t = t - (i32(u[T_TL]) << 3)
+    if i32(u[T_CLAMPENS]) != 0 {
+        s = maxS ? i32(u[T_CLAMPDIFFS]) : (s & 0x10000 != 0 ? 0 : (s >> 5))
+    } else {
+        s = s >> 5
+    }
+    if i32(u[T_CLAMPENT]) != 0 {
+        t = maxT ? i32(u[T_CLAMPDIFFT]) : (t & 0x10000 != 0 ? 0 : (t >> 5))
+    } else {
+        t = t >> 5
+    }
+    let maskS = i32(u[T_MASKS])
+    let maskT = i32(u[T_MASKT])
+    if maskS != 0 {
+        if i32(u[T_MIRRORS]) != 0 and (s >> i32(u[T_MASKSCLAMPED])) & 1 != 0 {
+            s = ~s
+        }
+        s = s & maskbits(maskS)
+    }
+    if maskT != 0 {
+        if i32(u[T_MIRRORT]) != 0 and (t >> i32(u[T_MASKTCLAMPED])) & 1 != 0 {
+            t = ~t
+        }
+        t = t & maskbits(maskT)
+    }
+    return fetch(u, tmem, texBase, s, t)
+}
+
+fn sample_tex(u: global *u32, tmem: global *u8, texBase: i32, rawS: i32, rawT: i32) -> u32 {
+    let mut s = tc_shift(rawS, i32(u[T_SHIFTS]))
+    let maxS = (s >> 3) >= i32(u[T_SH])
+    let mut t = tc_shift(rawT, i32(u[T_SHIFTT]))
+    let maxT = (t >> 3) >= i32(u[T_TH])
+    s = s - (i32(u[T_SL]) << 3)
+    t = t - (i32(u[T_TL]) << 3)
+
+    let clampEnS = i32(u[T_CLAMPENS])
+    let clampEnT = i32(u[T_CLAMPENT])
+    let maskS = i32(u[T_MASKS])
+    let maskT = i32(u[T_MASKT])
+    let sampleType = i32(u[U_SAMPLETYPE])
+
+    if sampleType == 0 and i32(u[U_TLUTEN]) == 0 {
+        if clampEnS != 0 {
+            s = maxS ? i32(u[T_CLAMPDIFFS]) : (s & 0x10000 != 0 ? 0 : (s >> 5))
+        } else {
+            s = s >> 5
+        }
+        if clampEnT != 0 {
+            t = maxT ? i32(u[T_CLAMPDIFFT]) : (t & 0x10000 != 0 ? 0 : (t >> 5))
+        } else {
+            t = t >> 5
+        }
+        if maskS != 0 {
+            if i32(u[T_MIRRORS]) != 0 and (s >> i32(u[T_MASKSCLAMPED])) & 1 != 0 {
+                s = ~s
+            }
+            s = s & maskbits(maskS)
+        }
+        if maskT != 0 {
+            if i32(u[T_MIRRORT]) != 0 and (t >> i32(u[T_MASKTCLAMPED])) & 1 != 0 {
+                t = ~t
+            }
+            t = t & maskbits(maskT)
+        }
+        return fetch(u, tmem, texBase, s, t)
+    }
+
+    let mut sFrac = s & 0x1F
+    let mut tFrac = t & 0x1F
+    if clampEnS != 0 {
+        if maxS {
+            s = i32(u[T_CLAMPDIFFS])
+            sFrac = 0
+        } else if s & 0x10000 != 0 {
+            s = 0
+            sFrac = 0
+        } else {
+            s = s >> 5
+        }
+    } else {
+        s = s >> 5
+    }
+    if clampEnT != 0 {
+        if maxT {
+            t = i32(u[T_CLAMPDIFFT])
+            tFrac = 0
+        } else if t & 0x10000 != 0 {
+            t = 0
+            tFrac = 0
+        } else {
+            t = t >> 5
+        }
+    } else {
+        t = t >> 5
+    }
+
+    let mut sDiff: i32 = 1
+    let mut tDiff: i32 = 1
+    if maskS != 0 {
+        let bits = maskbits(maskS)
+        if i32(u[T_MIRRORS]) != 0 {
+            let wrap = (s >> i32(u[T_MASKSCLAMPED])) & 1
+            if wrap != 0 {
+                s = ~s
+            }
+            s = s & bits
+            sDiff = ((s - wrap) & bits) == bits ? 0 : (1 - (wrap << 1))
+        } else {
+            s = s & bits
+            sDiff = s == bits ? -s : 1
+        }
+    } else {
+        sDiff = 1
+    }
+    if maskT != 0 {
+        let bits = maskbits(maskT)
+        if i32(u[T_MIRRORT]) != 0 {
+            let wrap = (t >> i32(u[T_MASKTCLAMPED])) & 1
+            if wrap != 0 {
+                t = ~t
+            }
+            t = t & bits
+            tDiff = ((t - wrap) & bits) == bits ? 0 : (1 - (wrap << 1))
+        } else {
+            t = t & bits
+            tDiff = t == bits ? -(t & 0xFF) : 1
+        }
+    } else {
+        tDiff = 1
+    }
+    if sampleType == 0 {
+        sDiff = 0
+        tDiff = 0
+    }
+
+    let t0 = fetch(u, tmem, texBase, s, t)
+    let t1 = fetch(u, tmem, texBase, s + sDiff, t)
+    let t2 = fetch(u, tmem, texBase, s, t + tDiff)
+    let t3 = fetch(u, tmem, texBase, s + sDiff, t + tDiff)
+
+    let upper = (sFrac + tFrac) & 0x20
+    let center = i32(u[U_MIDTEXEL]) != 0 and sFrac == 0x10 and tFrac == 0x10
+    let mut result: u32 = 0
+    for idx in 0..4 {
+        let sh = idx * 8
+        let c0 = i32(t0 >> sh) & 0xFF
+        let c1 = i32(t1 >> sh) & 0xFF
+        let c2 = i32(t2 >> sh) & 0xFF
+        let c3 = i32(t3 >> sh) & 0xFF
+        let mut value: i32 = 0
+        if center {
+            value = c3 + ((((c1 + c2) << 6) - (c3 << 7) + ((~c3 + c0) << 6) + 0xC0) >> 8)
+        } else if upper != 0 {
+            let invSf = 0x20 - sFrac
+            let invTf = 0x20 - tFrac
+            value = c3 + ((invSf * (c2 - c3) + invTf * (c1 - c3) + 0x10) >> 5)
+        } else {
+            value = c0 + ((sFrac * (c1 - c0) + tFrac * (c2 - c0) + 0x10) >> 5)
+        }
+        result = result | (u32(clamp255(value)) << sh)
+    }
+    return result
+}
+
+fn csrc(s: i32, index: i32, texel0: u32, texel1: u32, shade: u32, combined: u32, u: global *u32, isA: i32) -> i32 {
+    switch s {
+        case 0 -> { return channel(combined, index) }
+        case 1 -> { return channel(texel0, index) }
+        case 2 -> { return channel(texel1, index) }
+        case 3 -> { return channel(u[U_PRIM], index) }
+        case 4 -> { return channel(shade, index) }
+        case 5 -> { return channel(u[U_ENV], index) }
+        case 6 -> { return isA != 0 ? 0xFF : 0 }
+        else -> { return 0 }
+    }
+}
+
+fn cmul(
+    s: i32,
+    index: i32,
+    texel0: u32,
+    texel1: u32,
+    shade: u32,
+    shadeAlpha: i32,
+    combined: u32,
+    combinedAlpha: i32,
+    u: global *u32,
+) -> i32 {
+    switch s {
+        case 0 -> { return channel(combined, index) }
+        case 1 -> { return channel(texel0, index) }
+        case 2 -> { return channel(texel1, index) }
+        case 3 -> { return channel(u[U_PRIM], index) }
+        case 4 -> { return channel(shade, index) }
+        case 5 -> { return channel(u[U_ENV], index) }
+        case 6 -> { return 0xFF }
+        case 7 -> { return combinedAlpha }
+        case 8 -> { return i32(texel0 >> 24) & 0xFF }
+        case 9 -> { return i32(texel1 >> 24) & 0xFF }
+        case 10 -> { return i32(u[U_PRIM] >> 24) & 0xFF }
+        case 11 -> { return shadeAlpha }
+        case 12 -> { return i32(u[U_ENV] >> 24) & 0xFF }
+        case 14 -> { return i32(u[U_PRIMLOD]) }
+        else -> { return 0 }
+    }
+}
+
+fn cadd(s: i32, index: i32, texel0: u32, texel1: u32, shade: u32, combined: u32, u: global *u32) -> i32 {
+    switch s {
+        case 0 -> { return channel(combined, index) }
+        case 1 -> { return channel(texel0, index) }
+        case 2 -> { return channel(texel1, index) }
+        case 3 -> { return channel(u[U_PRIM], index) }
+        case 4 -> { return channel(shade, index) }
+        case 5 -> { return channel(u[U_ENV], index) }
+        case 6 -> { return 0xFF }
+        else -> { return 0 }
+    }
+}
+
+fn asrc(s: i32, texel0: u32, texel1: u32, shadeAlpha: i32, combinedAlpha: i32, u: global *u32) -> i32 {
+    switch s {
+        case 0 -> { return combinedAlpha }
+        case 1 -> { return i32(texel0 >> 24) & 0xFF }
+        case 2 -> { return i32(texel1 >> 24) & 0xFF }
+        case 3 -> { return i32(u[U_PRIM] >> 24) & 0xFF }
+        case 4 -> { return shadeAlpha }
+        case 5 -> { return i32(u[U_ENV] >> 24) & 0xFF }
+        case 6 -> { return 0xFF }
+        else -> { return 0 }
+    }
+}
+
+fn amul(s: i32, texel0: u32, texel1: u32, shadeAlpha: i32, u: global *u32) -> i32 {
+    switch s {
+        case 1 -> { return i32(texel0 >> 24) & 0xFF }
+        case 2 -> { return i32(texel1 >> 24) & 0xFF }
+        case 3 -> { return i32(u[U_PRIM] >> 24) & 0xFF }
+        case 4 -> { return shadeAlpha }
+        case 5 -> { return i32(u[U_ENV] >> 24) & 0xFF }
+        case 6 -> { return i32(u[U_PRIMLOD]) }
+        else -> { return 0 }
+    }
+}
+
+fn combine(texel0: u32, texel1: u32, shade: u32, shadeAlpha: i32, u: global *u32) -> u32 {
+    let mut combined: u32 = 0
+    let mut combinedAlpha: i32 = 0
+    let cycles = i32(u[U_CYCLE2]) != 0 ? 2 : 1
+    for cycle in 0..cycles {
+        let mut result: i32 = 0
+        for index in 0..3 {
+            let a = csrc(i32(u[U_CRGB + 0 + cycle]), index, texel0, texel1, shade, combined, u, 1)
+            let b = csrc(i32(u[U_CRGB + 2 + cycle]), index, texel0, texel1, shade, combined, u, 0)
+            let c = cmul(i32(u[U_CRGB + 4 + cycle]), index, texel0, texel1, shade, shadeAlpha, combined, combinedAlpha, u)
+            let d = cadd(i32(u[U_CRGB + 6 + cycle]), index, texel0, texel1, shade, combined, u)
+            result = result | (clamp255((((a - b) * c) >> 8) + d) << (index * 8))
+        }
+        let aa = asrc(i32(u[U_CALPHA + 0 + cycle]), texel0, texel1, shadeAlpha, combinedAlpha, u)
+        let ab = asrc(i32(u[U_CALPHA + 2 + cycle]), texel0, texel1, shadeAlpha, combinedAlpha, u)
+        let ac = amul(i32(u[U_CALPHA + 4 + cycle]), texel0, texel1, shadeAlpha, u)
+        let ad = asrc(i32(u[U_CALPHA + 6 + cycle]), texel0, texel1, shadeAlpha, combinedAlpha, u)
+        combinedAlpha = clamp255((((aa - ab) * ac) >> 8) + ad)
+        combined = u32(result)
+    }
+    return (combined & 0xFFFFFF) | ((u32(combinedAlpha) & 0xFF) << 24)
+}
+
+fn blend_select(code: i32, chained: u32, rdram: global mut *u32, u: global *u32, x: i32, y: i32) -> u32 {
+    switch code {
+        case 0 -> { return chained }
+        case 1 -> { return read_color(rdram, u, x, y) }
+        case 2 -> { return u[U_BLEND] }
+        else -> { return u[U_FOG] }
+    }
+}
+
+fn blend_equation(
+    cycle: i32,
+    chained: u32,
+    pixelAlpha: i32,
+    rdram: global mut *u32,
+    u: global *u32,
+    x: i32,
+    y: i32,
+    shadeAlpha: i32,
+) -> u32 {
+    let bA = i32(u[U_BLENDSEL + 0 + cycle])
+    let bB = i32(u[U_BLENDSEL + 2 + cycle])
+    let bC = i32(u[U_BLENDSEL + 4 + cycle])
+    let bD = i32(u[U_BLENDSEL + 6 + cycle])
+    let aMul = bB == 0 ? pixelAlpha : (bB == 1 ? (i32(u[U_FOG] >> 24) & 0xFF) : (bB == 2 ? shadeAlpha : 0))
+    let bMul = bD == 0 ? (~aMul) & 0xFF : (bD == 1 ? 0xE0 : (bD == 2 ? 0xFF : 0))
+    let blend1a = aMul >> 3
+    let mut blend2a = bMul >> 3
+    if bD == 1 {
+        blend2a = blend2a | 3
+    }
+    let mulb = blend2a + 1
+    let p = blend_select(bA, chained, rdram, u, x, y)
+    let m = blend_select(bC, chained, rdram, u, x, y)
+    let mut result: u32 = 0
+    for idx in 0..3 {
+        let value = channel(p, idx) * blend1a + channel(m, idx) * mulb
+        result = result | (u32((value >> 5) & 0xFF) << (idx * 8))
+    }
+    return result
+}
+
+fn blend_pixel(rdram: global mut *u32, u: global *u32, x: i32, y: i32, color: u32, shadeAlpha: i32) -> u32 {
+    let mut alpha = i32(color >> 24) & 0xFF
+    if alpha == 0xFF {
+        alpha = 0x100
+    }
+    let mut chained = color
+    if i32(u[U_CYCLE2]) != 0 {
+        chained = (blend_equation(0, color, alpha, rdram, u, x, y, shadeAlpha) & 0xFFFFFF) | (color & 0xFF000000)
+    }
+    let cycle = i32(u[U_CYCLE2]) != 0 ? 1 : 0
+    let bB = i32(u[U_BLENDSEL + 2 + cycle])
+    let bD = i32(u[U_BLENDSEL + 6 + cycle])
+    let partialReject = bB == 0 and bD == 0
+    let mut result: u32 = 0
+    if i32(u[U_FORCEBLEND]) == 0 or (partialReject and alpha >= 0xFF) {
+        result = blend_select(i32(u[U_BLENDSEL + 0 + cycle]), chained, rdram, u, x, y)
+    } else {
+        result = blend_equation(cycle, chained, alpha, rdram, u, x, y, shadeAlpha)
+    }
+    return (result & 0xFFFFFF) | (((color >> 24) & 0xFF) << 24)
+}
+
+fn zcorrect(walked: i32) -> i32 {
+    let sz = ((walked >> 10) & 0x3FFFFF) >> 3
+    switch (sz & 0x60000) >> 17 {
+        case 2 -> { return 0x3FFFF }
+        case 3 -> { return 0 }
+        else -> { return sz & 0x3FFFF }
+    }
+}
+
+fn zpass(
+    rdram: global mut *u32,
+    hidden: global mut *u8,
+    zdec: global *u32,
+    deltaz: global *u32,
+    u: global *u32,
+    x: i32,
+    y: i32,
+    szIn: i32,
+    dzPix: i32,
+) -> bool {
+    let sz = szIn & 0x3FFFF
+    let at = u[U_ZIMAGE] + u32(y * i32(u[U_COLORWIDTH]) + x) * 2
+    let zval = rdram16(rdram, at)
+    let hval = i32(hidden[(at & RDRAM_MASK) >> 1]) & 3
+
+    let oz = i32(zdec[(zval >> 2) & 0x3FFF])
+    let rawDzMem = ((zval & 3) << 2) | hval
+    let mut dzMem = 1 << rawDzMem
+    let mut forceCoplanar = false
+
+    let precision = (zval >> 13) & 0xF
+    if precision < 3 {
+        if dzMem != 0x8000 {
+            let modifier = 16 >> precision
+            dzMem = dzMem << 1
+            if dzMem < modifier {
+                dzMem = modifier
+            }
+        } else {
+            forceCoplanar = true
+            dzMem = 0xFFFF
+        }
+    }
+
+    let dzNew = i32(deltaz[(dzPix | dzMem) & 0xFFFF]) << 3
+    let farther = forceCoplanar or sz + dzNew >= oz
+    let atMax = oz == 0x3FFFF
+    let inFront = sz < oz
+
+    switch i32(u[U_ZMODE]) {
+        case 0 -> { return atMax or inFront }
+        case 1 -> { return (!inFront or !farther) ? (atMax or inFront) : true }
+        case 2 -> { return inFront or atMax }
+        else -> {
+            let nearer = forceCoplanar or sz - dzNew <= oz
+            return farther and nearer and !atMax
+        }
+    }
+}
+
+fn zstore(
+    rdram: global mut *u32,
+    hidden: global mut *u8,
+    zcom: global *u32,
+    u: global *u32,
+    x: i32,
+    y: i32,
+    z: i32,
+    dzPixEnc: i32,
+) {
+    let at = u[U_ZIMAGE] + u32(y * i32(u[U_COLORWIDTH]) + x) * 2
+    store16(rdram, at, i32(zcom[z & 0x3FFFF]) | (dzPixEnc >> 2))
+    hidden[(at & RDRAM_MASK) >> 1] = u8(dzPixEnc & 3)
+}
+
+fn rightcvghex(x: i32, fmask: i32) -> i32 {
+    let covered = ((x & 7) + 1) >> 1
+    return (0xF0 >> covered) & fmask
+}
+
+fn leftcvghex(x: i32, fmask: i32) -> i32 {
+    let covered = ((x & 7) + 1) >> 1
+    return (0xF >> covered) & fmask
+}
+
+fn popcount8(v: i32) -> i32 {
+    let mut x = v & 0xFF
+    x = x - ((x >> 1) & 0x55)
+    x = (x & 0x33) + ((x >> 2) & 0x33)
+    return (x + (x >> 4)) & 0xF
+}
+
+fn coverage_at(x: i32, flip: i32, ps: i32, pe: i32, rec: global *u32, rb: i32) -> i32 {
+    let mut mask = 0xFF
+    for sub in 0..4 {
+        let fmask = 0xA >> (sub & 1)
+        let maskshift = (sub - 2) & 4
+        let fms = fmask << maskshift
+        if i32(rec[rb + SPAN_INVALY0 + sub]) != 0 {
+            mask = mask & ~fms
+            continue
+        }
+        let minorcur = i32(rec[rb + SPAN_MINORX0 + sub])
+        let majorcur = i32(rec[rb + SPAN_MAJORX0 + sub])
+        let minorint = minorcur >> 3
+        let majorint = majorcur >> 3
+        if flip != 0 {
+            let lo = majorint < pe ? majorint : pe
+            let hi = minorint > ps ? minorint : ps
+            if x <= lo or x >= hi {
+                mask = mask & ~fms
+            }
+            if minorint > majorint {
+                if x == minorint {
+                    mask = mask | (rightcvghex(minorcur, fmask) << maskshift)
+                }
+                if x == majorint {
+                    mask = mask | (leftcvghex(majorcur, fmask) << maskshift)
+                }
+            } else if minorint == majorint {
+                if x == majorint {
+                    mask = mask | ((rightcvghex(minorcur, fmask) & leftcvghex(majorcur, fmask)) << maskshift)
+                }
+            }
+        } else {
+            let lo = minorint < pe ? minorint : pe
+            let hi = majorint > ps ? majorint : ps
+            if x <= lo or x >= hi {
+                mask = mask & ~fms
+            }
+            if majorint > minorint {
+                if x == minorint {
+                    mask = mask | (leftcvghex(minorcur, fmask) << maskshift)
+                }
+                if x == majorint {
+                    mask = mask | (rightcvghex(majorcur, fmask) << maskshift)
+                }
+            } else if minorint == majorint {
+                if x == majorint {
+                    mask = mask | ((leftcvghex(minorcur, fmask) & rightcvghex(majorcur, fmask)) << maskshift)
+                }
+            }
+        }
+    }
+    return mask
+}
+
+fn write_pixel(
+    rdram: global mut *u32,
+    hidden: global mut *u8,
+    zcom: global *u32,
+    zdec: global *u32,
+    deltaz: global *u32,
+    u: global *u32,
+    x: i32,
+    y: i32,
+    color: u32,
+    z: i32,
+    shadeAlpha: i32,
+    cvg: i32,
+    spanDzPix: i32,
+    spanDzEnc: i32,
+) {
+    let mut alpha = i32(color >> 24) & 0xFF
+    if i32(u[U_CTA]) != 0 {
+        let scaled = (alpha * cvg + 4) >> 3
+        if (scaled >> 5) == 0 {
+            return
+        }
+        if i32(u[U_ACS]) != 0 {
+            alpha = scaled < 0xFF ? scaled : 0xFF
+        }
+    } else if i32(u[U_ACS]) != 0 {
+        alpha = cvg >= 8 ? 0xFF : (cvg << 5)
+    }
+    if i32(u[U_ALPHACOMPARE]) != 0 {
+        let ref = i32(u[U_BLEND] >> 24) & 0xFF
+        if alpha < ref {
+            return
+        }
+    }
+    let recolor = (color & 0xFFFFFF) | (u32(alpha) << 24)
+    if i32(u[U_USEDEPTH]) != 0 and u[U_ZIMAGE] != 0 {
+        let dzPix = i32(u[U_ZSOURCE]) != 0 ? i32(u[U_PRIMDZ]) : spanDzPix
+        let dzEnc = i32(u[U_ZSOURCE]) != 0 ? i32(u[U_PRIMDZENC]) : spanDzEnc
+        if i32(u[U_ZCOMPARE]) != 0 and !zpass(rdram, hidden, zdec, deltaz, u, x, y, z, dzPix) {
+            return
+        }
+        write_color(rdram, u, x, y, blend_pixel(rdram, u, x, y, recolor, shadeAlpha))
+        if i32(u[U_ZUPDATE]) != 0 {
+            zstore(rdram, hidden, zcom, u, x, y, z, dzEnc)
+        }
+        return
+    }
+    write_color(rdram, u, x, y, blend_pixel(rdram, u, x, y, recolor, shadeAlpha))
+}
+
+fn span_fill_at(rec: global *u32, rb: i32, u: global *u32, x: i32, rdram: global mut *u32, hidden: global mut *u8) {
+    let xstart = i32(rec[rb + SPAN_LX])
+    let xendsc = i32(rec[rb + SPAN_RX])
+    if x < xstart or x > xendsc {
+        return
+    }
+
+    let row = i32(rec[rb + SPAN_ROW])
+    let fillColor = u[U_FILLCOLOR]
+    let size = i32(u[U_COLORSIZE])
+    let image = u[U_COLORIMAGE]
+    let width = i32(u[U_COLORWIDTH])
+    if size == 2 {
+        let value = (x & 1) == 0 ? i32((fillColor >> 16) & 0xFFFF) : i32(fillColor & 0xFFFF)
+        let at = image + u32(row * width + x) * 2
+        store16(rdram, at, value)
+        hidden[(at & RDRAM_MASK) >> 1] = value & 1 != 0 ? 3 : 0
+    } else if size == 3 {
+        rdram[((image + u32(row * width + x) * 4) & RDRAM_MASK) >> 2] = fillColor
+    }
+}
+
+fn span_setup(rec: global *u32, rb: i32, u: global *u32) -> SpanCtx {
+    let mut c: SpanCtx
+    let row = i32(rec[rb + SPAN_ROW])
+    let xstart = i32(rec[rb + SPAN_LX])
+    let xendsc = i32(rec[rb + SPAN_RX])
+    let xend = i32(rec[rb + SPAN_UNSCRX])
+
+    let mut r0 = i32(rec[rb + SPAN_R])
+    let mut g0 = i32(rec[rb + SPAN_G])
+    let mut b0 = i32(rec[rb + SPAN_B])
+    let mut a0 = i32(rec[rb + SPAN_A])
+    let mut z0 = i32(rec[rb + SPAN_Z])
+    let mut s0 = i32(rec[rb + SPAN_S])
+    let mut t0 = i32(rec[rb + SPAN_T])
+    let mut w0 = i32(rec[rb + SPAN_W])
+
+    let flip = i32(rec[rb + SPAN_FLIP])
+    let spanDzPix = i32(rec[rb + SPAN_DZPIX])
+    let spanDzEnc = i32(rec[rb + SPAN_DZPIXENC])
+    let scXh = i32(u[U_SCISSOR_XH])
+    let scXl = i32(u[U_SCISSOR_XL])
+    let drinc = flip != 0 ? i32(rec[rb + SPAN_DR]) : -i32(rec[rb + SPAN_DR])
+    let dginc = flip != 0 ? i32(rec[rb + SPAN_DG]) : -i32(rec[rb + SPAN_DG])
+    let dbinc = flip != 0 ? i32(rec[rb + SPAN_DB]) : -i32(rec[rb + SPAN_DB])
+    let dainc = flip != 0 ? i32(rec[rb + SPAN_DA]) : -i32(rec[rb + SPAN_DA])
+    let dzinc = flip != 0 ? i32(rec[rb + SPAN_DZ]) : -i32(rec[rb + SPAN_DZ])
+    let dsinc = flip != 0 ? i32(rec[rb + SPAN_DS]) : -i32(rec[rb + SPAN_DS])
+    let dtinc = flip != 0 ? i32(rec[rb + SPAN_DT]) : -i32(rec[rb + SPAN_DT])
+    let dwinc = flip != 0 ? i32(rec[rb + SPAN_DW]) : -i32(rec[rb + SPAN_DW])
+    let xinc = flip != 0 ? 1 : -1
+
+    let length = flip != 0 ? xstart - xendsc : xendsc - xstart
+    let mut scdiff = flip != 0 ? xendsc - xend : xend - xendsc
+    if scdiff != 0 {
+        scdiff = scdiff & 0xFFF
+        r0 = r0 + drinc * scdiff
+        g0 = g0 + dginc * scdiff
+        b0 = b0 + dbinc * scdiff
+        a0 = a0 + dainc * scdiff
+        s0 = s0 + dsinc * scdiff
+        t0 = t0 + dtinc * scdiff
+        w0 = w0 + dwinc * scdiff
+        z0 = z0 + dzinc * scdiff
+    }
+
+    let forceBlend = i32(u[U_FORCEBLEND])
+    let cta = i32(u[U_CTA])
+    let acs = i32(u[U_ACS])
+    let ownerMode = forceBlend != 0 and cta == 0 and acs == 0 ? 1 : 0
+    let needCvg = cta != 0 or acs != 0 or ownerMode != 0 ? 1 : 0
+    let shadeOn = i32(u[U_SHADE])
+    let textureOn = i32(u[U_TEXTURE])
+    let persp = i32(u[U_PERSP])
+    let ps = flip != 0 ? xendsc : xstart
+    let pe = flip != 0 ? xstart : xendsc
+
+    let texrect = i32(rec[rb + SPAN_TEXRECT])
+    let copy = i32(u[U_COPY])
+    let trX0 = i32(rec[rb + SPAN_TR_X0])
+    let trY0 = i32(rec[rb + SPAN_TR_Y0])
+    let trS = i32(rec[rb + SPAN_TR_S])
+    let trT = i32(rec[rb + SPAN_TR_T])
+    let trDsdx = i32(rec[rb + SPAN_TR_DSDX])
+    let trDtdy = i32(rec[rb + SPAN_TR_DTDY])
+    let trShift = i32(rec[rb + SPAN_TR_SHIFT])
+    let trFlip = i32(rec[rb + SPAN_TR_FLIP])
+
+    c.row = row
+    c.xendsc = xendsc
+    c.xinc = xinc
+    c.length = length
+    c.scXh = scXh
+    c.scXl = scXl
+    c.r0 = r0
+    c.g0 = g0
+    c.b0 = b0
+    c.a0 = a0
+    c.z0 = z0
+    c.s0 = s0
+    c.t0 = t0
+    c.w0 = w0
+    c.drinc = drinc
+    c.dginc = dginc
+    c.dbinc = dbinc
+    c.dainc = dainc
+    c.dzinc = dzinc
+    c.dsinc = dsinc
+    c.dtinc = dtinc
+    c.dwinc = dwinc
+    c.flip = flip
+    c.ps = ps
+    c.pe = pe
+    c.spanDzPix = spanDzPix
+    c.spanDzEnc = spanDzEnc
+    c.ownerMode = ownerMode
+    c.needCvg = needCvg
+    c.shadeOn = shadeOn
+    c.textureOn = textureOn
+    c.persp = persp
+    c.texrect = texrect
+    c.copy = copy
+    c.trX0 = trX0
+    c.trY0 = trY0
+    c.trS = trS
+    c.trT = trT
+    c.trDsdx = trDsdx
+    c.trDtdy = trDtdy
+    c.trShift = trShift
+    c.trFlip = trFlip
+    return c
+}
+
+fn span_pixel(
+    c: SpanCtx,
+    rec: global *u32,
+    rb: i32,
+    u: global *u32,
+    x: i32,
+    rdram: global mut *u32,
+    hidden: global mut *u8,
+    zcom: global *u32,
+    zdec: global *u32,
+    deltaz: global *u32,
+    tmem: global *u8,
+    texBase: i32,
+    tcdiv: global *u32,
+) {
+    if x < c.scXh or x >= c.scXl {
+        return
+    }
+
+    let walk = u32((x - c.xendsc) * c.xinc)
+    let r = i32(u32(c.r0) + u32(c.drinc) * walk)
+    let g = i32(u32(c.g0) + u32(c.dginc) * walk)
+    let b = i32(u32(c.b0) + u32(c.dbinc) * walk)
+    let a = i32(u32(c.a0) + u32(c.dainc) * walk)
+    let s = i32(u32(c.s0) + u32(c.dsinc) * walk)
+    let t = i32(u32(c.t0) + u32(c.dtinc) * walk)
+    let w = i32(u32(c.w0) + u32(c.dwinc) * walk)
+    let z = i32(u32(c.z0) + u32(c.dzinc) * walk)
+
+    if c.texrect != 0 {
+        let dx = x - c.trX0
+        let dy = c.row - c.trY0
+        let mut texS: i32 = 0
+        let mut texT: i32 = 0
+        if c.trFlip != 0 {
+            texS = c.trS + ((dy * c.trDsdx) >> c.trShift)
+            texT = c.trT + ((dx * c.trDtdy) >> c.trShift)
+        } else {
+            texS = c.trS + ((dx * c.trDsdx) >> c.trShift)
+            texT = c.trT + ((dy * c.trDtdy) >> c.trShift)
+        }
+        if c.copy != 0 {
+            let texel = sample_point(u, tmem, texBase, texS, texT)
+            if i32(u[U_ALPHACOMPARE]) == 0 or (i32(texel >> 24) & 0xFF) != 0 {
+                write_color(rdram, u, x, c.row, texel)
+            }
+        } else {
+            let texel = c.textureOn != 0 ? sample_tex(u, tmem, texBase, texS, texT) : 0
+            let color = combine(texel, texel, u[U_RECTSHADE], 0xFF, u)
+            write_pixel(rdram, hidden, zcom, zdec, deltaz, u, x, c.row, color, 0, 0, 8, c.spanDzPix, c.spanDzEnc)
+        }
+        return
+    }
+
+    let mut draw = true
+    let mut drawCvg = 8
+    if c.needCvg != 0 {
+        let mask = coverage_at(x, c.flip, c.ps, c.pe, rec, rb)
+        let cvg = popcount8(mask)
+        if c.ownerMode != 0 {
+            draw = cvg > 4 or (cvg == 4 and mask & 0x80 != 0)
+            drawCvg = 8
+        } else {
+            draw = cvg != 0
+            drawCvg = cvg
+        }
+    }
+    if draw {
+        let shade = c.shadeOn != 0 ?
+            pack(clamp255(r >> 16), clamp255(g >> 16), clamp255(b >> 16), clamp255(a >> 16)) : 0
+        let shadeAlpha = i32(shade >> 24) & 0xFF
+        let mut texel: u32 = 0
+        if c.textureOn != 0 {
+            let coords = divide(s, t, w, tcdiv, c.persp)
+            texel = sample_tex(u, tmem, texBase, coords.s, coords.t)
+        }
+        let color = combine(texel, texel, shade, shadeAlpha, u)
+        let pixelZ = zcorrect(i32(u[U_ZSOURCE]) != 0 ? i32(u[U_PRIMDEPTH]) << 16 : z)
+        write_pixel(
+            rdram, hidden, zcom, zdec, deltaz, u, x, c.row, color, pixelZ, shadeAlpha, drawCvg,
+            c.spanDzPix, c.spanDzEnc,
+        )
+    }
+}
+
+fn rdpspan_chain(
+    rec: global *u32,
+    rb: i32,
+    u: global *u32,
+    lane: i32,
+    rdram: global mut *u32,
+    hidden: global mut *u8,
+    zcom: global *u32,
+    zdec: global *u32,
+    deltaz: global *u32,
+    tmem: global *u8,
+    tcdiv: global *u32,
+) {
+    if i32(u[U_FILL]) != 0 {
+        let xstart = i32(rec[rb + SPAN_LX])
+        let xendsc = i32(rec[rb + SPAN_RX])
+        let mut x = xstart + ((lane - xstart) & 63)
+        while x <= xendsc {
+            span_fill_at(rec, rb, u, x, rdram, hidden)
+            x = x + 64
+        }
+        return
+    }
+
+    let texBase = i32(rec[rb + SPAN_TMEM]) * TMEM_BYTES
+    let c = span_setup(rec, rb, u)
+
+    let mut pixel = (c.xinc * (lane - c.xendsc)) & 63
+    while pixel <= c.length {
+        span_pixel(
+            c, rec, rb, u, c.xendsc + c.xinc * pixel, rdram, hidden, zcom, zdec, deltaz, tmem, texBase, tcdiv,
+        )
+        pixel = pixel + 64
+    }
+}
+
+kernel fn rdpspan_one(
+    rec: global *u32,
+    uniforms: global *u32,
+    x: i32,
+    rdram: global mut *u32,
+    hidden: global mut *u8,
+    zcom: global *u32,
+    zdec: global *u32,
+    deltaz: global *u32,
+    tmem: global *u8,
+    tcdiv: global *u32,
+) {
+    if i32(uniforms[U_FILL]) != 0 {
+        span_fill_at(rec, 0, uniforms, x, rdram, hidden)
+        return
+    }
+
+    let texBase = i32(rec[SPAN_TMEM]) * TMEM_BYTES
+    let c = span_setup(rec, 0, uniforms)
+    let pixel = (x - c.xendsc) * c.xinc
+    if pixel < 0 or pixel > c.length {
+        return
+    }
+    span_pixel(c, rec, 0, uniforms, x, rdram, hidden, zcom, zdec, deltaz, tmem, texBase, tcdiv)
+}
+
+kernel fn rdpspan(
+    rdram: global mut *u32,
+    hidden: global mut *u8,
+    spans: global *u32,
+    uniforms: global *u32,
+    zcom: global *u32,
+    zdec: global *u32,
+    deltaz: global *u32,
+    tmem: global *u8,
+    tcdiv: global *u32,
+    chainStart: global *u32,
+    chainSpans: global *u32,
+    chainCount: u32,
+) {
+    let t = workgroup_id_x()
+    if t >= chainCount {
+        return
+    }
+
+    let lane = i32(workitem_id_x())
+    let end = chainStart[t + 1]
+
+    for k in chainStart[t]..end {
+        rdpspan_chain(
+            spans, i32(chainSpans[k]) * SPAN_STRIDE, uniforms, lane,
+            rdram, hidden, zcom, zdec, deltaz, tmem, tcdiv,
+        )
+    }
+}
