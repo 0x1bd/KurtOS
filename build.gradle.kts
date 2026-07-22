@@ -109,6 +109,11 @@ val compileShaders by tasks.registering(CompileShaders::class) {
 
     sourceDir.set(shadersDir)
     extractScript.set(layout.projectDirectory.file("tools/extract_shader.py"))
+    compiler.set(
+        providers.gradleProperty("kurtos.clang")
+            .orElse(providers.environmentVariable("KURTOS_CLANG"))
+            .orElse("clang")
+    )
     target.set("amdgcn-amd-amdhsa")
     cpu.set("gfx902")
     compilerArgs.set(listOf("-O2", "-nogpulib", "-ffreestanding", "-fno-jump-tables"))

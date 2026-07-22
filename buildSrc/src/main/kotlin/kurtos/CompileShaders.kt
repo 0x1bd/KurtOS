@@ -29,6 +29,9 @@ abstract class CompileShaders : DefaultTask() {
     abstract val extractScript: RegularFileProperty
 
     @get:Input
+    abstract val compiler: Property<String>
+
+    @get:Input
     abstract val target: Property<String>
 
     @get:Input
@@ -62,7 +65,7 @@ abstract class CompileShaders : DefaultTask() {
             val kbin = outDir.resolve("$base.kbin")
 
             run(
-                listOf("clang", "-x", "c", "--target=${target.get()}", "-mcpu=${cpu.get()}") +
+                listOf(compiler.get(), "-x", "c", "--target=${target.get()}", "-mcpu=${cpu.get()}") +
                     compilerArgs.get() +
                     listOf(source.absolutePath, "-o", hsaco.absolutePath),
                 "compile ${source.name}",
