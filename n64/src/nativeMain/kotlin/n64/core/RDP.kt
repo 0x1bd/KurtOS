@@ -305,6 +305,7 @@ class Rdp(private val n64: N64) {
     val spanFail: Int get() = spanAccel.failReason
     val spanDisp: Long get() = spanAccel.dispatched
     val spanSubmitted: Long get() = spanAccel.spansSubmitted
+    val spanGroups: Long get() = spanAccel.groupsSubmitted
     val spanBreakTmem: Long get() = spanAccel.breakTmem
     val spanBreakUniform: Long get() = spanAccel.breakUniform
     val spanBreakCapacity: Long get() = spanAccel.breakCapacity

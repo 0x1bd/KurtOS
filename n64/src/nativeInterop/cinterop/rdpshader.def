@@ -1,0 +1,43 @@
+headers =
+---
+#include "rdpspan.c"
+
+static inline void rdpspan_exec(
+    unsigned int gid,
+    unsigned int lane,
+    unsigned int *rdram,
+    unsigned char *hidden,
+    unsigned int *spans,
+    unsigned int *uniforms,
+    unsigned int *zcom,
+    unsigned int *zdec,
+    unsigned int *deltaz,
+    unsigned char *tmem,
+    unsigned int *tcdiv,
+    unsigned int *rowStart,
+    unsigned int *rowSpans,
+    unsigned int rowCount)
+{
+    if (gid >= rowCount) return;
+    for (unsigned int k = rowStart[gid]; k < rowStart[gid + 1]; k++) {
+        rdpspan_row(spans + rowSpans[k] * SPAN_STRIDE, uniforms, (int)lane,
+                    rdram, hidden, zcom, zdec, deltaz, tmem, tcdiv);
+    }
+}
+
+static inline void rdpspan_pixel(
+    unsigned int *span,
+    unsigned int *uniforms,
+    int x,
+    unsigned int *rdram,
+    unsigned char *hidden,
+    unsigned int *zcom,
+    unsigned int *zdec,
+    unsigned int *deltaz,
+    unsigned char *tmem,
+    unsigned int *tcdiv)
+{
+    rdpspan_one(span, uniforms, x, rdram, hidden, zcom, zdec, deltaz, tmem, tcdiv);
+}
+
+static inline unsigned int rdpspan_lanes(void) { return 64u; }

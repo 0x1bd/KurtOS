@@ -46,6 +46,11 @@ object N64Emulator : Emulator {
         private var snapFlush = 0
         private var snapRebind = 0
         private var snapSpans = 0L
+        private var snapGroups = 0L
+        private var snapBreakTmem = 0L
+        private var snapBreakUniform = 0L
+        private var snapBreakCapacity = 0L
+        private var snapBreakForced = 0L
         private var diagLine: String? = null
 
         override fun diagnostics(): String? {
@@ -100,10 +105,22 @@ object N64Emulator : Emulator {
                 val dSpans = r2.spanSubmitted - snapSpans
                 snapSpans = r2.spanSubmitted
                 val perDisp = if (dDisp > 0) dSpans / dDisp else 0
+                val dGroups = r2.spanGroups - snapGroups
+                snapGroups = r2.spanGroups
+                val perGroup = if (dDisp > 0) dGroups / dDisp else 0
+                val dbT = (r2.spanBreakTmem - snapBreakTmem) / DIAG_FRAMES
+                val dbU = (r2.spanBreakUniform - snapBreakUniform) / DIAG_FRAMES
+                val dbC = (r2.spanBreakCapacity - snapBreakCapacity) / DIAG_FRAMES
+                val dbX = (r2.spanBreakForced - snapBreakForced) / DIAG_FRAMES
+                snapBreakTmem = r2.spanBreakTmem
+                snapBreakUniform = r2.spanBreakUniform
+                snapBreakCapacity = r2.spanBreakCapacity
+                snapBreakForced = r2.spanBreakForced
 
                 val state = if (console.rdp.gpuActive) r2.spanFail.toString() else "X"
                 diagLine = "w$wallK B$dBusy up$wK/${wKb}K rd$rK/${rKb}K " +
-                    "f$dFlush b$dRebind D$dispPer x$perDisp g$pct% F$state"
+                    "f$dFlush b$dRebind D$dispPer x$perDisp G$perGroup " +
+                    "kT$dbT/U$dbU/C$dbC/X$dbX g$pct% F$state"
             }
             return diagLine
         }

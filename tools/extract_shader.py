@@ -62,6 +62,13 @@ def parse(path):
 
     entry_offset = (kernel_addr - text["addr"]) if kernel_addr else 0
 
+    private_size = struct.unpack_from("<I", kd, 4)[0]
+    if private_size:
+        raise SystemExit(
+            "%s needs %d bytes of scratch per lane; the dispatch path provides none. "
+            "Reduce register pressure or avoid address-taken locals." % (kernel_name, private_size)
+        )
+
     kernarg_size = struct.unpack_from("<I", kd, 8)[0]
     rsrc3 = struct.unpack_from("<I", kd, 44)[0]
     rsrc1 = struct.unpack_from("<I", kd, 48)[0]

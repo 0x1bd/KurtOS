@@ -10,6 +10,16 @@ kotlin {
             test(listOf(NativeBuildType.RELEASE))
         }
 
+        compilations["main"].apply {
+            cinterops {
+                val rdpshader by creating {
+                    definitionFile = file("src/nativeInterop/cinterop/rdpshader.def")
+                    packageName = "rdpshader"
+                    compilerOpts("-I${rootProject.file("shaders").absolutePath}")
+                }
+            }
+        }
+
         testRuns.create("release") {
             setExecutionSourceFrom(binaries.getTest(NativeBuildType.RELEASE))
         }
@@ -28,6 +38,10 @@ kotlin {
             }
         }
     }
+}
+
+tasks.matching { it.name.startsWith("cinteropRdpshader") }.configureEach {
+    inputs.dir(rootProject.file("shaders")).withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest>().configureEach {
