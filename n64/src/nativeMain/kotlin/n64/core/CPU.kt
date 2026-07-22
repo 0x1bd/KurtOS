@@ -62,6 +62,8 @@ const val QUIET_SINGLE = 0x7FBFFFFF
 const val QUIET_DOUBLE = 0x7FF7FFFFFFFFFFFFL
 
 const val SMALLEST_NORMAL_SINGLE = 1.1754943508222875E-38
+const val FP_UNIMPL_BIT = 1 shl 17
+const val FP_FLUSH_BIT = 1 shl 24
 
 const val STATE_STEP = 0
 const val STATE_TAKE = 1
@@ -1404,6 +1406,82 @@ class CPU(private val n64: N64) {
         if (fr) fgr[reg] = bits else fgr[reg and 1.inv()] = bits
     }
 
+    private fun denormSingle(value: Float): Boolean {
+        val bits = value.toRawBits()
+        return (bits and 0x7F800000) == 0 && (bits and 0x007FFFFF) != 0
+    }
+
+    private fun denormDouble(value: Double): Boolean {
+        val bits = value.toRawBits()
+        return (bits and 0x7FF0000000000000L) == 0L && (bits and 0x000FFFFFFFFFFFFFL) != 0L
+    }
+
+    private fun unimplemented() {
+        fcr31 = (fcr31 and (0x3F shl 12).inv()) or FP_UNIMPL_BIT
+        floatingPointException()
+    }
+
+    private fun flushing(): Boolean = fcr31 and FP_FLUSH_BIT != 0
+
+    private fun flushSingle(value: Float): Float {
+        val negative = value.toRawBits() < 0
+        val minNormal = Float.fromBits(0x00800000)
+        return when (fcr31 and 3) {
+            2 -> if (negative) -0.0f else minNormal
+            3 -> if (negative) -minNormal else 0.0f
+            else -> if (negative) -0.0f else 0.0f
+        }
+    }
+
+    private fun flushDouble(value: Double): Double {
+        val negative = value.toRawBits() < 0
+        val minNormal = Double.fromBits(0x0010000000000000L)
+        return when (fcr31 and 3) {
+            2 -> if (negative) -0.0 else minNormal
+            3 -> if (negative) -minNormal else 0.0
+            else -> if (negative) -0.0 else 0.0
+        }
+    }
+
+    private fun faultSingle(a: Float, b: Float, binary: Boolean): Boolean {
+        if (signalingSingle(a) || (binary && signalingSingle(b))) { unimplemented(); return true }
+        if (denormSingle(a) || (binary && denormSingle(b))) { unimplemented(); return true }
+        return false
+    }
+
+    private fun faultDouble(a: Double, b: Double, binary: Boolean): Boolean {
+        if (signalingDouble(a) || (binary && signalingDouble(b))) { unimplemented(); return true }
+        if (denormDouble(a) || (binary && denormDouble(b))) { unimplemented(); return true }
+        return false
+    }
+
+    private fun rounded(value: Double, mode: Int): Double = when (mode) {
+        0 -> roundEven(value)
+        1 -> truncate(value)
+        2 -> kotlin.math.ceil(value)
+        else -> kotlin.math.floor(value)
+    }
+
+    private fun fixedWord(value: Double, mode: Int, fd: Int) {
+        if (value.isNaN() || value.isInfinite() || value > 2147483647.0 || value < -2147483648.0) {
+            unimplemented()
+            return
+        }
+        val result = rounded(value, mode)
+        if (!fpuExceptions(if (result != value) FP_INEXACT else 0)) convertWordTo(fd, result.toInt())
+    }
+
+    private fun fixedLong(value: Double, mode: Int, fd: Int) {
+        if (value.isNaN() || value.isInfinite() ||
+            value >= 9.223372036854776E18 || value < -9.223372036854776E18
+        ) {
+            unimplemented()
+            return
+        }
+        val result = rounded(value, mode)
+        if (!fpuExceptions(if (result != value) FP_INEXACT else 0)) convertTo(fd, result.toLong())
+    }
+
     private fun cop1Op(op: Int, rs: Int, rt: Int, rd: Int, sa: Int, imm: Int) {
         if (!checkCop1()) return
 
@@ -1554,7 +1632,9 @@ class CPU(private val n64: N64) {
 
         when (function) {
             in 0..4 -> {
-                if (signalingSingle(a) || signalingSingle(b)) {
+                val binary = function <= 3
+                if (faultSingle(a, b, binary)) return
+                if (a.isNaN() || (binary && b.isNaN())) {
                     if (!fpuExceptions(FP_INVALID)) singleTo(fd, Float.fromBits(QUIET_SINGLE))
                     return
                 }
@@ -1569,7 +1649,14 @@ class CPU(private val n64: N64) {
                     else -> kotlin.math.sqrt(wa)
                 }
                 val result = roundSingle(exact)
-                val mask = arithmetic(wa, wb, exact, result.toDouble(), function, true)
+                var mask = arithmetic(wa, wb, exact, result.toDouble(), function, true)
+
+                if (denormSingle(result)) {
+                    if (!flushing()) { unimplemented(); return }
+                    mask = mask or FP_UNDERFLOW or FP_INEXACT
+                    if (!fpuExceptions(mask)) singleTo(fd, flushSingle(result))
+                    return
+                }
 
                 if (!fpuExceptions(mask)) {
                     singleTo(fd, if (result.isNaN()) Float.fromBits(QUIET_SINGLE) else result)
@@ -1577,6 +1664,11 @@ class CPU(private val n64: N64) {
             }
 
             5 -> {
+                if (faultSingle(a, a, false)) return
+                if (a.isNaN()) {
+                    if (!fpuExceptions(FP_INVALID)) singleTo(fd, Float.fromBits(QUIET_SINGLE))
+                    return
+                }
                 fpuExceptions(0)
                 singleTo(fd, kotlin.math.abs(a))
             }
@@ -1584,21 +1676,35 @@ class CPU(private val n64: N64) {
             6 -> singleTo(fd, a)
 
             7 -> {
+                if (faultSingle(a, a, false)) return
+                if (a.isNaN()) {
+                    if (!fpuExceptions(FP_INVALID)) singleTo(fd, Float.fromBits(QUIET_SINGLE))
+                    return
+                }
                 fpuExceptions(0)
                 singleTo(fd, -a)
             }
 
-            8 -> convertTo(fd, toLong(roundEven(a.toDouble())))
-            9 -> convertTo(fd, toLong(truncate(a.toDouble())))
-            10 -> convertTo(fd, toLong(kotlin.math.ceil(a.toDouble())))
-            11 -> convertTo(fd, toLong(kotlin.math.floor(a.toDouble())))
-            12 -> convertWordTo(fd, toWord(roundEven(a.toDouble())))
-            13 -> convertWordTo(fd, toWord(truncate(a.toDouble())))
-            14 -> convertWordTo(fd, toWord(kotlin.math.ceil(a.toDouble())))
-            15 -> convertWordTo(fd, toWord(kotlin.math.floor(a.toDouble())))
-            33 -> convertTo(fd, a.toDouble().toRawBits())
-            36 -> convertWordTo(fd, convertWord(a.toDouble()))
-            37 -> convertTo(fd, convertLong(a.toDouble()))
+            in 8..15 -> {
+                if (faultSingle(a, a, false)) return
+                val mode = function and 3
+                if (function < 12) fixedLong(a.toDouble(), mode, fd) else fixedWord(a.toDouble(), mode, fd)
+            }
+
+            32 -> unimplemented()
+            33 -> {
+                if (faultSingle(a, a, false)) return
+                fpuExceptions(0)
+                convertTo(fd, a.toDouble().toRawBits())
+            }
+            36 -> {
+                if (faultSingle(a, a, false)) return
+                fixedWord(a.toDouble(), fcr31 and 3, fd)
+            }
+            37 -> {
+                if (faultSingle(a, a, false)) return
+                fixedLong(a.toDouble(), fcr31 and 3, fd)
+            }
             in 48..63 -> compare(a.toDouble(), b.toDouble(), function and 0xF, signalingSingle(a) || signalingSingle(b))
             else -> reservedException()
         }
@@ -1610,7 +1716,9 @@ class CPU(private val n64: N64) {
 
         when (function) {
             in 0..4 -> {
-                if (signalingDouble(a) || signalingDouble(b)) {
+                val binary = function <= 3
+                if (faultDouble(a, b, binary)) return
+                if (a.isNaN() || (binary && b.isNaN())) {
                     if (!fpuExceptions(FP_INVALID)) doubleTo(fd, QUIET_DOUBLE)
                     return
                 }
@@ -1622,7 +1730,14 @@ class CPU(private val n64: N64) {
                     3 -> a / b
                     else -> kotlin.math.sqrt(a)
                 }
-                val mask = arithmetic(a, b, result, result, function, false)
+                var mask = arithmetic(a, b, result, result, function, false)
+
+                if (denormDouble(result)) {
+                    if (!flushing()) { unimplemented(); return }
+                    mask = mask or FP_UNDERFLOW or FP_INEXACT
+                    if (!fpuExceptions(mask)) doubleTo(fd, flushDouble(result).toRawBits())
+                    return
+                }
 
                 if (!fpuExceptions(mask)) {
                     doubleTo(fd, if (result.isNaN()) QUIET_DOUBLE else result.toRawBits())
@@ -1630,6 +1745,11 @@ class CPU(private val n64: N64) {
             }
 
             5 -> {
+                if (faultDouble(a, a, false)) return
+                if (a.isNaN()) {
+                    if (!fpuExceptions(FP_INVALID)) doubleTo(fd, QUIET_DOUBLE)
+                    return
+                }
                 fpuExceptions(0)
                 doubleTo(fd, kotlin.math.abs(a).toRawBits())
             }
@@ -1637,24 +1757,47 @@ class CPU(private val n64: N64) {
             6 -> doubleTo(fd, a.toRawBits())
 
             7 -> {
+                if (faultDouble(a, a, false)) return
+                if (a.isNaN()) {
+                    if (!fpuExceptions(FP_INVALID)) doubleTo(fd, QUIET_DOUBLE)
+                    return
+                }
                 fpuExceptions(0)
                 doubleTo(fd, (-a).toRawBits())
             }
 
-            8 -> convertTo(fd, toLong(roundEven(a)))
-            9 -> convertTo(fd, toLong(truncate(a)))
-            10 -> convertTo(fd, toLong(kotlin.math.ceil(a)))
-            11 -> convertTo(fd, toLong(kotlin.math.floor(a)))
-            12 -> convertWordTo(fd, toWord(roundEven(a)))
-            13 -> convertWordTo(fd, toWord(truncate(a)))
-            14 -> convertWordTo(fd, toWord(kotlin.math.ceil(a)))
-            15 -> convertWordTo(fd, toWord(kotlin.math.floor(a)))
-            32 -> {
-                fpuExceptions(0)
-                singleTo(fd, a.toFloat())
+            in 8..15 -> {
+                if (faultDouble(a, a, false)) return
+                val mode = function and 3
+                if (function < 12) fixedLong(a, mode, fd) else fixedWord(a, mode, fd)
             }
-            36 -> convertWordTo(fd, convertWord(a))
-            37 -> convertTo(fd, convertLong(a))
+
+            32 -> {
+                if (faultDouble(a, a, false)) return
+                if (a.isNaN()) {
+                    if (!fpuExceptions(FP_INVALID)) singleTo(fd, Float.fromBits(QUIET_SINGLE))
+                    return
+                }
+                val result = roundSingle(a)
+                var mask = if (result.toDouble() != a) FP_INEXACT else 0
+                if (result.isInfinite() && !a.isInfinite()) mask = mask or FP_OVERFLOW or FP_INEXACT
+                if (denormSingle(result)) {
+                    if (!flushing()) { unimplemented(); return }
+                    mask = mask or FP_UNDERFLOW or FP_INEXACT
+                    if (!fpuExceptions(mask)) singleTo(fd, flushSingle(result))
+                    return
+                }
+                if (!fpuExceptions(mask)) singleTo(fd, result)
+            }
+            33 -> unimplemented()
+            36 -> {
+                if (faultDouble(a, a, false)) return
+                fixedWord(a, fcr31 and 3, fd)
+            }
+            37 -> {
+                if (faultDouble(a, a, false)) return
+                fixedLong(a, fcr31 and 3, fd)
+            }
             in 48..63 -> compare(a, b, function and 0xF, signalingDouble(a) || signalingDouble(b))
             else -> reservedException()
         }
