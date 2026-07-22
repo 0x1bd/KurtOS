@@ -20,6 +20,7 @@ const val EVENT_SPDMA = 8
 const val EVENT_COMPARE = 9
 const val EVENT_COUNT = 10
 
+//TODO: Savestates, nemu64 cache + 173 total failures to be fixed
 class N64(image: ByteArray, forceNoDynarec: Boolean = false, forceNoRspDynarec: Boolean = false) {
     val rom = ROM(image)
 

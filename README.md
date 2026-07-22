@@ -20,7 +20,7 @@ Currently supported:
 #### Known issues
 
 - **SNES** has no support for additional coprocessors (SuperFX, SA-1), making some games unplayable (e.g. *Super Mario World 2: Yoshi's Island*).
-- **N64** has visual glitches (1076 known failures. Will be fixed later).
+- **N64** has visual glitches.
 - Audio scaling behaves incorrectly on some systems.
 - No multi-monitor support yet, and no HDMI or DisplayPort output.
 
