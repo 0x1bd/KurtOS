@@ -1,5 +1,9 @@
 package n64.core
 
+import kurtos.testkit.TestPaths
+import kurtos.testkit.findFile
+import kurtos.testkit.readFile
+
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.toKString
@@ -13,29 +17,7 @@ import platform.posix.ftell
 import platform.posix.fwrite
 import platform.posix.getenv
 
-@OptIn(ExperimentalForeignApi::class)
-fun readFile(path: String): ByteArray? {
-    val handle = fopen(path, "rb") ?: return null
-
-    try {
-        fseek(handle, 0, SEEK_END)
-        val size = ftell(handle).toInt()
-        if (size <= 0) return null
-        fseek(handle, 0, 0)
-
-        val data = ByteArray(size)
-        data.usePinned { fread(it.addressOf(0), 1u, size.toULong(), handle) }
-        return data
-    } finally {
-        fclose(handle)
-    }
-}
-
-@OptIn(ExperimentalForeignApi::class)
-fun fixture(name: String): ByteArray? {
-    val directory = getenv("KURTOS_TESTROMS")?.toKString() ?: return null
-    return readFile("$directory/$name")
-}
+fun fixture(name: String): ByteArray? = readFile("${TestPaths.TEST_ROMS}/$name")
 
 @OptIn(ExperimentalForeignApi::class)
 fun game(): ByteArray? {

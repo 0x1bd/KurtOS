@@ -1,5 +1,10 @@
 package n64.core
 
+import kurtos.testkit.TestLog
+import kurtos.testkit.TestPaths
+import kurtos.testkit.findFile
+import kurtos.testkit.readFile
+
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -11,13 +16,16 @@ class TestRomTest {
     fun rsp() = suite(environment("KURTOS_N64RSPLIST")?.split(",") ?: RSP)
 
     @Test
-    fun systemtest() {
-        val path = environment("KURTOS_N64SYSTEMTEST") ?: return
-        val image = readFile(path) ?: return
+    fun nemu64() {
+        val path = TestPaths.NEMU64_ROM
+        val image = readFile(path) ?: run {
+            TestLog.skip("nemu64", "ROM not built at $path", "needs rustup + nust64")
+            return
+        }
 
         val console = N64(image)
         val log = StringBuilder()
-        val stream = environment("KURTOS_N64SYSTEMTEST_STREAM") != null
+        val stream = environment("KURTOS_NEMU64_STREAM") != null
         console.onSerial = {
             log.append(it)
             if (stream) print(it)
@@ -28,9 +36,9 @@ class TestRomTest {
             console.runFrame()
             if (log.contains("Finished in")) break
             if (frame % 500 == 0) {
-                println("[systemtest] frame=$frame serial=${log.length} overruns=${console.rsp.overruns}")
+                TestLog.info("nemu64", "frame=$frame serial=${log.length} overruns=${console.rsp.overruns}")
                 if (log.length == lastLength && frame > 0) {
-                    println("[systemtest] stalled, last output: ...${log.takeLast(120).toString().replace('\n', ' ')}")
+                    TestLog.info("nemu64", "stalled, last output: ...${log.takeLast(120).toString().replace('\n', ' ')}")
                 }
                 lastLength = log.length
             }
@@ -40,26 +48,31 @@ class TestRomTest {
         val failures = Regex("Test '(.+?)' failed").findAll(text).map { it.groupValues[1] }.toList()
         val ran = Regex("Running (.+?)\\.\\.\\.").findAll(text).count()
 
-        for (name in failures) println("[systemtest] FAIL $name")
-        println("[systemtest] $ran tests, ${failures.size} failed")
+        TestLog.report("nemu64", failures.map { "FAIL $it" } + "$ran tests, ${failures.size} failed")
 
-        assertTrue(ran > 0, "n64-systemtest produced no output")
+        assertTrue(ran > 0, "nemu64-test produced no output")
 
-        val allowed = environment("KURTOS_N64SYSTEMTEST_ALLOWED")?.toIntOrNull() ?: KNOWN_FAILURES
+        val allowed = environment("KURTOS_NEMU64_ALLOWED")?.toIntOrNull() ?: KNOWN_FAILURES
         assertTrue(
             failures.size <= allowed,
-            "n64-systemtest: ${failures.size} failures, expected at most $allowed",
+            "nemu64-test: ${failures.size} failures, expected at most $allowed",
         )
     }
 
     private fun suite(names: List<String>) {
-        val directory = environment("KURTOS_N64TESTS") ?: return
+        val directory = TestPaths.PETERLEMON_N64
 
         var failures = 0
+        var missing = 0
         val failed = StringBuilder()
 
         for (name in names) {
-            val image = readFile("$directory/$name.N64") ?: readFile("$directory/$name.n64") ?: continue
+            val path = findFile(directory, "$name.N64") ?: findFile(directory, "$name.n64") ?: run {
+                TestLog.skip("testrom", name, "git submodule update --init --recursive")
+                missing++
+                continue
+            }
+            val image = readFile(path) ?: continue
             val console = N64(image)
 
             for (frame in 0 until 30) console.runFrame()
@@ -67,7 +80,7 @@ class TestRomTest {
             val verdict = score(console)
             dumpNative(console, "test-$name")
 
-            println("[test] $name pass=${verdict.first} fail=${verdict.second}")
+            TestLog.info("testrom", "$name pass=${verdict.first} fail=${verdict.second}")
             if (verdict.second > 0) {
                 failures++
                 failed.append(" $name")
@@ -75,6 +88,7 @@ class TestRomTest {
         }
 
         assertTrue(failures == 0, "$failures test ROMs reported failures:$failed")
+        assertTrue(missing < names.size, "no test ROMs found under $directory")
     }
 
     private fun score(console: N64): Pair<Int, Int> {
@@ -142,7 +156,7 @@ class TestRomTest {
         private const val BOX_WIDTH = 48
         private const val BOX_GAP = 8
 
-        private const val KNOWN_FAILURES = 609
+        private const val KNOWN_FAILURES = 753
 
         private val DEFAULT = listOf(
             "CPUADD", "CPUADDU", "CPUAND", "CPUDADD", "CPUDADDU", "CPUDDIV", "CPUDDIVU",

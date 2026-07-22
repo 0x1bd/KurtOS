@@ -1,5 +1,9 @@
 package gameboy.core
 
+import kurtos.testkit.TestLog
+import kurtos.testkit.TestPaths
+import kurtos.testkit.readFile
+
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -15,21 +19,7 @@ import platform.posix.fseek
 import platform.posix.ftell
 import platform.posix.getenv
 
-@OptIn(ExperimentalForeignApi::class)
-private fun testRom(name: String): ByteArray? {
-    val root = getenv("KURTOS_TESTROMS")?.toKString() ?: return null
-    val file = fopen("$root/$name", "rb") ?: return null
-
-    fseek(file, 0, SEEK_END)
-    val size = ftell(file).toInt()
-    fseek(file, 0, SEEK_SET)
-
-    val image = ByteArray(size)
-    image.usePinned { fread(it.addressOf(0), 1u, size.toULong(), file) }
-    fclose(file)
-
-    return image
-}
+private fun testRom(name: String): ByteArray? = readFile("${TestPaths.TEST_ROMS}/$name")
 
 private fun serialOutput(name: String, frames: Int): String? {
     val image = testRom(name) ?: return null
@@ -49,16 +39,20 @@ private fun serialOutput(name: String, frames: Int): String? {
     return output.toString()
 }
 
+private fun skipped(rom: String) {
+    TestLog.skip("gameboy", rom, "git submodule update --init --recursive")
+}
+
 class TestRomTest {
     @Test
     fun cpuInstructionsPass() {
-        val output = serialOutput("cpu_instrs.gb", 4000) ?: return
+        val output = serialOutput("gb-test-roms/cpu_instrs/cpu_instrs.gb", 4000) ?: return skipped("gb-test-roms/cpu_instrs/cpu_instrs.gb")
         assertTrue(output.contains("Passed"), "cpu_instrs.gb reported: ${output.trim()}")
     }
 
     @Test
     fun instructionTimingPasses() {
-        val output = serialOutput("instr_timing.gb", 2000) ?: return
+        val output = serialOutput("gb-test-roms/instr_timing/instr_timing.gb", 2000) ?: return skipped("gb-test-roms/instr_timing/instr_timing.gb")
         assertTrue(output.contains("Passed"), "instr_timing.gb reported: ${output.trim()}")
     }
 }

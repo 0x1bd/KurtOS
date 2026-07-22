@@ -60,7 +60,7 @@ class RspDynarec(private val rsp: RSP, private val arena: CodeArena) {
     private var generation = 0
     private val linkSlots = ArrayList<Long>()
     private val linkOrig = ArrayList<Int>()
-    private val nochain = platform.posix.getenv("KURTOS_RSP_NOCHAIN") != null
+    private val nochain = !N64Tuning.rspChaining
 
     init {
         ctx[RSP_GPR / 8] = gprPin.addressOf(0).toLong()
@@ -263,8 +263,7 @@ class RspDynarec(private val rsp: RSP, private val arena: CodeArena) {
 
     companion object {
         fun create(rsp: RSP): RspDynarec? {
-            if (platform.posix.getenv("KURTOS_NORSPJIT") != null) return null
-            if (platform.posix.getenv("KURTOS_BREAK") != null) return null
+            if (!N64Tuning.rspJit) return null
             val arena = CodeArena()
             if (!arena.init()) return null
             return RspDynarec(rsp, arena)
