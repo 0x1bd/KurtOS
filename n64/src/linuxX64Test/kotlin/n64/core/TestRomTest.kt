@@ -142,7 +142,7 @@ class TestRomTest {
         private const val BOX_WIDTH = 48
         private const val BOX_GAP = 8
 
-        private const val KNOWN_FAILURES = 781
+        private const val KNOWN_FAILURES = 609
 
         private val DEFAULT = listOf(
             "CPUADD", "CPUADDU", "CPUAND", "CPUDADD", "CPUDADDU", "CPUDDIV", "CPUDDIVU",

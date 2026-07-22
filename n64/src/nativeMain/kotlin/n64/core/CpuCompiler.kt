@@ -602,6 +602,62 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
         asm.ldmxcsr(RBX, CTX_MXCSR)
     }
 
+    private fun emitDenormBailDouble(slow: ArrayList<Int>) {
+        asm.stmxcsr(RBX, CTX_MXCSR)
+        asm.movRM(RAX, RBX, CTX_MXCSR, 0)
+        asm.testRI(RAX, 2)
+        slow.add(asm.jcc(CC_NE))
+
+        asm.movqRX(RCX, 0)
+        asm.movRI64(RDX, 0x7FFFFFFFFFFFFFFFL)
+        asm.aluRR(ALU_AND, RCX, RDX, 1)
+        val zero = asm.jcc(CC_E)
+        asm.movRI64(RDX, 0x0010000000000000L)
+        asm.aluRR(ALU_CMP, RCX, RDX, 1)
+        slow.add(asm.jcc(CC_B))
+        asm.patch(zero)
+    }
+
+    private fun emitSpecialBailDouble(slow: ArrayList<Int>, reg: Int) {
+        asm.movRI64(RDX, 0x7FF0000000000000L)
+        asm.aluRR(ALU_CMP, reg, RDX, 1)
+        slow.add(asm.jcc(CC_A))
+        asm.movRI64(RDX, 0x0010000000000000L)
+        asm.aluRR(ALU_CMP, reg, RDX, 1)
+        val normal = asm.jcc(CC_AE)
+        asm.aluRI(ALU_CMP, reg, 0, 1)
+        slow.add(asm.jcc(CC_NE))
+        asm.patch(normal)
+    }
+
+    private fun emitDenormBail(slow: ArrayList<Int>, minNormal: Int) {
+        asm.stmxcsr(RBX, CTX_MXCSR)
+        asm.movRM(RAX, RBX, CTX_MXCSR, 0)
+        asm.testRI(RAX, 2)
+        slow.add(asm.jcc(CC_NE))
+
+        asm.movdRX(RCX, 0)
+        asm.aluRI(ALU_AND, RCX, 0x7FFFFFFF, 0)
+        val zero = asm.jcc(CC_E)
+        asm.aluRI(ALU_CMP, RCX, minNormal, 0)
+        slow.add(asm.jcc(CC_B))
+        asm.patch(zero)
+    }
+
+    private fun emitSpecialBail(slow: ArrayList<Int>, minNormal: Int, infinity: Int) {
+        emitSpecialBailIn(slow, RAX, minNormal, infinity)
+    }
+
+    private fun emitSpecialBailIn(slow: ArrayList<Int>, reg: Int, minNormal: Int, infinity: Int) {
+        asm.aluRI(ALU_CMP, reg, infinity, 0)
+        slow.add(asm.jcc(CC_A))
+        asm.aluRI(ALU_CMP, reg, minNormal, 0)
+        val normal = asm.jcc(CC_AE)
+        asm.aluRI(ALU_CMP, reg, 0, 0)
+        slow.add(asm.jcc(CC_NE))
+        asm.patch(normal)
+    }
+
     private fun emitFpuMask(divide: Boolean, single: Boolean) {
         asm.stmxcsr(RBX, CTX_MXCSR)
         asm.movRM(RAX, RBX, CTX_MXCSR, 0)
@@ -667,16 +723,18 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
                 }
                 asm.ucomiss(0, 0)
                 slow.add(asm.jcc(CC_P))
+                emitDenormBail(slow, 0x00800000)
                 emitFpuMask(fn == 3, true)
                 asm.movdRX(RAX, 0)
                 asm.movMR(RSI, fprResult(fd), RAX, 1)
             }
 
             5 -> {
-                emitCauseClear()
                 fgrBase(RSI)
                 asm.movRM(RAX, RSI, fprWord(fs), 0)
                 asm.aluRI(ALU_AND, RAX, 0x7FFFFFFF, 0)
+                emitSpecialBail(slow, 0x00800000, 0x7F800000)
+                emitCauseClear()
                 asm.movMR(RSI, fprResult(fd), RAX, 1)
             }
 
@@ -687,10 +745,13 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
             }
 
             7 -> {
-                emitCauseClear()
                 fgrBase(RSI)
                 asm.movRM(RAX, RSI, fprWord(fs), 0)
+                asm.movRR(RCX, RAX, 0)
+                asm.aluRI(ALU_AND, RCX, 0x7FFFFFFF, 0)
                 asm.aluRI(ALU_XOR, RAX, 0x80000000.toInt(), 0)
+                emitSpecialBailIn(slow, RCX, 0x00800000, 0x7F800000)
+                emitCauseClear()
                 asm.movMR(RSI, fprResult(fd), RAX, 1)
             }
 
@@ -746,16 +807,18 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
                 }
                 asm.ucomisd(0, 0)
                 slow.add(asm.jcc(CC_P))
+                emitDenormBailDouble(slow)
                 emitFpuMask(fn == 3, false)
                 asm.movqStore(RSI, fprDouble(fd), 0)
             }
 
             5 -> {
-                emitCauseClear()
                 fgrBase(RSI)
                 asm.movRM(RAX, RSI, fprDouble(fs), 1)
                 asm.movRI64(RDX, 0x7FFFFFFFFFFFFFFFL)
                 asm.aluRR(ALU_AND, RAX, RDX, 1)
+                emitSpecialBailDouble(slow, RAX)
+                emitCauseClear()
                 asm.movMR(RSI, fprDouble(fd), RAX, 1)
             }
 
@@ -766,11 +829,15 @@ class CpuCompiler(private val callbacks: CpuCallbacks) {
             }
 
             7 -> {
-                emitCauseClear()
                 fgrBase(RSI)
                 asm.movRM(RAX, RSI, fprDouble(fs), 1)
+                asm.movRR(RCX, RAX, 1)
+                asm.movRI64(RDX, 0x7FFFFFFFFFFFFFFFL)
+                asm.aluRR(ALU_AND, RCX, RDX, 1)
                 asm.movRI64(RDX, Long.MIN_VALUE)
                 asm.aluRR(ALU_XOR, RAX, RDX, 1)
+                emitSpecialBailDouble(slow, RCX)
+                emitCauseClear()
                 asm.movMR(RSI, fprDouble(fd), RAX, 1)
             }
 
