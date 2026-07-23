@@ -26,8 +26,8 @@ kernel fn gradient(fb: global mut []u32, width: u32, height: u32, pitchpx: u32) 
 
 `kernel fn` marks an entry point. Everything else is a plain `fn` and gets inlined into the kernel.
 
-That first `if` is in every kernel that dispatches more work items than it has work, and forgetting it
-writes past the end of a buffer. Write it as a `bounds` clause instead and the compiler emits it:
+That first `if` shows up in every kernel that gets dispatched wider than it has work. Forget it and you
+write past the end of a buffer. Say it once in the signature instead and the compiler writes it for you:
 
 ```
 kernel fn gradient(fb: global mut []u32, width: u32, height: u32, pitchpx: u32) bounds width * height {
@@ -36,8 +36,8 @@ kernel fn gradient(fb: global mut []u32, width: u32, height: u32, pitchpx: u32) 
 }
 ```
 
-`bounds e` means `if global_id_x() >= e { return }` at the top of the body. `e` is a `u32` and is
-evaluated once. Only a kernel can have one.
+`bounds e` is exactly `if global_id_x() >= e { return }` in front of the body. `e` has to be a `u32`.
+Only a kernel can carry one, because only a kernel has work items to bound.
 
 ## Memory
 
@@ -157,15 +157,17 @@ to see the write.
 
 ## Uniform and divergent
 
-A value is uniform when every work item in the workgroup sees the same one, and divergent when they do
-not. Kernel parameters are uniform, because the whole workgroup is launched with one set of arguments.
-`workgroup_id_x/y/z`, `workgroup_size_x/y/z` and `subgroup_size` are uniform. `global_id_x/y/z`,
-`workitem_id_x/y/z` and `lane_id` are divergent, and so is anything computed from them, passed through a
-function, or assigned inside a branch that is itself divergent.
+A value is uniform when every work item in the workgroup sees the same one. It is divergent when they
+see different ones. Kernel parameters are uniform, because the whole workgroup launches with one set of
+arguments. So are `workgroup_id_x/y/z`, `workgroup_size_x/y/z` and `subgroup_size`.
 
-The compiler tracks this and uses it for one rule: `barrier()` has to be reached by every lane. Put one
-inside an `if` or a loop whose condition is divergent and the compile fails, because the lanes that skip
-it wait forever for the lanes that do not:
+`global_id_x/y/z`, `workitem_id_x/y/z` and `lane_id` are divergent. So is anything you compute from
+them, anything a function returns after being handed one, and anything you assign inside a branch that
+was itself divergent.
+
+The compiler follows all of that through your code and spends it on one rule. `barrier()` has to be
+reached by every lane. Put one under a condition that differs per lane and the build stops, because the
+lanes that skip the barrier never arrive and the lanes that reached it wait forever:
 
 ```
 if global_id_x() > 4 {
@@ -173,14 +175,14 @@ if global_id_x() > 4 {
 }
 ```
 
-An early `return` counts. Once some lanes have left, the rest of the function is divergent, so a
-`bounds` clause and a `barrier()` do not go together in the same kernel. Leaving a loop early is
-different: the lanes come back together when the loop ends, so a `barrier()` after the loop is fine and
-one inside the rest of the loop body is not.
+An early `return` counts too. Once some lanes have left, everything after that point is divergent, which
+is why a `bounds` clause and a `barrier()` cannot live in the same kernel. Leaving a loop early is not
+the same thing. Lanes come back together when the loop ends, so a `barrier()` after the loop is fine and
+one further down the same loop body is not.
 
-The rule is conservative in one way worth knowing. A local is divergent from the first place it is
-assigned something divergent, for the whole function, not from that point on. Assigning a uniform value
-back over it does not make it uniform again.
+One place the rule is blunter than it looks. A local counts as divergent for the whole function starting
+at the first place something divergent lands in it. Assigning a uniform value back over it later does
+not win it back.
 
 ## Calling a shader from the CPU
 
@@ -201,6 +203,14 @@ The struct is nine consecutive 32 bit values, so from Kotlin an `IntArray(9)` pi
 as the argument. `SoftwareGpu` in the n64 module does exactly that.
 
 On the GPU side nothing extra is passed, because the hardware supplies those numbers.
+
+A slice costs you an argument on the GPU too. The kernel argument block gets a pointer and a length
+where a raw pointer would have put only a pointer, so every argument behind it moves. Host code that
+packs the block by hand has to agree, and when it does not the shader reads whatever the neighbouring
+field happened to hold. That is a memory corruption bug that looks like a shader bug, so the build
+checks it. `CompileSpeziShaders` knows the size each kernel argument block should come out as and fails
+the build when the compiled size disagrees. If you add or remove a parameter, or turn a pointer into a
+slice, update `expectedKernarg` in the same commit and let the check confirm the new number.
 
 ## Building shaders by hand
 

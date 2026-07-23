@@ -39,13 +39,14 @@ val extractCxxSupport by tasks.registering {
 
     outputs.dir(cxxSupportDir)
 
+    val target = cxxSupportDir.get().asFile
+
     doLast {
         val archive = ProcessBuilder("gcc", "-print-file-name=libstdc++.a")
             .redirectErrorStream(true)
             .start()
             .inputStream.bufferedReader().readText().trim()
 
-        val target = cxxSupportDir.get().asFile
         target.mkdirs()
 
         val extract = ProcessBuilder("ar", "x", archive, "tree.o", "list.o")
@@ -64,21 +65,27 @@ val linkKurtOS by tasks.registering(Exec::class) {
     description = "Link runtime objects and the Kotlin kernel static library to build/kurtos.elf"
     dependsOn(":runtime:runtimeObjects", kernelLinkTask, extractCxxSupport, compileSpeziShaders)
 
-    inputs.file(linkerScript)
-    inputs.file(kernelStaticLib)
-    inputs.dir(runtimeObjectsDir)
-    inputs.dir(speziCpuDir)
-    outputs.file(layout.buildDirectory.file("kurtos.elf"))
+    val script = linkerScript
+    val kotlinLib = kernelStaticLib.get().asFile
+    val runtimeDir = runtimeObjectsDir.get().asFile
+    val speziDir = speziCpuDir.get().asFile
+    val cxxDir = cxxSupportDir.get().asFile
+    val elf = layout.buildDirectory.file("kurtos.elf").get().asFile
+
+    inputs.file(script)
+    inputs.file(kotlinLib)
+    inputs.dir(runtimeDir)
+    inputs.dir(speziDir)
+    outputs.file(elf)
 
     doFirst {
-        val runtimeObjects = runtimeObjectsDir.get().asFile.walkTopDown()
+        val runtimeObjects = runtimeDir.walkTopDown()
             .filter { it.isFile && it.extension == "o" }
-            .sortedBy { it.relativeTo(runtimeObjectsDir.get().asFile).invariantSeparatorsPath }
+            .sortedBy { it.relativeTo(runtimeDir).invariantSeparatorsPath }
             .toList()
         if (runtimeObjects.none { it.name == "arch_x86_64_boot.o" }) {
             throw GradleException("runtime boot.o was not produced")
         }
-        val kotlinLib = kernelStaticLib.get().asFile
         if (!kotlinLib.isFile) {
             throw GradleException("Kotlin/Native kernel library was not produced: ${kotlinLib.absolutePath}")
         }
@@ -87,16 +94,17 @@ val linkKurtOS by tasks.registering(Exec::class) {
             "-nostdlib", "-static", "-no-pie",
             "-Wl,-z,max-page-size=0x1000",
             "-Wl,--build-id=none",
-            "-T", linkerScript.absolutePath,
-            "-o", layout.buildDirectory.file("kurtos.elf").get().asFile.absolutePath,
+            "-Wl,--gc-sections",
+            "-T", script.absolutePath,
+            "-o", elf.absolutePath,
         )
         linkerArgs.addAll(runtimeObjects.map { it.absolutePath })
         linkerArgs.add(kotlinLib.absolutePath)
-        speziCpuDir.get().asFile.listFiles()
+        speziDir.listFiles()
             ?.filter { it.extension == "o" }
             ?.sortedBy { it.name }
             ?.forEach { linkerArgs.add(it.absolutePath) }
-        cxxSupportDir.get().asFile.listFiles()
+        cxxDir.listFiles()
             ?.filter { it.extension == "o" }
             ?.sortedBy { it.name }
             ?.forEach { linkerArgs.add(it.absolutePath) }

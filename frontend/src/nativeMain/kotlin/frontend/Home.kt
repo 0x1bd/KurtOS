@@ -11,7 +11,14 @@ import kapi.Pad
 import kapi.Surface
 import kapi.Sys
 import kapi.Time
+import kapi.ui.Axis
 import kapi.ui.Canvas
+import kapi.ui.Focusable
+import kapi.ui.Menu
+import kapi.ui.ModalChoice
+import kapi.ui.NavFrame
+import kapi.ui.NavInput
+import kapi.ui.PopupModal
 import kapi.ui.Icon
 import kapi.ui.Panels
 import kapi.ui.PixelIcons
@@ -41,16 +48,6 @@ object Home {
     private const val SCREEN_SETTINGS = 2
     private const val SCREEN_SYSTEM = 3
 
-    private const val SETTING_VOLUME = 0
-    private const val SETTING_MUTE = 1
-    private const val SETTING_ZONE = 2
-    private const val SETTING_DST = 3
-    private const val SETTING_FPS = 4
-    private const val SETTING_BOOT = 5
-    private const val SETTING_RENDERER = 6
-    private const val SETTING_SYSTEM = 7
-    private const val SETTING_COUNT = 8
-
     private val HINTS = listOf(
         Chrome.Hint(HomeIcons.DPAD, null, Panels.BAR_TEXT, "NAVIGATE"),
         Chrome.Hint(null, "A", Panels.GREEN, "SELECT"),
@@ -58,13 +55,22 @@ object Home {
         Chrome.Hint(HomeIcons.MENU, null, Panels.BAR_TEXT, "MENU"),
     )
 
-    private val padPrevious = BooleanArray(Pad.COUNT)
+    private val homeMenu = Menu(Axis.HORIZONTAL)
+    private val libraryMenu = Menu(Axis.VERTICAL)
+    private val settingsMenu = Menu(Axis.VERTICAL)
+    private val systemMenu = Menu(Axis.VERTICAL)
 
     private var screen = SCREEN_HOME
-    private var card = 0
-    private var selected = 0
-    private var scroll = 0
-    private var setting = 0
+    private var pendingGame: Game? = null
+    private var pendingShell = false
+
+    private var padSelectWas = false
+    private var padComboWas = false
+    private var padMenuArmed = false
+
+    private enum class Shortcut { MENU, LOUDER, QUIETER, SHELL, QUICK, REFRESH }
+
+    private enum class Outcome { NONE, LAUNCH, SHELL, RESCAN }
 
     fun run(registry: CommandRegistry): Nothing {
         Settings.syncFromSystem()
@@ -79,7 +85,10 @@ object Home {
 
             var games = GameLibrary.scan()
             val canvas = Canvas(surface)
-            flushInput()
+            NavInput.prime()
+            padSelectWas = Gamepad.isDown(Pad.SELECT)
+            padComboWas = padSelectWas && Gamepad.isDown(Pad.START)
+            padMenuArmed = false
 
             var painted = -1L
             var clock = ""
@@ -87,10 +96,23 @@ object Home {
 
             while (true) {
                 Input.poll()
+                val nav = NavInput.read()
+
+                val shortcut = readShortcut()
+                val outcome = if (shortcut != null) {
+                    applyShortcut(shortcut, surface, registry)
+                } else {
+                    layout(surface, games)
+                    updateScreen(surface, nav, registry)
+                }
+
+                if (outcome == Outcome.LAUNCH || outcome == Outcome.SHELL) break
+                if (outcome == Outcome.RESCAN) games = GameLibrary.scan()
+
+                if (shortcut != null || nav.any) dirty = true
 
                 val tick = Chrome.clockText()
                 val stripes = stripeOffset()
-
                 if (dirty || stripes != painted || tick != clock) {
                     clock = tick
                     painted = stripes
@@ -98,105 +120,210 @@ object Home {
                     render(canvas, games, clock, stripes.toInt())
                 }
 
-                val action = read()
-                if (action != Action.NONE) dirty = true
-                if (action == Action.SELECT || action == Action.BACK || action == Action.MENU) Audio.click()
-
-                when (action) {
-                    Action.NONE -> Time.idle()
-                    Action.UP -> move(-1, games)
-                    Action.DOWN -> move(1, games)
-                    Action.LEFT -> horizontal(-1)
-                    Action.RIGHT -> horizontal(1)
-
-                    Action.SELECT -> {
-                        if (select(surface, games, registry)) break
-                        games = GameLibrary.scan()
-                        clampSelection(games)
-                    }
-
-                    Action.BACK -> if (screen != SCREEN_HOME) screen = SCREEN_HOME
-
-                    Action.MENU -> {
-                        setting = 0
-                        screen = if (screen == SCREEN_SETTINGS) SCREEN_HOME else SCREEN_SETTINGS
-                    }
-
-                    Action.LOUDER, Action.QUIETER -> {
-                        val step = if (action == Action.LOUDER) VOLUME_STEP else -VOLUME_STEP
-                        Settings.setVolume(Settings.volume + step)
-                        Audio.showVolume()
-                    }
-
-                    Action.REFRESH -> {
-                        games = GameLibrary.scan()
-                        clampSelection(games)
-                    }
-
-                    Action.SHELL -> {
-                        openShell(registry)
-                        break
-                    }
-                }
+                if (shortcut == null && !nav.any) Time.idle()
             }
 
             Sys.collectGarbage()
         }
     }
 
-    private fun select(surface: Surface, games: List<Game>, registry: CommandRegistry): Boolean {
+    private fun readShortcut(): Shortcut? {
+        val pad = padShortcut()
+        if (pad != null) return pad
+
+        if (Input.consumePress(Keys.F2)) return Shortcut.MENU
+        if (Input.consumePress(Keys.F1)) return Shortcut.SHELL
+        if (Input.consumeChord(Keys.X)) return Shortcut.QUICK
+        if (Input.consumePress(Keys.R) || NavInput.padPressed(Pad.Y)) return Shortcut.REFRESH
+        if (NavInput.padPressed(Pad.RT)) return Shortcut.LOUDER
+        if (NavInput.padPressed(Pad.LT)) return Shortcut.QUIETER
+        return null
+    }
+
+    private fun padShortcut(): Shortcut? {
+        val select = Gamepad.isDown(Pad.SELECT)
+        val start = Gamepad.isDown(Pad.START)
+        val combo = select && start
+
+        val comboEdge = combo && !padComboWas
+        padComboWas = combo
+
+        if (select && !padSelectWas) padMenuArmed = true
+        if (combo) padMenuArmed = false
+        val released = padSelectWas && !select
+        padSelectWas = select
+
+        if (comboEdge) return Shortcut.QUICK
+        if (released && padMenuArmed) {
+            padMenuArmed = false
+            return Shortcut.MENU
+        }
+        return null
+    }
+
+    private fun applyShortcut(shortcut: Shortcut, surface: Surface, registry: CommandRegistry): Outcome {
+        when (shortcut) {
+            Shortcut.MENU -> if (screen == SCREEN_SETTINGS) {
+                screen = SCREEN_HOME
+            } else {
+                settingsMenu.reset()
+                screen = SCREEN_SETTINGS
+            }
+
+            Shortcut.SHELL -> {
+                openShell(registry)
+                return Outcome.SHELL
+            }
+
+            Shortcut.QUICK -> quickActions(surface)
+            Shortcut.REFRESH -> return Outcome.RESCAN
+
+            Shortcut.LOUDER -> {
+                Settings.setVolume(Settings.volume + VOLUME_STEP)
+                Audio.showVolume()
+            }
+
+            Shortcut.QUIETER -> {
+                Settings.setVolume(Settings.volume - VOLUME_STEP)
+                Audio.showVolume()
+            }
+        }
+        return Outcome.NONE
+    }
+
+    private fun layout(surface: Surface, games: List<Game>) {
         when (screen) {
             SCREEN_HOME -> {
-                selected = 0
-                scroll = 0
-                screen = SCREEN_LIBRARY
+                homeMenu.begin()
+                for ((index, _) in consoles.withIndex()) {
+                    homeMenu.add(
+                        Focusable(
+                            "card$index",
+                            onActivate = {
+                                libraryMenu.reset()
+                                screen = SCREEN_LIBRARY
+                            },
+                        ),
+                    )
+                }
             }
 
             SCREEN_LIBRARY -> {
                 val shelf = shelf(games)
-                if (shelf.isEmpty()) return false
-
-                saveSettings()
-                play(surface, shelf[selected])
-                Settings.syncFromSystem()
-                Settings.flush()
-                return true
+                libraryMenu.begin()
+                for ((index, game) in shelf.withIndex()) {
+                    libraryMenu.add(Focusable("game$index", onActivate = { pendingGame = game }))
+                }
             }
 
             SCREEN_SETTINGS -> {
-                if (setting == SETTING_SYSTEM) screen = SCREEN_SYSTEM else adjust(1)
+                settingsMenu.begin()
+                addSettingRows(surface)
             }
 
             SCREEN_SYSTEM -> {
-                openShell(registry)
-                return true
+                systemMenu.begin()
+                systemMenu.add(Focusable("shell", onActivate = { pendingShell = true }))
             }
         }
-
-        return false
     }
 
-    private fun move(delta: Int, games: List<Game>) {
+    private fun addSettingRows(surface: Surface) {
+        settingsMenu.add(
+            Focusable(
+                "volume",
+                onActivate = { Settings.setVolume(Settings.volume + VOLUME_STEP) },
+                onAdjust = { d -> Settings.setVolume(Settings.volume + d * VOLUME_STEP) },
+            ),
+        )
+        settingsMenu.add(
+            Focusable(
+                "mute",
+                onActivate = { Settings.setMuted(!Settings.muted) },
+                onAdjust = { Settings.setMuted(!Settings.muted) },
+            ),
+        )
+        settingsMenu.add(
+            Focusable(
+                "zone",
+                onActivate = { Settings.setZoneOffset(Settings.zoneOffsetMinutes + Settings.OFFSET_STEP) },
+                onAdjust = { d -> Settings.setZoneOffset(Settings.zoneOffsetMinutes + d * Settings.OFFSET_STEP) },
+            ),
+        )
+        settingsMenu.add(
+            Focusable(
+                "dst",
+                onActivate = { Settings.setDaylightSaving(!Settings.daylightSaving) },
+                onAdjust = { Settings.setDaylightSaving(!Settings.daylightSaving) },
+            ),
+        )
+        settingsMenu.add(
+            Focusable(
+                "fps",
+                onActivate = { Settings.setShowFps(!Settings.showFps) },
+                onAdjust = { Settings.setShowFps(!Settings.showFps) },
+            ),
+        )
+        settingsMenu.add(
+            Focusable(
+                "boot",
+                onActivate = { Settings.setBootDiagnostics(!Settings.bootDiagnostics) },
+                onAdjust = { Settings.setBootDiagnostics(!Settings.bootDiagnostics) },
+            ),
+        )
+        settingsMenu.add(
+            Focusable(
+                "renderer",
+                onActivate = { if (Settings.rendererPending) askRestart(surface) else Settings.cycleRenderer(1) },
+                onAdjust = { d -> Settings.cycleRenderer(if (d > 0) 1 else -1) },
+            ),
+        )
+        settingsMenu.add(
+            Focusable(
+                "systemInfo",
+                onActivate = {
+                    systemMenu.reset()
+                    screen = SCREEN_SYSTEM
+                },
+            ),
+        )
+    }
+
+    private fun updateScreen(surface: Surface, nav: NavFrame, registry: CommandRegistry): Outcome {
         when (screen) {
-            SCREEN_SETTINGS -> setting = (setting + SETTING_COUNT + delta) % SETTING_COUNT
+            SCREEN_HOME -> homeMenu.update(nav)
 
             SCREEN_LIBRARY -> {
-                val count = shelf(games).size
-                if (count == 0) return
-                selected = (selected + count + delta) % count
+                libraryMenu.update(nav, onBack = { screen = SCREEN_HOME })
+                val game = pendingGame
+                if (game != null) {
+                    pendingGame = null
+                    saveSettings()
+                    play(surface, game)
+                    Settings.syncFromSystem()
+                    Settings.flush()
+                    return Outcome.LAUNCH
+                }
+            }
+
+            SCREEN_SETTINGS -> settingsMenu.update(nav, onBack = { screen = SCREEN_HOME })
+
+            SCREEN_SYSTEM -> {
+                systemMenu.update(nav, onBack = { screen = SCREEN_HOME })
+                if (pendingShell) {
+                    pendingShell = false
+                    openShell(registry)
+                    return Outcome.SHELL
+                }
             }
         }
+        return Outcome.NONE
     }
 
-    private fun horizontal(delta: Int) {
-        when (screen) {
-            SCREEN_HOME -> card = (card + consoles.size + delta) % consoles.size
-            SCREEN_SETTINGS -> if (setting != SETTING_SYSTEM) adjust(delta)
-        }
-    }
+    private fun currentConsole(): Card = consoles[homeMenu.focusedIndex().coerceIn(0, consoles.size - 1)]
 
     private fun shelf(games: List<Game>): List<Game> {
-        val console = consoles[card]
+        val console = currentConsole()
         return games.filter { it.path.endsWith(console.extension, ignoreCase = true) || alias(it, console) }
     }
 
@@ -204,17 +331,6 @@ object Home {
         ".sfc" -> game.path.endsWith(".smc", ignoreCase = true)
         ".z64" -> game.path.endsWith(".n64", ignoreCase = true) || game.path.endsWith(".v64", ignoreCase = true)
         else -> false
-    }
-
-    private fun clampSelection(games: List<Game>) {
-        val count = shelf(games).size
-        if (count == 0) {
-            selected = 0
-            scroll = 0
-            return
-        }
-
-        if (selected >= count) selected = count - 1
     }
 
     private fun openShell(registry: CommandRegistry) {
@@ -243,95 +359,56 @@ object Home {
         }
     }
 
-    private fun adjust(delta: Int) {
-        when (setting) {
-            SETTING_SYSTEM -> Unit
-            SETTING_VOLUME -> Settings.setVolume(Settings.volume + delta * VOLUME_STEP)
-            SETTING_MUTE -> Settings.setMuted(!Settings.muted)
-            SETTING_ZONE -> Settings.setZoneOffset(Settings.zoneOffsetMinutes + delta * Settings.OFFSET_STEP)
-            SETTING_DST -> Settings.setDaylightSaving(!Settings.daylightSaving)
-            SETTING_FPS -> Settings.setShowFps(!Settings.showFps)
-            SETTING_BOOT -> Settings.setBootDiagnostics(!Settings.bootDiagnostics)
-            SETTING_RENDERER -> Settings.cycleRenderer(if (delta == 0) 1 else delta)
-        }
+    private fun askRestart(surface: Surface) {
+        saveSettings()
+
+        val choice = PopupModal.ask(
+            surface,
+            "APPLY NEW RENDERER?",
+            listOf(
+                "THE RENDERER CHANGES ON THE NEXT BOOT.",
+                "YOUR CHOICE IS ALREADY SAVED EITHER WAY.",
+            ),
+            listOf(
+                ModalChoice("RESTART NOW"),
+                ModalChoice("LATER"),
+            ),
+        )
+
+        NavInput.prime()
+
+        if (choice == 0) Sys.reboot()
     }
 
-    private enum class Action { NONE, UP, DOWN, LEFT, RIGHT, SELECT, BACK, MENU, REFRESH, SHELL, LOUDER, QUIETER }
+    private fun quickActions(surface: Surface) {
+        val choice = PopupModal.ask(
+            surface,
+            "QUICK ACTIONS",
+            listOf(),
+            listOf(
+                ModalChoice("SHUT DOWN"),
+                ModalChoice("RESTART"),
+            ),
+        )
 
-    private fun read(): Action {
-        if (Input.consumePress(Keys.UP)) return Action.UP
-        if (Input.consumePress(Keys.DOWN)) return Action.DOWN
-        if (Input.consumePress(Keys.LEFT)) return Action.LEFT
-        if (Input.consumePress(Keys.RIGHT)) return Action.RIGHT
-        if (Input.consumePress(Keys.ENTER)) return Action.SELECT
-        if (Input.consumePress(Keys.SPACE)) return Action.SELECT
-        if (Input.consumePress(Keys.BACKSPACE)) return Action.BACK
-        if (Input.consumePress(Keys.ESC)) return Action.BACK
-        if (Input.consumePress(Keys.F2)) return Action.MENU
-        if (Input.consumePress(Keys.W)) return Action.UP
-        if (Input.consumePress(Keys.S)) return Action.DOWN
-        if (Input.consumePress(Keys.A)) return Action.LEFT
-        if (Input.consumePress(Keys.D)) return Action.RIGHT
-        if (Input.consumePress(Keys.R)) return Action.REFRESH
-        if (Input.consumePress(Keys.F1)) return Action.SHELL
+        NavInput.prime()
 
-        while (Console.tryReadChar() != null) {
-        }
+        if (choice == PopupModal.CANCELLED) return
 
-        return padAction()
-    }
-
-    private fun padAction(): Action {
-        if (!Gamepad.available()) return Action.NONE
-        Gamepad.poll()
-
-        var action = Action.NONE
-
-        for (button in 0 until Pad.COUNT) {
-            val down = Gamepad.isDown(button)
-
-            if (down && !padPrevious[button] && action == Action.NONE) {
-                action = when (button) {
-                    Pad.UP -> Action.UP
-                    Pad.DOWN -> Action.DOWN
-                    Pad.LEFT -> Action.LEFT
-                    Pad.RIGHT -> Action.RIGHT
-                    Pad.A, Pad.START -> Action.SELECT
-                    Pad.B -> Action.BACK
-                    Pad.SELECT -> Action.MENU
-                    Pad.LT -> Action.QUIETER
-                    Pad.RT -> Action.LOUDER
-                    Pad.Y -> Action.REFRESH
-                    else -> Action.NONE
-                }
-            }
-
-            padPrevious[button] = down
-        }
-
-        return action
-    }
-
-    private fun flushInput() {
-        Input.poll()
-        Input.drain()
-        while (Console.tryReadChar() != null) {
-        }
-
-        if (!Gamepad.available()) return
-
-        Gamepad.poll()
-        for (button in 0 until Pad.COUNT) padPrevious[button] = Gamepad.isDown(button)
+        saveSettings()
+        if (choice == 0) Sys.shutdown() else Sys.reboot()
     }
 
     private fun stripeOffset(): Long = (Time.uptimeMillis() / STRIPE_MILLIS).toLong()
 
     internal fun preview(surface: Surface, screenId: Int, cardIndex: Int, games: List<Game>, clock: String, stripes: Int) {
         screen = screenId
-        card = cardIndex
-        selected = 0
-        scroll = 0
-        setting = 0
+        homeMenu.reset()
+        libraryMenu.reset()
+        settingsMenu.reset()
+        systemMenu.reset()
+        layout(surface, games)
+        homeMenu.focus(cardIndex)
         render(Canvas(surface), games, clock, stripes)
     }
 
@@ -407,11 +484,11 @@ object Home {
         val startX = (width - total) / 2
         val cardY = top + space * 34 / 100
 
+        val active = homeMenu.focusedIndex()
         for ((index, console) in consoles.withIndex()) {
             val x = startX + index * (cardWidth + gap)
-            drawCard(canvas, x, cardY, cardWidth, cardHeight, console, index == card)
+            drawCard(canvas, x, cardY, cardWidth, cardHeight, console, index == active)
         }
-
     }
 
     private fun drawCard(
@@ -478,7 +555,7 @@ object Home {
     }
 
     private fun drawLibrary(canvas: Canvas, width: Int, top: Int, bottom: Int, games: List<Game>) {
-        val console = consoles[card]
+        val console = currentConsole()
         val shelf = shelf(games)
         val space = bottom - top
 
@@ -503,25 +580,22 @@ object Home {
         val rowHeight = maxOf(28, space / 12)
         val gap = rowHeight / 6
         val capacity = maxOf(1, (bottom - y - space / 20) / (rowHeight + gap))
-
-        if (selected < scroll) scroll = selected
-        if (selected >= scroll + capacity) scroll = selected - capacity + 1
-        if (scroll > maxOf(0, shelf.size - capacity)) scroll = maxOf(0, shelf.size - capacity)
+        val scroll = libraryMenu.window(shelf.size, capacity)
+        val active = libraryMenu.focusedIndex()
 
         for (slot in 0 until minOf(capacity, shelf.size - scroll)) {
             val index = scroll + slot
             val game = shelf[index]
             val rowY = y + slot * (rowHeight + gap)
-            val active = index == selected
             val border = maxOf(2, rowHeight / 20)
 
-            canvas.fill(left, rowY, listWidth, rowHeight, if (active) Panels.ACCENT else Panels.EDGE)
+            canvas.fill(left, rowY, listWidth, rowHeight, if (index == active) Panels.ACCENT else Panels.EDGE)
             canvas.fill(
                 left + border,
                 rowY + border,
                 listWidth - border * 2,
                 rowHeight - border * 2,
-                if (active) 0x00FFFFFFu else console.body,
+                if (index == active) 0x00FFFFFFu else console.body,
             )
 
             val artScale = maxOf(1, (rowHeight - border * 4) / console.art.height)
@@ -556,25 +630,17 @@ object Home {
 
     private fun drawSettings(canvas: Canvas, width: Int, top: Int, bottom: Int) {
         val space = bottom - top
-        var y = drawPanel(canvas, width, top, bottom, "SETTINGS")
+        val start = drawPanel(canvas, width, top, bottom, "SETTINGS")
 
         val rows = listOf(
-            Triple("VOLUME", "${Settings.volume}%", "HOW LOUD EMULATED SOUND PLAYS"),
-            Triple("MUTE", onOff(Settings.muted), "SILENCE ALL AUDIO OUTPUT"),
-            Triple("TIME ZONE", Settings.zoneLabel(), "THE CMOS CLOCK KEEPS UTC - THIS SHIFTS THE DISPLAYED TIME"),
-            Triple(
-                "DAYLIGHT SAVING",
-                if (Settings.daylightSaving) "AUTO (EU)" else "OFF",
-                "ADDS AN HOUR BETWEEN LATE MARCH AND LATE OCTOBER",
-            ),
-            Triple("FPS OVERLAY", onOff(Settings.showFps), "SHOWS A LIVE FRAME RATE WHILE A GAME RUNS"),
-            Triple("BOOT DIAGNOSTICS", onOff(Settings.bootDiagnostics), "SHOW THE HARDWARE REPORT SCREEN AT STARTUP"),
-            Triple(
-                "RENDERER",
-                Settings.rendererLabel(),
-                "AUTO PICKS THE GPU WHEN IT IS THERE - CPU RUNS THE SAME SHADERS ON THE PROCESSOR",
-            ),
-            Triple("SYSTEM INFO", "OPEN", "DRIVER STATUS AND A WAY INTO THE SHELL"),
+            Triple("VOLUME", "${Settings.volume}%", null),
+            Triple("MUTE", onOff(Settings.muted), null),
+            Triple("TIME ZONE", Settings.zoneLabel(), null),
+            Triple("DAYLIGHT SAVING", if (Settings.daylightSaving) "AUTO (EU)" else "OFF", null),
+            Triple("FPS OVERLAY", onOff(Settings.showFps), null),
+            Triple("BOOT DIAGNOSTICS", onOff(Settings.bootDiagnostics), null),
+            Triple("RENDERER", Settings.rendererLabel(), RENDERER_HINT),
+            Triple("SYSTEM INFO", "OPEN", null),
         )
 
         val scale = maxOf(1, space / 260)
@@ -583,22 +649,38 @@ object Home {
         val left = width * 6 / 100
         val rowWidth = width * 88 / 100
 
-        for ((index, row) in rows.withIndex()) {
-            val rowY = y + index * (rowHeight + gap)
-            val active = index == setting
+        val capacity = maxOf(1, (bottom - start) / (rowHeight + gap))
+        val scroll = settingsMenu.window(rows.size, capacity)
+        val active = settingsMenu.focusedIndex()
+
+        for (slot in 0 until minOf(capacity, rows.size - scroll)) {
+            val index = scroll + slot
+            val row = rows[index]
+            val rowY = start + slot * (rowHeight + gap)
             val border = maxOf(2, rowHeight / 22)
 
-            canvas.fill(left, rowY, rowWidth, rowHeight, if (active) Panels.ACCENT else Panels.EDGE)
+            canvas.fill(left, rowY, rowWidth, rowHeight, if (index == active) Panels.ACCENT else Panels.EDGE)
             canvas.fill(
                 left + border,
                 rowY + border,
                 rowWidth - border * 2,
                 rowHeight - border * 2,
-                if (active) 0x00FFFFFFu else Panels.CARD,
+                if (index == active) 0x00FFFFFFu else Panels.CARD,
             )
 
-            canvas.text(left + border * 4, rowY + rowHeight / 5, row.first, Panels.INK, scale)
-            canvas.text(left + border * 4, rowY + rowHeight * 3 / 5, row.third, Panels.QUIET, maxOf(1, scale - 1))
+            val hint = row.third
+            if (hint == null) {
+                canvas.text(
+                    left + border * 4,
+                    rowY + (rowHeight - canvas.glyphHeight * scale) / 2,
+                    row.first,
+                    Panels.INK,
+                    scale,
+                )
+            } else {
+                canvas.text(left + border * 4, rowY + rowHeight / 5, row.first, Panels.INK, scale)
+                canvas.text(left + border * 4, rowY + rowHeight * 3 / 5, hint, Panels.QUIET, maxOf(1, scale - 1))
+            }
 
             val value = row.second
             canvas.text(
@@ -609,15 +691,6 @@ object Home {
                 scale,
             )
         }
-
-        y += rows.size * (rowHeight + gap) + space / 30
-        canvas.text(
-            left,
-            y,
-            "SAVED TO ${Settings.PATH.uppercase()}",
-            Panels.QUIET,
-            maxOf(1, scale - 1),
-        )
     }
 
     private fun drawSystem(canvas: Canvas, width: Int, top: Int, bottom: Int) {
@@ -652,7 +725,12 @@ object Home {
             Panels.INK,
             scale,
         )
+
+        y += step
+        canvas.text(left, y, "SUPER + X   QUICK ACTIONS: SHUT DOWN OR RESTART", Panels.QUIET, scale)
     }
+
+    private const val RENDERER_HINT = "RENDERER PLATFORM FOR THE N64 / GC"
 
     private fun onOff(value: Boolean): String = if (value) "ON" else "OFF"
 
@@ -661,7 +739,6 @@ object Home {
         if (text.length <= room) return text
         return text.take(maxOf(0, room - 1)) + "."
     }
-
 
     private const val VOLUME_STEP = 5
     private const val STRIPE_WIDTH = 28

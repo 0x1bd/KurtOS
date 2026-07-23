@@ -52,6 +52,8 @@ object KernelInput : InputBackend {
 
     override fun consumePress(code: UShort): Boolean = Keyboard.consumePress(code)
 
+    override fun consumeChord(code: UShort): Boolean = Keyboard.consumeChord(code)
+
     override fun characterFor(code: UShort): Char? = Keyboard.characterFor(code)
 
     override fun drain() = Keyboard.drain()
@@ -213,6 +215,10 @@ object KernelSystem : SystemBackend {
     override fun halt(): Nothing {
         Cpu.hang()
     }
+
+    override fun reboot(): Nothing = kernel.arch.Power.reboot()
+
+    override fun shutdown(): Nothing = kernel.arch.Power.shutdown()
 
     override fun toast(title: String, subtitle: String?) {
         kernel.ui.OSD.notify(

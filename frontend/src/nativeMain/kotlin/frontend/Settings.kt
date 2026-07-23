@@ -22,6 +22,8 @@ object Settings {
         private set
     var renderer = Gpu.Preference.Auto
         private set
+    var appliedRenderer = Gpu.Preference.Auto
+        private set
 
     private var dirty = false
 
@@ -37,6 +39,7 @@ object Settings {
         if (Audio.muted() != muted) Audio.toggleMuted()
         Time.setZone(zoneOffsetMinutes, daylightSaving)
         Gpu.prefer(renderer)
+        appliedRenderer = renderer
     }
 
     fun flush(): Boolean? {
@@ -85,8 +88,9 @@ object Settings {
 
         renderer = value
         dirty = true
-        Gpu.prefer(renderer)
     }
+
+    val rendererPending: Boolean get() = renderer != appliedRenderer
 
     fun cycleRenderer(delta: Int) {
         val order = Gpu.Preference.entries
@@ -94,7 +98,12 @@ object Settings {
         setRenderer(order[next])
     }
 
-    fun rendererLabel(): String = when (renderer) {
+    fun rendererLabel(): String {
+        val name = rendererName(renderer)
+        return if (rendererPending) "$name (NEXT BOOT)" else name
+    }
+
+    private fun rendererName(value: Gpu.Preference): String = when (value) {
         Gpu.Preference.Auto -> if (Gpu.hasHardware()) "AUTO (GPU)" else "AUTO (CPU)"
         Gpu.Preference.Hardware -> "GPU"
         Gpu.Preference.Software -> "CPU"

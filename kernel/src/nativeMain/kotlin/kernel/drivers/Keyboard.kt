@@ -13,6 +13,7 @@ object Keyboard {
 
     private val down = BooleanArray(MAX_KEYCODE)
     private val pressed = BooleanArray(MAX_KEYCODE)
+    private val chorded = BooleanArray(MAX_KEYCODE)
     private val events = ArrayDeque<KeyEvent>()
     private val characters = ArrayDeque<Char>()
 
@@ -57,6 +58,16 @@ object Keyboard {
         if (index !in pressed.indices || !pressed[index]) return false
 
         pressed[index] = false
+        chorded[index] = false
+        return true
+    }
+
+    fun consumeChord(code: UShort): Boolean {
+        val index = code.toInt()
+        if (index !in chorded.indices || !chorded[index]) return false
+
+        chorded[index] = false
+        pressed[index] = false
         return true
     }
 
@@ -70,6 +81,7 @@ object Keyboard {
         events.clear()
         characters.clear()
         pressed.fill(false)
+        chorded.fill(false)
     }
 
     private fun handle(scancode: Int) {
@@ -95,6 +107,7 @@ object Keyboard {
         down[keycode] = !released
         if (!released) {
             pressed[keycode] = true
+            if (down[Keys.SUPER.toInt()]) chorded[keycode] = true
             adjustVolume(keycode)
         }
         events.addLast(KeyEvent(keycode.toUShort(), !released))
@@ -127,6 +140,8 @@ object Keyboard {
         0x30 -> Keys.F7.toInt()
         0x38 -> 100
         0x1D -> 97
+        0x5B -> Keys.SUPER.toInt()
+        0x5C -> Keys.SUPER.toInt()
         else -> 0
     }
 }

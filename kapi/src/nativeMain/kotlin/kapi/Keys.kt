@@ -4,6 +4,7 @@ object Keys {
     const val ESC: UShort = 1u
     const val ONE: UShort = 2u
     const val Q: UShort = 16u
+    const val U: UShort = 22u
     const val W: UShort = 17u
     const val E: UShort = 18u
     const val R: UShort = 19u
@@ -28,4 +29,5 @@ object Keys {
     const val LEFT: UShort = 105u
     const val RIGHT: UShort = 106u
     const val DOWN: UShort = 108u
+    const val SUPER: UShort = 125u
 }

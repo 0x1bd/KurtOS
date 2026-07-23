@@ -4,6 +4,7 @@ import frontend.GameLibrary
 import frontend.Player
 import hal.Arch
 import hal.BootInfo
+import hal.Port
 import hal.Serial
 import kapi.Console
 import kapi.FileKind
@@ -235,6 +236,30 @@ object KernelShell {
             Pci.all().forEach { Console.println(it.describe()) }
         }
 
+        registry.register("acpi", "show acpi power-off registers") {
+            if (!Acpi.available) {
+                Console.println("acpi: unavailable")
+                return@register
+            }
+
+            val pm1a = Acpi.pm1aControlPort()
+            val pm1b = Acpi.pm1bControlPort()
+            val sleep = Acpi.sleepState5()
+            val sci = if (pm1a != 0) Port.read16(pm1a.toUShort()).toInt() and 1 else -1
+
+            Console.println("PM1a_CNT    0x${pm1a.toString(16)}")
+            Console.println("PM1b_CNT    0x${pm1b.toString(16)}")
+            Console.println("SMI_CMD     0x${Acpi.smiCommandPort().toString(16)}")
+            Console.println("ACPI_ENABLE 0x${Acpi.acpiEnableValue().toString(16)}")
+            Console.println("SCI_EN      $sci")
+            if (sleep != null) {
+                Console.println("SLP_TYPa    ${sleep.first}")
+                Console.println("SLP_TYPb    ${sleep.second}")
+            } else {
+                Console.println("SLP_TYP     (no \\_S5_)")
+            }
+        }
+
         registry.register("audio", "show the audio device") {
             Console.println("device: ${Audio.status()}")
             Console.println("volume: ${volumeText()}  (F5 mute, F6 quieter, F7 louder)")
@@ -382,6 +407,16 @@ object KernelShell {
             Sys.collectGarbage()
             val elapsed = Time.uptimeMillis() - start
             Console.println("after:  ${Sys.memoryReport()} (${elapsed} ms)")
+        }
+
+        registry.register("shutdown", "power the machine off", "poweroff", "off") {
+            Console.println("shutting down")
+            Sys.shutdown()
+        }
+
+        registry.register("reboot", "restart the machine", "restart") {
+            Console.println("restarting")
+            Sys.reboot()
         }
 
         registry.register("crash", "trigger a fault, to test the panic handler") { args ->

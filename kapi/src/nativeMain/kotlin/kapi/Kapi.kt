@@ -48,6 +48,7 @@ interface InputBackend {
     fun poll()
     fun isKeyDown(code: UShort): Boolean
     fun consumePress(code: UShort): Boolean
+    fun consumeChord(code: UShort): Boolean = false
     fun nextEvent(): KeyEvent?
     fun characterFor(code: UShort): Char?
     fun drain()
@@ -90,6 +91,8 @@ interface FilesBackend {
 
 interface SystemBackend {
     fun halt(): Nothing
+    fun reboot(): Nothing = halt()
+    fun shutdown(): Nothing = halt()
     fun memoryReport(): String
     fun collectGarbage()
     fun toast(title: String, subtitle: String?) {}
@@ -155,6 +158,7 @@ object Input {
     }
     fun isKeyDown(code: UShort): Boolean = backend?.isKeyDown(code) ?: false
     fun consumePress(code: UShort): Boolean = backend?.consumePress(code) ?: false
+    fun consumeChord(code: UShort): Boolean = backend?.consumeChord(code) ?: false
     fun nextEvent(): KeyEvent? = backend?.nextEvent()
     fun characterFor(code: UShort): Char? = backend?.characterFor(code)
     fun status(): String = backend?.status() ?: "unavailable"
@@ -205,6 +209,8 @@ object Sys {
     internal var backend: SystemBackend? = null
 
     fun halt(): Nothing = backend?.halt() ?: error("no system backend")
+    fun reboot(): Nothing = backend?.reboot() ?: error("no system backend")
+    fun shutdown(): Nothing = backend?.shutdown() ?: error("no system backend")
     fun memoryReport(): String = backend?.memoryReport() ?: "unavailable"
     fun collectGarbage() = backend?.collectGarbage() ?: Unit
     fun toast(title: String, subtitle: String? = null) = backend?.toast(title, subtitle) ?: Unit
