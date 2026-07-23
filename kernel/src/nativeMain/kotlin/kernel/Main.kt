@@ -85,7 +85,7 @@ fun main() {
     Settings.load()
     if (Settings.bootDiagnostics) BootScreen.show()
 
-    OSD.notify(PixelIcons.MUSHROOM, "WELCOME TO KURTOS", "LET'S-A GO!", SystemSounds.Clip.Fanfare)
+    OSD.notify(PixelIcons.FRED, "WELCOME TO KURTOS", "FRED SAYS HI", SystemSounds.Clip.Fanfare)
 
     Home.run(registry)
 }

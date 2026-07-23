@@ -202,6 +202,8 @@ object KernelAudio : AudioBackend {
 
     override fun click() = kernel.ui.SystemSounds.play(kernel.ui.SystemSounds.Clip.Blip)
 
+    override fun sound(id: Int) = kernel.ui.SystemSounds.playFred(id)
+
     override fun open(): Boolean = AudioService.open()
 
     override fun close() = AudioService.close()

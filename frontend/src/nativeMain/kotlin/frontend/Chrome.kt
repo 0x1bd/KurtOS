@@ -36,10 +36,12 @@ object Chrome {
         val gap = pad / 2
         val textY = (barHeight - canvas.glyphHeight * scale) / 2
 
-        val logoScale = maxOf(1, (barHeight - pad * 2) / HomeIcons.LOGO.height)
-        canvas.icon(HomeIcons.LOGO, pad, (barHeight - HomeIcons.LOGO.height * logoScale) / 2, logoScale)
+        val logo = PixelIcons.FRED
+        val logoScale = maxOf(2, (barHeight - 4) / logo.height)
+        val logoY = barHeight / 2 - 13 * logoScale
+        canvas.icon(logo, pad / 2, logoY, logoScale)
 
-        val nameX = pad + HomeIcons.LOGO.width * logoScale + pad
+        val nameX = pad / 2 + logo.width * logoScale
         canvas.text(nameX, textY, title, Panels.BAR_TEXT, scale)
 
         val clockX = (width - canvas.textWidth(clock, scale)) / 2

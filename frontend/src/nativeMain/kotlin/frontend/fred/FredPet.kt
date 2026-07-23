@@ -1,37 +1,10 @@
-package frontend
+package frontend.fred
 
 import kapi.Time
 import kapi.ui.Canvas
-import kapi.ui.Icon
 import kapi.ui.Icons
 
-object Fred {
-    private const val MAX_FREDS = 256
-
-    private var nonce = 0x9E3779B9u
-    private val pets = mutableListOf(FredPet(nextNonce()))
-
-    fun draw(canvas: Canvas, width: Int, barTop: Int, barBottom: Int) {
-        for (pet in pets) pet.draw(canvas, width, barTop, barBottom)
-    }
-
-    fun face(): Icon = Icons.get("fred/r0c0")
-
-    fun multiply() {
-        val room = MAX_FREDS - pets.size
-        if (room <= 0) return
-        repeat(minOf(pets.size, room)) { pets.add(FredPet(nextNonce())) }
-    }
-
-    fun count(): Int = pets.size
-
-    private fun nextNonce(): UInt {
-        nonce = nonce * 2654435761u + 0x6D2B79F5u
-        return nonce or 1u
-    }
-}
-
-private class FredPet(private val nonce: UInt) {
+class FredPet(private val nonce: UInt, private val fallIn: Boolean) {
     private var seeded = false
     private var rngState = 1u
     private var state = STAY
@@ -41,38 +14,76 @@ private class FredPet(private val nonce: UInt) {
     private var frameTimer = 0UL
     private var stateTimer = 0UL
     private var x = 0.0
+    private var y = 0.0
+    private var vy = 0.0
+    private var floorY = 0.0
     private var facing = 1
     private var dest = 1
     private var energy = 0
+    private var sizeBias = 100
     private var last = 0UL
 
-    fun draw(canvas: Canvas, width: Int, barTop: Int, barBottom: Int) {
-        val barHeight = barBottom - barTop
-        val scale = maxOf(2, barHeight / 18)
+    fun draw(canvas: Canvas, width: Int, height: Int, navTop: Int) {
+        val base = maxOf(2, (height - navTop) / 16)
+        val scale = maxOf(1, base * sizeBias / 100)
+        val spriteH = FRAME_H * scale
         val maxX = maxOf(0, width - FRAME_W * scale)
 
         val now = Time.uptimeMillis()
         if (!seeded) {
             seeded = true
             rngState = (now.toUInt() xor nonce) or 1u
+            sizeBias = if (fallIn) 82 + (rnd() % 58u).toInt() else 118
             energy = 10 + (rnd() % 7u).toInt()
             x = if (maxX > 0) (rnd() % (maxX + 1).toUInt()).toDouble() else 0.0
             dest = if (chance(50)) 1 else -1
+
+            val ceiling = Chaos.bandTop(navTop)
+            floorY = (ceiling + (rnd() % (navTop - ceiling + 1).toUInt()).toInt()).toDouble()
             last = now
-            beginStay(IDLE1, 260UL, range(1600, 3200))
+
+            if (fallIn) {
+                state = FALL
+                y = -spriteH.toDouble()
+                vy = 0.0
+            } else {
+                y = floorY - spriteH
+                beginStay(IDLE1, 260UL, range(1600, 3200))
+            }
         }
 
         var dt = now - last
         last = now
         if (dt > MAX_DT) dt = MAX_DT
+        val seconds = dt.toDouble() / 1000.0
 
         advanceFrame(dt)
 
         when (state) {
-            STAY -> if (countdown(dt)) afterRest(maxX)
+            FALL -> {
+                vy += GRAVITY * seconds
+                y += vy * seconds
+                val rest = floorY - spriteH
+                if (y >= rest) {
+                    y = rest
+                    if (vy > 220.0) {
+                        vy = -vy * 0.42
+                    } else {
+                        vy = 0.0
+                        beginStay(IDLE1, 260UL, range(1200, 2600))
+                    }
+                }
+            }
+
+            STAY -> {
+                y = floorY - spriteH
+                if (countdown(dt)) afterRest(maxX)
+            }
 
             WALK -> {
-                x += facing.toDouble() * WALK_SPEED * scale.toDouble() * dt.toDouble() / 1000.0
+                y = floorY - spriteH
+                val speed = WALK_SPEED * (1.0 + Chaos.level() * 0.18)
+                x += facing.toDouble() * speed * scale.toDouble() * seconds
                 if (x <= 0.0) {
                     x = 0.0
                     afterWalk(maxX)
@@ -85,8 +96,7 @@ private class FredPet(private val nonce: UInt) {
             }
         }
 
-        val icon = Icons.get(frames[frame.coerceIn(0, frames.size - 1)])
-        canvas.icon(icon, x.toInt(), barTop - FRAME_H * scale, scale, facing < 0)
+        canvas.icon(Icons.get(frames[frame.coerceIn(0, frames.size - 1)]), x.toInt(), y.toInt(), scale, facing < 0)
     }
 
     private fun afterWalk(maxX: Int) {
@@ -95,12 +105,10 @@ private class FredPet(private val nonce: UInt) {
 
     private fun afterRest(maxX: Int) {
         if (frames === SLEEP) dest = if (x < maxX.toDouble() / 2.0) 1 else -1
-
         if (energy <= 0) {
             if (atDest(maxX)) sleep() else beginWalk(maxX)
             return
         }
-
         val walkChance = if (energy > 4) 60 else 34
         if ((rnd() % 100u).toInt() < walkChance) beginWalk(maxX) else restActivity()
     }
@@ -185,7 +193,9 @@ private class FredPet(private val nonce: UInt) {
         private const val FRAME_H = 19
         private const val STAY = 0
         private const val WALK = 1
+        private const val FALL = 2
         private const val WALK_SPEED = 28.0
+        private const val GRAVITY = 1500.0
         private const val MAX_DT = 200UL
 
         private val IDLE1 = row(0, 4)

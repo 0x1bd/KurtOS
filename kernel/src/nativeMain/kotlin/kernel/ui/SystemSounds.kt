@@ -18,7 +18,19 @@ object SystemSounds {
     private var block = ShortArray(0)
 
     fun play(clip: Clip) {
-        if (!AudioService.available) return
+        if (!begin()) return
+        build(clip)
+        finish()
+    }
+
+    fun playFred(id: Int) {
+        if (!begin()) return
+        buildFred(id)
+        finish()
+    }
+
+    private fun begin(): Boolean {
+        if (!AudioService.available) return false
 
         if (buffer.isEmpty()) {
             buffer = ShortArray(AudioService.sampleRate * 2)
@@ -27,7 +39,10 @@ object SystemSounds {
 
         mixing = false
         length = 0
-        build(clip)
+        return true
+    }
+
+    private fun finish() {
         if (length == 0) return
 
         if (AudioService.streaming && !ownStream) {
@@ -45,6 +60,23 @@ object SystemSounds {
         silencing = false
         closeAt = Clock.uptimeMillis() + (length * 1000 / AudioService.sampleRate).toULong() + LINGER_MS
         pump()
+    }
+
+    private fun buildFred(id: Int) {
+        when (id) {
+            0 -> tone(523, 25, GENTLE)
+            1 -> { sweep(520, 880, 90); sweep(880, 430, 150) }
+            2 -> { sweep(720, 1180, 80); sweep(1180, 600, 120) }
+            3 -> tone(1400, 25)
+            4 -> { tone(523, 55); tone(659, 55); tone(784, 55); tone(1047, 130) }
+            5 -> { sweep(2100, 200, 45); sweep(280, 1700, 45) }
+            6 -> sweep(1600, 200, 90)
+            7 -> sweep(150, 60, 700)
+            8 -> { tone(880, 70); tone(500, 70); tone(880, 70); tone(500, 70); tone(880, 70) }
+            9 -> sweep(180, 2200, 320)
+            10 -> { sweep(300, 1500, 460); tone(1568, 200) }
+            11 -> { sweep(1200, 320, 180); tone(523, 120, GENTLE) }
+        }
     }
 
     fun nextMixSample(): Int {

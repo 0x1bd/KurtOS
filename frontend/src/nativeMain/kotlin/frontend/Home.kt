@@ -22,6 +22,7 @@ import kapi.ui.PopupModal
 import kapi.ui.Icon
 import kapi.ui.Panels
 import kapi.ui.PixelIcons
+import frontend.fred.Fred
 import shell.CommandRegistry
 import shell.Shell
 
@@ -390,40 +391,8 @@ object Home {
         if (choice == 0) Sys.reboot()
     }
 
-    private val FRED_LINES = listOf(
-        "i told the other freds you said that",
-        "skill issue",
-        "we remember",
-        "the freds have unionized",
-        "hm. do it again. see what happens",
-        "new fred just dropped",
-    )
-
     private fun fredEasterEgg(surface: Surface, games: List<Game>) {
-        var round = 0
-        while (true) {
-            val answer = PopupModal.ask(
-                surface,
-                "DISABLE FRED",
-                listOf("do you really want to disable fred? :("),
-                listOf(ModalChoice("YES"), ModalChoice("NO")),
-                Fred.face(),
-            ) { canvas -> frame(canvas, games) }
-
-            if (answer != 0) break
-
-            Fred.multiply()
-
-            PopupModal.ask(
-                surface,
-                "FRED x ${Fred.count()}",
-                listOf(FRED_LINES[round % FRED_LINES.size]),
-                listOf(ModalChoice("OK")),
-                Fred.face(),
-            ) { canvas -> frame(canvas, games) }
-            round++
-        }
-        NavInput.prime()
+        Fred.easterEgg(surface) { canvas -> frame(canvas, games) }
     }
 
     private fun quickActions(surface: Surface, games: List<Game>) {
@@ -472,10 +441,13 @@ object Home {
         val width = canvas.width
         val height = canvas.height
 
+        canvas.offsetX = Fred.shakeX()
+        canvas.offsetY = Fred.shakeY()
+
         drawBackground(canvas, width, height, stripes)
 
         val barHeight = Chrome.barHeight(height)
-        Chrome.drawStatusBar(canvas, width, barHeight, "KurtOS ${BuildInfo.VERSION}", clock)
+        Chrome.drawStatusBar(canvas, width, barHeight, Fred.title("KurtOS ${BuildInfo.VERSION}"), Fred.clock(clock))
         Chrome.drawNavBar(canvas, width, height, barHeight, HINTS)
 
         val top = barHeight
@@ -488,18 +460,22 @@ object Home {
             else -> drawSystem(canvas, width, top, bottom)
         }
 
-        Fred.draw(canvas, width, height - barHeight, height)
+        Fred.draw(canvas, width, height, height - barHeight)
+        Fred.overlay(canvas, width, height, height - barHeight)
+
+        canvas.offsetX = 0
+        canvas.offsetY = 0
     }
 
     private fun drawBackground(canvas: Canvas, width: Int, height: Int, stripes: Int) {
-        canvas.fill(0, 0, width, height, Panels.PAPER)
+        canvas.fill(0, 0, width, height, Fred.paper(Panels.PAPER))
 
         val period = STRIPE_WIDTH * 2
         val shift = stripes % period
         var x = shift - period
 
         while (x < width) {
-            canvas.fill(x, 0, STRIPE_WIDTH, height, Panels.STRIPE)
+            canvas.fill(x, 0, STRIPE_WIDTH, height, Fred.stripe(Panels.STRIPE))
             x += period
         }
     }
@@ -510,7 +486,7 @@ object Home {
         val titleScale = maxOf(2, space / 108)
         val leadScale = maxOf(1, space / 260)
 
-        val title = "WELCOME!"
+        val title = Fred.welcome("WELCOME!")
         canvas.text(
             (width - canvas.textWidth(title, titleScale)) / 2,
             top + space / 12,
@@ -580,14 +556,15 @@ object Home {
         val bandY = y + height - bandHeight - border
         canvas.fill(x + border, bandY, width - border * 2, bandHeight, console.band)
 
+        val label = Fred.card(console.title)
         val room = width - border * 4
-        val fit = room / (console.title.length * canvas.glyphWidth)
-        val labelScale = maxOf(2, minOf(fit, bandHeight / 12))
+        val fit = room / (maxOf(1, label.length) * canvas.glyphWidth)
+        val labelScale = maxOf(1, minOf(fit, bandHeight / 12))
 
         canvas.text(
-            x + (width - canvas.textWidth(console.title, labelScale)) / 2,
+            x + (width - canvas.textWidth(label, labelScale)) / 2,
             bandY + (bandHeight - canvas.glyphHeight * labelScale) / 2,
-            console.title,
+            label,
             Panels.INK,
             labelScale,
         )
@@ -690,7 +667,7 @@ object Home {
             Triple("DAYLIGHT SAVING", if (Settings.daylightSaving) "AUTO (EU)" else "OFF", null),
             Triple("FPS OVERLAY", onOff(Settings.showFps), null),
             Triple("BOOT DIAGNOSTICS", onOff(Settings.bootDiagnostics), null),
-            Triple("FRED", "ON", null),
+            Triple("FRED", Fred.settingsLabel(), null),
             Triple("RENDERER", Settings.rendererLabel(), RENDERER_HINT),
             Triple("SYSTEM INFO", "OPEN", null),
         )

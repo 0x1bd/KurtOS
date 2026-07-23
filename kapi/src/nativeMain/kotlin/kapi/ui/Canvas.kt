@@ -13,12 +13,16 @@ class Canvas(
     val glyphWidth: Int get() = PixelFont.WIDTH
     val glyphHeight: Int get() = PixelFont.HEIGHT
 
+    var offsetX: Int = 0
+    var offsetY: Int = 0
+
     fun clear(color: UInt) {
         val target = surface
         if (target != null) target.clear(color) else fill(0, 0, width, height, color)
     }
 
-    fun fill(x: Int, y: Int, width: Int, height: Int, color: UInt) = sink.fill(x, y, width, height, color)
+    fun fill(x: Int, y: Int, width: Int, height: Int, color: UInt) =
+        sink.fill(x + offsetX, y + offsetY, width, height, color)
 
     fun rect(x: Int, y: Int, width: Int, height: Int, color: UInt, thickness: Int = 1) {
         fill(x, y, width, thickness, color)
@@ -30,11 +34,12 @@ class Canvas(
     fun hline(x: Int, y: Int, width: Int, color: UInt, thickness: Int = 1) = fill(x, y, width, thickness, color)
 
     fun text(x: Int, y: Int, text: String, color: UInt, scale: Int = 1, shadow: UInt = PixelFont.NO_SHADOW) =
-        PixelFont.draw(sink, x, y, text, color, scale, shadow)
+        PixelFont.draw(sink, x + offsetX, y + offsetY, text, color, scale, shadow)
 
     fun textWidth(text: String, scale: Int): Int = PixelFont.textWidth(text, scale)
 
-    fun icon(icon: Icon, x: Int, y: Int, scale: Int, flip: Boolean = false) = icon.draw(sink, x, y, scale, flip)
+    fun icon(icon: Icon, x: Int, y: Int, scale: Int, flip: Boolean = false) =
+        icon.draw(sink, x + offsetX, y + offsetY, scale, flip)
 
     fun card(
         x: Int,
