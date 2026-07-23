@@ -14,7 +14,9 @@ import kapi.emu.Button
 import kapi.emu.EmulatorSession
 import kapi.emu.Video
 import kapi.ui.Canvas
+import kapi.ui.ModalChoice
 import kapi.ui.Panels
+import kapi.ui.PopupModal
 
 object Player {
     fun play(surface: Surface, game: Game): String? {
@@ -85,6 +87,7 @@ object Player {
         var worstMs = 0
         var sliverMs = 0
         var idleMs = 0
+        var wasQuitting = false
 
         while (true) {
             val iterStart = Time.cycles()
@@ -96,8 +99,15 @@ object Player {
             if (padded) Gamepad.poll()
             inputCycles += Time.cycles() - inputStart
 
-            if (Input.consumePress(Keys.ESC) || Input.isKeyDown(Keys.ESC)) break
-            if (padded && quitting()) break
+            val quitCombo = padded && quitting()
+            val quitEdge = quitCombo && !wasQuitting
+            wasQuitting = quitCombo
+            if (Input.consumePress(Keys.ESC) || quitEdge) {
+                if (PopupModal.confirm(surface, "QUIT GAME?", listOf("RETURN TO THE LIBRARY?"), ModalChoice("QUIT"))) break
+                Input.drain()
+                repaint = true
+                next = Time.uptimeMillis() * MICROS_PER_MILLI
+            }
 
             if (Input.consumePress(Keys.F2) || (padded && shortcut(Pad.L))) {
                 val state = session.saveState()

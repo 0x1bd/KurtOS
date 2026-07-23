@@ -91,6 +91,7 @@ object Home {
             padMenuArmed = false
 
             var painted = -1L
+            var petted = -1L
             var clock = ""
             var dirty = true
 
@@ -100,10 +101,10 @@ object Home {
 
                 val shortcut = readShortcut()
                 val outcome = if (shortcut != null) {
-                    applyShortcut(shortcut, surface, registry)
+                    applyShortcut(shortcut, surface, registry, games)
                 } else {
                     layout(surface, games)
-                    updateScreen(surface, nav, registry)
+                    updateScreen(surface, nav, registry, games)
                 }
 
                 if (outcome == Outcome.LAUNCH || outcome == Outcome.SHELL) break
@@ -113,11 +114,14 @@ object Home {
 
                 val tick = Chrome.clockText()
                 val stripes = stripeOffset()
-                if (dirty || stripes != painted || tick != clock) {
+                val pet = (Time.uptimeMillis() / PET_MILLIS).toLong()
+                if (dirty || stripes != painted || tick != clock || pet != petted) {
                     clock = tick
                     painted = stripes
+                    petted = pet
                     dirty = false
-                    render(canvas, games, clock, stripes.toInt())
+                    paint(canvas, games, clock, stripes.toInt())
+                    canvas.present()
                 }
 
                 if (shortcut == null && !nav.any) Time.idle()
@@ -133,7 +137,6 @@ object Home {
 
         if (Input.consumePress(Keys.F2)) return Shortcut.MENU
         if (Input.consumePress(Keys.F1)) return Shortcut.SHELL
-        if (Input.consumeChord(Keys.X)) return Shortcut.QUICK
         if (Input.consumePress(Keys.R) || NavInput.padPressed(Pad.Y)) return Shortcut.REFRESH
         if (NavInput.padPressed(Pad.RT)) return Shortcut.LOUDER
         if (NavInput.padPressed(Pad.LT)) return Shortcut.QUIETER
@@ -161,7 +164,7 @@ object Home {
         return null
     }
 
-    private fun applyShortcut(shortcut: Shortcut, surface: Surface, registry: CommandRegistry): Outcome {
+    private fun applyShortcut(shortcut: Shortcut, surface: Surface, registry: CommandRegistry, games: List<Game>): Outcome {
         when (shortcut) {
             Shortcut.MENU -> if (screen == SCREEN_SETTINGS) {
                 screen = SCREEN_HOME
@@ -175,7 +178,7 @@ object Home {
                 return Outcome.SHELL
             }
 
-            Shortcut.QUICK -> quickActions(surface)
+            Shortcut.QUICK -> quickActions(surface, games)
             Shortcut.REFRESH -> return Outcome.RESCAN
 
             Shortcut.LOUDER -> {
@@ -218,7 +221,7 @@ object Home {
 
             SCREEN_SETTINGS -> {
                 settingsMenu.begin()
-                addSettingRows(surface)
+                addSettingRows(surface, games)
             }
 
             SCREEN_SYSTEM -> {
@@ -228,7 +231,7 @@ object Home {
         }
     }
 
-    private fun addSettingRows(surface: Surface) {
+    private fun addSettingRows(surface: Surface, games: List<Game>) {
         settingsMenu.add(
             Focusable(
                 "volume",
@@ -273,8 +276,15 @@ object Home {
         )
         settingsMenu.add(
             Focusable(
+                "fred",
+                onActivate = { fredEasterEgg(surface, games) },
+                onAdjust = { fredEasterEgg(surface, games) },
+            ),
+        )
+        settingsMenu.add(
+            Focusable(
                 "renderer",
-                onActivate = { if (Settings.rendererPending) askRestart(surface) else Settings.cycleRenderer(1) },
+                onActivate = { if (Settings.rendererPending) askRestart(surface, games) else Settings.cycleRenderer(1) },
                 onAdjust = { d -> Settings.cycleRenderer(if (d > 0) 1 else -1) },
             ),
         )
@@ -289,9 +299,9 @@ object Home {
         )
     }
 
-    private fun updateScreen(surface: Surface, nav: NavFrame, registry: CommandRegistry): Outcome {
+    private fun updateScreen(surface: Surface, nav: NavFrame, registry: CommandRegistry, games: List<Game>): Outcome {
         when (screen) {
-            SCREEN_HOME -> homeMenu.update(nav)
+            SCREEN_HOME -> homeMenu.update(nav, onBack = { quickActions(surface, games) })
 
             SCREEN_LIBRARY -> {
                 libraryMenu.update(nav, onBack = { screen = SCREEN_HOME })
@@ -359,7 +369,7 @@ object Home {
         }
     }
 
-    private fun askRestart(surface: Surface) {
+    private fun askRestart(surface: Surface, games: List<Game>) {
         saveSettings()
 
         val choice = PopupModal.ask(
@@ -373,14 +383,50 @@ object Home {
                 ModalChoice("RESTART NOW"),
                 ModalChoice("LATER"),
             ),
-        )
+        ) { canvas -> frame(canvas, games) }
 
         NavInput.prime()
 
         if (choice == 0) Sys.reboot()
     }
 
-    private fun quickActions(surface: Surface) {
+    private val FRED_LINES = listOf(
+        "i told the other freds you said that",
+        "skill issue",
+        "we remember",
+        "the freds have unionized",
+        "hm. do it again. see what happens",
+        "new fred just dropped",
+    )
+
+    private fun fredEasterEgg(surface: Surface, games: List<Game>) {
+        var round = 0
+        while (true) {
+            val answer = PopupModal.ask(
+                surface,
+                "DISABLE FRED",
+                listOf("do you really want to disable fred? :("),
+                listOf(ModalChoice("YES"), ModalChoice("NO")),
+                Fred.face(),
+            ) { canvas -> frame(canvas, games) }
+
+            if (answer != 0) break
+
+            Fred.multiply()
+
+            PopupModal.ask(
+                surface,
+                "FRED x ${Fred.count()}",
+                listOf(FRED_LINES[round % FRED_LINES.size]),
+                listOf(ModalChoice("OK")),
+                Fred.face(),
+            ) { canvas -> frame(canvas, games) }
+            round++
+        }
+        NavInput.prime()
+    }
+
+    private fun quickActions(surface: Surface, games: List<Game>) {
         val choice = PopupModal.ask(
             surface,
             "QUICK ACTIONS",
@@ -389,7 +435,7 @@ object Home {
                 ModalChoice("SHUT DOWN"),
                 ModalChoice("RESTART"),
             ),
-        )
+        ) { canvas -> frame(canvas, games) }
 
         NavInput.prime()
 
@@ -398,6 +444,9 @@ object Home {
         saveSettings()
         if (choice == 0) Sys.shutdown() else Sys.reboot()
     }
+
+    private fun frame(canvas: Canvas, games: List<Game>) =
+        paint(canvas, games, Chrome.clockText(), stripeOffset().toInt())
 
     private fun stripeOffset(): Long = (Time.uptimeMillis() / STRIPE_MILLIS).toLong()
 
@@ -409,7 +458,9 @@ object Home {
         systemMenu.reset()
         layout(surface, games)
         homeMenu.focus(cardIndex)
-        render(Canvas(surface), games, clock, stripes)
+        val canvas = Canvas(surface)
+        paint(canvas, games, clock, stripes)
+        canvas.present()
     }
 
     internal const val PREVIEW_HOME = SCREEN_HOME
@@ -417,7 +468,7 @@ object Home {
     internal const val PREVIEW_SETTINGS = SCREEN_SETTINGS
     internal const val PREVIEW_SYSTEM = SCREEN_SYSTEM
 
-    private fun render(canvas: Canvas, games: List<Game>, clock: String, stripes: Int) {
+    private fun paint(canvas: Canvas, games: List<Game>, clock: String, stripes: Int) {
         val width = canvas.width
         val height = canvas.height
 
@@ -437,7 +488,7 @@ object Home {
             else -> drawSystem(canvas, width, top, bottom)
         }
 
-        canvas.present()
+        Fred.draw(canvas, width, height - barHeight, height)
     }
 
     private fun drawBackground(canvas: Canvas, width: Int, height: Int, stripes: Int) {
@@ -639,6 +690,7 @@ object Home {
             Triple("DAYLIGHT SAVING", if (Settings.daylightSaving) "AUTO (EU)" else "OFF", null),
             Triple("FPS OVERLAY", onOff(Settings.showFps), null),
             Triple("BOOT DIAGNOSTICS", onOff(Settings.bootDiagnostics), null),
+            Triple("FRED", "ON", null),
             Triple("RENDERER", Settings.rendererLabel(), RENDERER_HINT),
             Triple("SYSTEM INFO", "OPEN", null),
         )
@@ -691,6 +743,18 @@ object Home {
                 scale,
             )
         }
+
+        if (rows.size > capacity) {
+            val trackW = maxOf(4, rowHeight / 8)
+            val trackX = left + rowWidth + maxOf(6, (width * 6 / 100 - trackW) / 2)
+            val trackH = bottom - start
+            canvas.fill(trackX, start, trackW, trackH, Panels.EDGE)
+
+            val thumbH = maxOf(rowHeight / 2, trackH * capacity / rows.size)
+            val span = rows.size - capacity
+            val thumbY = start + (trackH - thumbH) * scroll / span
+            canvas.fill(trackX, thumbY, trackW, thumbH, Panels.ACCENT)
+        }
     }
 
     private fun drawSystem(canvas: Canvas, width: Int, top: Int, bottom: Int) {
@@ -727,7 +791,7 @@ object Home {
         )
 
         y += step
-        canvas.text(left, y, "SUPER + X   QUICK ACTIONS: SHUT DOWN OR RESTART", Panels.QUIET, scale)
+        canvas.text(left, y, "ESC ON HOME   QUICK ACTIONS: SHUT DOWN OR RESTART", Panels.QUIET, scale)
     }
 
     private const val RENDERER_HINT = "RENDERER PLATFORM FOR THE N64 / GC"
@@ -743,4 +807,5 @@ object Home {
     private const val VOLUME_STEP = 5
     private const val STRIPE_WIDTH = 28
     private const val STRIPE_MILLIS = 90UL
+    private const val PET_MILLIS = 55UL
 }

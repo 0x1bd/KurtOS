@@ -13,8 +13,16 @@ class ModalChoice(
 object PopupModal {
     const val CANCELLED = -1
     private const val PENDING = Int.MIN_VALUE
+    private const val REFRESH_MS = 55UL
 
-    fun ask(surface: Surface, title: String, message: List<String>, choices: List<ModalChoice>): Int {
+    fun ask(
+        surface: Surface,
+        title: String,
+        message: List<String>,
+        choices: List<ModalChoice>,
+        icon: Icon? = null,
+        background: ((Canvas) -> Unit)? = null,
+    ): Int {
         if (choices.isEmpty()) return CANCELLED
 
         val canvas = Canvas(surface)
@@ -22,15 +30,9 @@ object PopupModal {
         NavInput.prime()
 
         var chosen = PENDING
-        var dirty = true
+        var painted = -1L
 
         while (true) {
-            if (dirty) {
-                draw(canvas, title, message, choices, menu.focusedIndex())
-                canvas.present()
-                dirty = false
-            }
-
             Input.poll()
             val nav = NavInput.read()
 
@@ -41,14 +43,36 @@ object PopupModal {
             menu.update(nav, onBack = { chosen = CANCELLED })
 
             if (chosen != PENDING) return chosen
-            if (nav.moved) dirty = true else Time.idle()
+
+            val tick = if (background != null) (Time.uptimeMillis() / REFRESH_MS).toLong() else 0L
+            if (painted < 0L || nav.moved || tick != painted) {
+                painted = tick
+                background?.invoke(canvas)
+                draw(canvas, title, message, choices, menu.focusedIndex(), icon)
+                canvas.present()
+            }
+
+            if (!nav.any) Time.idle()
         }
     }
 
-    fun confirm(surface: Surface, title: String, message: List<String>, confirm: ModalChoice): Boolean =
-        ask(surface, title, message, listOf(confirm, ModalChoice("CANCEL"))) == 0
+    fun confirm(
+        surface: Surface,
+        title: String,
+        message: List<String>,
+        confirm: ModalChoice,
+        icon: Icon? = null,
+        background: ((Canvas) -> Unit)? = null,
+    ): Boolean = ask(surface, title, message, listOf(confirm, ModalChoice("CANCEL")), icon, background) == 0
 
-    private fun draw(canvas: Canvas, title: String, message: List<String>, choices: List<ModalChoice>, selected: Int) {
+    private fun draw(
+        canvas: Canvas,
+        title: String,
+        message: List<String>,
+        choices: List<ModalChoice>,
+        selected: Int,
+        icon: Icon?,
+    ) {
         val screenWidth = canvas.width
         val screenHeight = canvas.height
 
@@ -59,17 +83,24 @@ object PopupModal {
         val rowHeight = maxOf(30, screenHeight / 14)
         val gap = rowHeight / 6
 
+        val iconScale = if (icon != null) maxOf(2, screenHeight / 220) else 0
+        val iconW = if (icon != null) icon.width * iconScale else 0
+        val iconH = if (icon != null) icon.height * iconScale else 0
+        val iconGap = if (icon != null) pad else 0
+
         var inner = canvas.textWidth(title, scale)
-        for (text in message) inner = maxOf(inner, canvas.textWidth(text, small))
+        for (text in message) inner = maxOf(inner, iconW + iconGap + canvas.textWidth(text, small))
+        if (icon != null && message.isEmpty()) inner = maxOf(inner, iconW)
         for (choice in choices) {
             inner = maxOf(inner, canvas.textWidth(choice.label, scale) + rowHeight)
             if (choice.hint.isNotEmpty()) inner = maxOf(inner, canvas.textWidth(choice.hint, small) + rowHeight)
         }
 
+        val messageBlockH = message.size * (canvas.glyphHeight * small + gap)
+        val messageRegionH = maxOf(messageBlockH, iconH)
+
         val width = minOf(screenWidth - pad * 2, inner + pad * 2)
-        val height = pad * 2 + line + gap * 2 +
-            message.size * (canvas.glyphHeight * small + gap) +
-            choices.size * (rowHeight + gap)
+        val height = pad * 2 + line + gap * 3 + messageRegionH + choices.size * (rowHeight + gap)
 
         val x = (screenWidth - width) / 2
         val y = (screenHeight - height) / 2
@@ -86,12 +117,16 @@ object PopupModal {
         canvas.hline(x + pad, cursor, width - pad * 2, Panels.EDGE, border / 2 + 1)
         cursor += gap * 2
 
+        if (icon != null) canvas.icon(icon, x + pad, cursor + (messageRegionH - iconH) / 2, iconScale)
+
+        var textY = cursor + (messageRegionH - messageBlockH) / 2
+        val textLeft = x + pad + iconW + iconGap
         for (text in message) {
-            canvas.text(x + pad, cursor, text, Panels.QUIET, small)
-            cursor += canvas.glyphHeight * small + gap
+            canvas.text(textLeft, textY, text, Panels.QUIET, small)
+            textY += canvas.glyphHeight * small + gap
         }
 
-        cursor += gap
+        cursor += messageRegionH + gap
 
         for ((index, choice) in choices.withIndex()) {
             val active = index == selected

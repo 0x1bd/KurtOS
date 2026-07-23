@@ -34,7 +34,7 @@ class Canvas(
 
     fun textWidth(text: String, scale: Int): Int = PixelFont.textWidth(text, scale)
 
-    fun icon(icon: Icon, x: Int, y: Int, scale: Int) = icon.draw(sink, x, y, scale)
+    fun icon(icon: Icon, x: Int, y: Int, scale: Int, flip: Boolean = false) = icon.draw(sink, x, y, scale, flip)
 
     fun card(
         x: Int,

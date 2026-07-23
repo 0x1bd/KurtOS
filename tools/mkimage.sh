@@ -59,13 +59,6 @@ if [ -n "${SHADERS_DIR:-}" ] && ls "$SHADERS_DIR"/*.kbin >/dev/null 2>&1; then
 fi
 
 assets=0
-if [ -d "$ASSETS_DIR" ]; then
-    for entry in "$ASSETS_DIR"/*; do
-        [ -e "$entry" ] || continue
-        mcopy -s -i "$ESP_OUT" "$entry" ::/
-    done
-    assets=$(find "$ASSETS_DIR" -type f | wc -l)
-fi
 
 truncate -s $((DATA_SECTORS * SECTOR)) "$DATA"
 mformat -i "$DATA" -F -c 8 -v "$DATA_LABEL" ::
