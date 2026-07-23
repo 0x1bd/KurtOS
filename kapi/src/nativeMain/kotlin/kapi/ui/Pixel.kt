@@ -8,8 +8,21 @@ interface PixelSink {
 
 class SurfaceSink(private val surface: Surface) : PixelSink {
     override fun fill(x: Int, y: Int, width: Int, height: Int, color: UInt) {
-        if (x < 0 || y < 0 || width <= 0 || height <= 0) return
-        surface.fillRect(x.toUInt(), y.toUInt(), width.toUInt(), height.toUInt(), color)
+        var xx = x
+        var yy = y
+        var w = width
+        var h = height
+
+        if (xx < 0) { w += xx; xx = 0 }
+        if (yy < 0) { h += yy; yy = 0 }
+
+        val sw = surface.width.toInt()
+        val sh = surface.height.toInt()
+        if (xx + w > sw) w = sw - xx
+        if (yy + h > sh) h = sh - yy
+
+        if (w <= 0 || h <= 0) return
+        surface.fillRect(xx.toUInt(), yy.toUInt(), w.toUInt(), h.toUInt(), color)
     }
 }
 

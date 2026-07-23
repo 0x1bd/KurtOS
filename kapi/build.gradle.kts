@@ -22,7 +22,7 @@ val generateAssets by tasks.registering {
         sb.append("    val data: Map<String, String> = mapOf(\n")
 
         root.walkTopDown()
-            .filter { it.isFile && !it.name.endsWith(".png", ignoreCase = true) }
+            .filter { it.isFile && !it.name.endsWith(".png", ignoreCase = true) && !it.name.endsWith(".svg", ignoreCase = true) }
             .sortedBy { it.invariantSeparatorsPath }
             .forEach { file ->
             val key = file.relativeTo(root).invariantSeparatorsPath
