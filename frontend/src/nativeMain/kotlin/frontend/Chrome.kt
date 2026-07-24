@@ -14,11 +14,7 @@ object Chrome {
     fun clockText(): String {
         val now = Time.now() ?: return uptimeText()
 
-        val hour = now.hour % 12
-        val display = if (hour == 0) 12 else hour
-        val suffix = if (now.hour < 12) "AM" else "PM"
-
-        return "$display:${pad(now.minute)} $suffix"
+        return "${pad(now.hour)}:${pad(now.minute)}"
     }
 
     private fun uptimeText(): String {
