@@ -5,7 +5,6 @@ plugins {
 }
 
 val runtimeSrcDir = layout.projectDirectory.dir("src/main")
-val generatedAbiDir = layout.buildDirectory.dir("generated/abi")
 val objectsDir = layout.buildDirectory.dir("objects")
 
 val baseCFlags = listOf(
@@ -41,26 +40,6 @@ fun objectFile(source: File): File =
             .replace('/', '_')
             .replace(Regex("\\.(c|S)$"), ".o")
     )
-
-val generateKotlinNativeStubs by tasks.registering(Exec::class) {
-    group = "kurtos"
-    description = "Generate freestanding Kotlin/Native ABI stubs"
-
-    val script = runtimeSrcDir.file("abi/generate_stubs.py")
-    val definitions = runtimeSrcDir.file("abi/kotlin_native_stubs.def")
-    val output = generatedAbiDir.map { it.file("kotlin_native_stubs.c") }
-
-    inputs.file(script)
-    inputs.file(definitions)
-    outputs.file(output)
-
-    doFirst {
-        output.get().asFile.parentFile.mkdirs()
-    }
-
-    executable = "python3"
-    args(script.asFile.absolutePath, definitions.asFile.absolutePath, output.get().asFile.absolutePath)
-}
 
 val compileTasks = mutableListOf<TaskProvider<Exec>>()
 
@@ -100,28 +79,8 @@ runtimeSrcDir.asFileTree.matching { include("**/*.S") }.files.sortedBy { it.inva
     }
 }
 
-val compileKotlinNativeStubs by tasks.registering(Exec::class) {
-    group = "kurtos"
-    description = "Compile generated Kotlin/Native ABI stubs"
-    dependsOn(generateKotlinNativeStubs)
-
-    val source = generatedAbiDir.map { it.file("kotlin_native_stubs.c") }
-    val output = objectsDir.map { it.file("abi_kotlin_native_stubs.o") }
-
-    inputs.file(source)
-    outputs.file(output)
-
-    doFirst {
-        output.get().asFile.parentFile.mkdirs()
-    }
-
-    executable = "gcc"
-    args(baseCFlags + listOf("-c", source.get().asFile.absolutePath, "-o", output.get().asFile.absolutePath))
-}
-
 tasks.register("runtimeObjects") {
     group = "kurtos"
     description = "Build freestanding runtime objects"
     dependsOn(compileTasks)
-    dependsOn(compileKotlinNativeStubs)
 }
