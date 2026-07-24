@@ -64,6 +64,8 @@ jobs:
           :snes:linuxX64ReleaseTest
           :gameboy:linuxX64Test
           :gba:linuxX64Test
+          :spezi:linuxX64Test
+          :hal:linuxX64Test
           --stacktrace
 
       - name: Test suite reports
