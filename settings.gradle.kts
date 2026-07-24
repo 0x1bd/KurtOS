@@ -2,6 +2,7 @@ rootProject.name = "KurtOS"
 
 include(
     "hal",
+    "hal-x86",
     "kapi",
     "kernel",
     "runtime",

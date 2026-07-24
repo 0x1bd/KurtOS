@@ -4,44 +4,30 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.toLong
 import kotlinx.cinterop.usePinned
-import mmio.raw_blit_high
-import mmio.raw_blit_indexed
-import mmio.raw_copy
-import mmio.raw_copy_stream
-import mmio.raw_fill32
-import mmio.raw_read16
-import mmio.raw_read32
-import mmio.raw_read64
-import mmio.raw_read8
-import mmio.raw_write16
-import mmio.raw_write32
-import mmio.raw_write64
-import mmio.raw_write8
-import mmio.raw_zero
 
 @OptIn(ExperimentalForeignApi::class)
 object RawMemory {
-    fun read8(address: ULong): UByte = raw_read8(address)
+    fun read8(address: ULong): UByte = Hal.memory.read8(address)
 
-    fun read16(address: ULong): UShort = raw_read16(address)
+    fun read16(address: ULong): UShort = Hal.memory.read16(address)
 
-    fun read32(address: ULong): UInt = raw_read32(address)
+    fun read32(address: ULong): UInt = Hal.memory.read32(address)
 
-    fun read64(address: ULong): ULong = raw_read64(address)
+    fun read64(address: ULong): ULong = Hal.memory.read64(address)
 
-    fun write8(address: ULong, value: UByte) = raw_write8(address, value)
+    fun write8(address: ULong, value: UByte) = Hal.memory.write8(address, value)
 
-    fun write16(address: ULong, value: UShort) = raw_write16(address, value)
+    fun write16(address: ULong, value: UShort) = Hal.memory.write16(address, value)
 
-    fun write32(address: ULong, value: UInt) = raw_write32(address, value)
+    fun write32(address: ULong, value: UInt) = Hal.memory.write32(address, value)
 
-    fun write64(address: ULong, value: ULong) = raw_write64(address, value)
+    fun write64(address: ULong, value: ULong) = Hal.memory.write64(address, value)
 
-    fun fill32(address: ULong, value: UInt, count: UInt) = raw_fill32(address, value, count.toULong())
+    fun fill32(address: ULong, value: UInt, count: UInt) = Hal.memory.fill32(address, value, count.toULong())
 
-    fun copy(destination: ULong, source: ULong, bytes: ULong) = raw_copy(destination, source, bytes)
+    fun copy(destination: ULong, source: ULong, bytes: ULong) = Hal.memory.copy(destination, source, bytes)
 
-    fun zero(address: ULong, length: ULong) = raw_zero(address, length)
+    fun zero(address: ULong, length: ULong) = Hal.memory.zero(address, length)
 
     fun blitIndexed(
         destination: ULong,
@@ -51,7 +37,7 @@ object RawMemory {
         sourceHeight: UInt,
         palette: ULong,
         scale: UInt,
-    ) = raw_blit_indexed(
+    ) = Hal.memory.blitIndexed(
         destination,
         destinationStride.toULong(),
         source,
@@ -69,7 +55,7 @@ object RawMemory {
         sourceHeight: UInt,
         palette: ULong,
         scale: UInt,
-    ) = raw_blit_high(
+    ) = Hal.memory.blitHigh(
         destination,
         destinationStride.toULong(),
         source,
@@ -90,28 +76,28 @@ object RawMemory {
     fun copyOut(address: ULong, target: ByteArray, offset: Int, length: Int) {
         if (length <= 0) return
         target.usePinned { pinned ->
-            raw_copy(pinned.addressOf(offset).toLong().toULong(), address, length.toULong())
+            Hal.memory.copy(pinned.addressOf(offset).toLong().toULong(), address, length.toULong())
         }
     }
 
     fun copyIn(address: ULong, source: ByteArray, offset: Int, length: Int) {
         if (length <= 0) return
         source.usePinned { pinned ->
-            raw_copy(address, pinned.addressOf(offset).toLong().toULong(), length.toULong())
+            Hal.memory.copy(address, pinned.addressOf(offset).toLong().toULong(), length.toULong())
         }
     }
 
     fun copyOutWords(address: ULong, target: IntArray, offset: Int, count: Int) {
         if (count <= 0) return
         target.usePinned { pinned ->
-            raw_copy_stream(pinned.addressOf(offset).toLong().toULong(), address, (count.toULong()) * 4UL)
+            Hal.memory.copyStream(pinned.addressOf(offset).toLong().toULong(), address, (count.toULong()) * 4UL)
         }
     }
 
     fun copyInWords(address: ULong, source: IntArray, offset: Int, count: Int) {
         if (count <= 0) return
         source.usePinned { pinned ->
-            raw_copy(address, pinned.addressOf(offset).toLong().toULong(), (count.toULong()) * 4UL)
+            Hal.memory.copy(address, pinned.addressOf(offset).toLong().toULong(), (count.toULong()) * 4UL)
         }
     }
 }

@@ -1,53 +1,33 @@
 package hal
 
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.ptr
-import kotlinx.cinterop.value
-import kotlinx.cinterop.UIntVar
-import mmio.cpu_cpuid
-import mmio.cpu_disable_interrupts
-import mmio.cpu_enable_interrupts
-import mmio.cpu_halt
-import mmio.cpu_hang
-import mmio.cpu_rdtsc
-import mmio.cpu_invlpg
-import mmio.cpu_read_cr2
-import mmio.cpu_read_cr3
-import mmio.cpu_sfence
-import mmio.msr_read
-import mmio.msr_write
-
 data class CpuidResult(val eax: UInt, val ebx: UInt, val ecx: UInt, val edx: UInt)
 
-@OptIn(ExperimentalForeignApi::class)
 object Cpu {
-    fun enableInterrupts() = cpu_enable_interrupts()
+    fun enableInterrupts() = Hal.cpu.enableInterrupts()
 
-    fun disableInterrupts() = cpu_disable_interrupts()
+    fun disableInterrupts() = Hal.cpu.disableInterrupts()
 
-    fun waitForInterrupt() = cpu_halt()
+    fun waitForInterrupt() = Hal.cpu.waitForInterrupt()
 
     fun hang(): Nothing {
-        cpu_hang()
+        Hal.cpu.hang()
         while (true) {
         }
     }
 
-    fun timestamp(): ULong = cpu_rdtsc()
+    fun timestamp(): ULong = Hal.cpu.timestamp()
 
-    fun readCr2(): ULong = cpu_read_cr2()
+    fun readCr2(): ULong = Hal.cpu.readCr2()
 
-    fun readCr3(): ULong = cpu_read_cr3()
+    fun readCr3(): ULong = Hal.cpu.readCr3()
 
-    fun invalidatePage(address: ULong) = cpu_invlpg(address)
+    fun invalidatePage(address: ULong) = Hal.cpu.invalidatePage(address)
 
-    fun readMsr(msr: UInt): ULong = msr_read(msr)
+    fun readMsr(msr: UInt): ULong = Hal.cpu.readMsr(msr)
 
-    fun writeMsr(msr: UInt, value: ULong) = msr_write(msr, value)
+    fun writeMsr(msr: UInt, value: ULong) = Hal.cpu.writeMsr(msr, value)
 
-    fun storeFence() = cpu_sfence()
+    fun storeFence() = Hal.cpu.storeFence()
 
     private fun isAmd(): Boolean {
         val v = cpuid(0u)
@@ -80,14 +60,7 @@ object Cpu {
     private const val MSR_APERF: UInt = 0xE8u
     private const val MSR_MPERF: UInt = 0xE7u
 
-    fun cpuid(leaf: UInt): CpuidResult = memScoped {
-        val a = alloc<UIntVar>()
-        val b = alloc<UIntVar>()
-        val c = alloc<UIntVar>()
-        val d = alloc<UIntVar>()
-        cpu_cpuid(leaf, a.ptr, b.ptr, c.ptr, d.ptr)
-        CpuidResult(a.value, b.value, c.value, d.value)
-    }
+    fun cpuid(leaf: UInt): CpuidResult = Hal.cpu.cpuid(leaf)
 
     fun brand(): String {
         val highest = cpuid(0x80000000u).eax

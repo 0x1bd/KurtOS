@@ -77,6 +77,21 @@ static int mwait_supported(void) {
     return cached;
 }
 
+static int mwait_break_supported(void) {
+    static int cached = -1;
+    if (cached < 0) {
+        uint32_t a, b, c, d;
+        __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0), "c"(0));
+        if (a < 5) {
+            cached = 0;
+        } else {
+            __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(5), "c"(0));
+            cached = (c & 3) == 3;
+        }
+    }
+    return cached;
+}
+
 static inline uint64_t ticks_now(void) {
     return *(volatile uint64_t *)&kurtos_ticks;
 }
@@ -186,6 +201,21 @@ int pthread_cond_broadcast(void *c) {
     return 0;
 }
 
+static void cond_relax(kcond_t *cond, uint64_t seen) {
+    if (!kthread_on_ap()) {
+        kthread_yield();
+        return;
+    }
+
+    if (mwait_supported() && mwait_break_supported()) {
+        __asm__ volatile("monitor" : : "a"(&cond->generation), "c"(0), "d"(0) : "memory");
+        if (__atomic_load_n(&cond->generation, __ATOMIC_ACQUIRE) != seen) return;
+        __asm__ volatile("mwait" : : "a"(0), "c"(1) : "memory");
+    } else {
+        __asm__ volatile("pause" : : : "memory");
+    }
+}
+
 int pthread_cond_wait(void *c, void *m) {
     kcond_t *cond = (kcond_t *)c;
     uint64_t seen = __atomic_load_n(&cond->generation, __ATOMIC_ACQUIRE);
@@ -194,7 +224,7 @@ int pthread_cond_wait(void *c, void *m) {
     pthread_mutex_unlock(m);
     while (__atomic_load_n(&cond->generation, __ATOMIC_ACQUIRE) == seen) {
         if (ticks_now() >= spurious) break;
-        relax();
+        cond_relax(cond, seen);
     }
     pthread_mutex_lock(m);
 
@@ -215,7 +245,7 @@ int pthread_cond_timedwait(void *c, void *m, const void *abstime) {
             timed_out = 1;
             break;
         }
-        relax();
+        cond_relax(cond, seen);
     }
     pthread_mutex_lock(m);
 

@@ -4,7 +4,9 @@ import frontend.CoreCommands
 import frontend.Home
 import frontend.Settings
 import hal.Cpu
+import hal.Hal
 import hal.Serial
+import hal.x86.X86Platform
 import kapi.KapiRuntime
 import kernel.arch.Acpi
 import kernel.arch.Apic
@@ -38,6 +40,8 @@ private const val IRQ_KEYBOARD = 1
 @OptIn(ExperimentalNativeApi::class)
 @CName("kotlin_main")
 fun main() {
+    Hal.install(X86Platform)
+
     Serial.initialize()
 
     Gdt.install()

@@ -1,50 +1,30 @@
 package hal
 
-import kotlinx.cinterop.ExperimentalForeignApi
-import mmio.isr_stub
-import mmio.kbd_irq_count
-import mmio.kbd_poll_set
-import mmio.kbd_ring_overflows
-import mmio.kbd_ring_pop
-import mmio.lapic_base_set
-import mmio.lgdt_load
-import mmio.lidt_load
-import mmio.ltr_load
-import mmio.smp_cpus
-import mmio.smp_start
-import mmio.timer_ticks
-import mmio.usb_irq_count
-
-@OptIn(ExperimentalForeignApi::class)
 object Arch {
-    fun isrStub(vector: Int): ULong = isr_stub(vector.toULong())
+    fun isrStub(vector: Int): ULong = Hal.arch.isrStub(vector)
 
     fun loadGdt(descriptorAddress: ULong, codeSelector: UShort, dataSelector: UShort) =
-        lgdt_load(descriptorAddress.toCPointer(), codeSelector, dataSelector)
+        Hal.arch.loadGdt(descriptorAddress, codeSelector, dataSelector)
 
-    fun loadTaskRegister(selector: UShort) = ltr_load(selector)
+    fun loadTaskRegister(selector: UShort) = Hal.arch.loadTaskRegister(selector)
 
-    fun loadIdt(descriptorAddress: ULong) = lidt_load(descriptorAddress.toCPointer())
+    fun loadIdt(descriptorAddress: ULong) = Hal.arch.loadIdt(descriptorAddress)
 
-    fun setLapicBase(base: ULong) = lapic_base_set(base)
+    fun setLapicBase(base: ULong) = Hal.arch.setLapicBase(base)
 
-    fun ticks(): ULong = timer_ticks()
+    fun ticks(): ULong = Hal.arch.ticks()
 
-    fun nextScancode(): Int = kbd_ring_pop()
+    fun nextScancode(): Int = Hal.arch.nextScancode()
 
-    fun enableKeyboardPoll() = kbd_poll_set(1u)
+    fun enableKeyboardPoll() = Hal.arch.enableKeyboardPoll()
 
-    fun droppedScancodes(): ULong = kbd_ring_overflows()
+    fun droppedScancodes(): ULong = Hal.arch.droppedScancodes()
 
-    fun keyboardInterrupts(): ULong = kbd_irq_count()
+    fun keyboardInterrupts(): ULong = Hal.arch.keyboardInterrupts()
 
-    fun usbInterrupts(): ULong = usb_irq_count()
+    fun usbInterrupts(): ULong = Hal.arch.usbInterrupts()
 
-    fun smpStart(): Int = smp_start()
+    fun smpStart(): Int = Hal.arch.smpStart()
 
-    fun smpCpus(): Int = smp_cpus()
+    fun smpCpus(): Int = Hal.arch.smpCpus()
 }
-
-@OptIn(ExperimentalForeignApi::class)
-private fun ULong.toCPointer(): kotlinx.cinterop.COpaquePointer? =
-    kotlinx.cinterop.interpretCPointer(kotlinx.cinterop.NativePtr.NULL.plus(this.toLong()))

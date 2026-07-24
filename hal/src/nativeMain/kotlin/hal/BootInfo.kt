@@ -1,29 +1,5 @@
 package hal
 
-import kotlinx.cinterop.ExperimentalForeignApi
-import mmio.boot_fb_address
-import mmio.boot_fb_blue_shift
-import mmio.boot_fb_green_shift
-import mmio.boot_fb_height
-import mmio.boot_fb_pitch
-import mmio.boot_fb_present
-import mmio.boot_fb_red_shift
-import mmio.boot_fb_width
-import mmio.boot_heap_end
-import mmio.boot_heap_start
-import mmio.boot_hhdm
-import mmio.boot_memmap_base
-import mmio.boot_memmap_count
-import mmio.boot_memmap_length
-import mmio.boot_memmap_type
-import mmio.boot_gpu_pool_end
-import mmio.boot_gpu_pool_start
-import mmio.boot_pages_end
-import mmio.boot_pages_start
-import mmio.boot_rsdp
-import mmio.heap_total
-import mmio.heap_used
-
 enum class MemoryKind {
     Usable,
     Reserved,
@@ -48,27 +24,26 @@ data class FramebufferInfo(
     val blueShift: Int,
 )
 
-@OptIn(ExperimentalForeignApi::class)
 object BootInfo {
-    val hhdmOffset: ULong get() = boot_hhdm()
+    val hhdmOffset: ULong get() = Hal.boot.hhdmOffset
 
-    val heapStart: ULong get() = boot_heap_start()
+    val heapStart: ULong get() = Hal.boot.heapStart
 
-    val heapEnd: ULong get() = boot_heap_end()
+    val heapEnd: ULong get() = Hal.boot.heapEnd
 
-    val heapUsed: ULong get() = heap_used()
+    val heapUsed: ULong get() = Hal.boot.heapUsed
 
-    val heapTotal: ULong get() = heap_total()
+    val heapTotal: ULong get() = Hal.boot.heapTotal
 
-    val pagesStart: ULong get() = boot_pages_start()
+    val pagesStart: ULong get() = Hal.boot.pagesStart
 
-    val pagesEnd: ULong get() = boot_pages_end()
+    val pagesEnd: ULong get() = Hal.boot.pagesEnd
 
-    val gpuPoolStart: ULong get() = boot_gpu_pool_start()
+    val gpuPoolStart: ULong get() = Hal.boot.gpuPoolStart
 
-    val gpuPoolEnd: ULong get() = boot_gpu_pool_end()
+    val gpuPoolEnd: ULong get() = Hal.boot.gpuPoolEnd
 
-    val rsdpAddress: ULong get() = boot_rsdp()
+    val rsdpAddress: ULong get() = Hal.boot.rsdpAddress
 
     fun toVirtual(physical: ULong): ULong = physical + hhdmOffset
 
@@ -76,29 +51,29 @@ object BootInfo {
 
     val framebuffer: FramebufferInfo?
         get() {
-            if (boot_fb_present() == 0u) return null
+            if (Hal.boot.framebufferPresent == 0u) return null
             return FramebufferInfo(
-                address = boot_fb_address(),
-                width = boot_fb_width().toUInt(),
-                height = boot_fb_height().toUInt(),
-                pitch = boot_fb_pitch().toUInt(),
-                redShift = boot_fb_red_shift().toInt(),
-                greenShift = boot_fb_green_shift().toInt(),
-                blueShift = boot_fb_blue_shift().toInt(),
+                address = Hal.boot.framebufferAddress,
+                width = Hal.boot.framebufferWidth.toUInt(),
+                height = Hal.boot.framebufferHeight.toUInt(),
+                pitch = Hal.boot.framebufferPitch.toUInt(),
+                redShift = Hal.boot.framebufferRedShift.toInt(),
+                greenShift = Hal.boot.framebufferGreenShift.toInt(),
+                blueShift = Hal.boot.framebufferBlueShift.toInt(),
             )
         }
 
     val memoryMap: List<MemoryRegion>
         get() {
-            val count = boot_memmap_count()
+            val count = Hal.boot.memoryMapCount
             val regions = mutableListOf<MemoryRegion>()
             var i = 0UL
             while (i < count) {
                 regions.add(
                     MemoryRegion(
-                        base = boot_memmap_base(i),
-                        length = boot_memmap_length(i),
-                        kind = kindOf(boot_memmap_type(i)),
+                        base = Hal.boot.memoryMapBase(i),
+                        length = Hal.boot.memoryMapLength(i),
+                        kind = kindOf(Hal.boot.memoryMapType(i)),
                     )
                 )
                 i++

@@ -20,6 +20,7 @@ kotlin {
         val linuxX64Main by getting {
             dependencies {
                 implementation(project(":hal"))
+                implementation(project(":hal-x86"))
                 implementation(project(":kapi"))
                 implementation(project(":shell"))
                 implementation(project(":frontend"))
